@@ -20,8 +20,8 @@ Working name: Farmos (file extension .fm, compiler CLI `farmc`). Rename later if
 ## Milestones and acceptance criteria
 M1 Core language
 - Lexer, parser, types (int, float, bool, string, arrays, structs/classes, functions), control flow, modules.
-- `farmc build hello.fm` produces a native executable on Windows (MSVC/clang) and Linux.
-- AC: hello world stripped binary <= 20 KB on Linux x64; test suite of >= 30 language tests passes in CI;
+- `farmc build hello.fm` produces a native Windows executable (C backend: clang or gcc only; MSVC cl unsupported).
+- AC (amended 2026-09-24: target is Windows, fully local on TommyLaptop, Linux out of scope): hello world stripped binary <= 20 KB on Windows x64; test suite of >= 30 language tests passes via local scripts\build_and_test.ps1;
   clear compile errors with line/column.
 M2 Math stdlib
 - Vector2/3/4, Matrix3/4, Quaternion, Color, Euler, Ray, Box3, Sphere; operator overloading.
@@ -49,3 +49,6 @@ M6 Size/resource hardening + docs
 - poteto: all coding (via Cursor cloud agents), per milestone, reports status/blockers.
 - eggtooth: audits each milestone claim against the ACs above.
 - Language/graphics spec architect bot (requested from dr eggbot): writes the language spec + test cases per milestone ahead of coding. Does not code.
+
+## Environment (updated 2026-09-24)
+- No GitHub/cloud repo. Project lives at D:\Tommy\Farmos on TommyLaptop (Windows), local git only. All CI-style checks are local ctest runs.

@@ -179,6 +179,7 @@ struct ImportDecl {
 
 struct Module {
   std::string path;
+  std::string diag_path;
   int id = 0;
   std::string prefix;
   std::vector<ImportDecl> imports;

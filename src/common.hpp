@@ -37,8 +37,15 @@ inline std::vector<Diagnostic>& diags() {
   return d;
 }
 
+inline bool& diag_cascade_stop() {
+  static bool stop = false;
+  return stop;
+}
+
 inline void error_at(const std::string& path, SourceLoc loc, const std::string& code, const std::string& msg) {
+  if (diag_cascade_stop()) return;
   diags().push_back(Diagnostic{path, loc, code, msg});
+  if (code == "E0505") diag_cascade_stop() = true;
 }
 
 inline void emit_diagnostics() {
@@ -49,6 +56,6 @@ inline void emit_diagnostics() {
 }
 
 inline bool has_errors() { return !diags().empty(); }
-inline void clear_diags() { diags().clear(); }
+inline void clear_diags() { diags().clear(); diag_cascade_stop() = false; }
 
 } // namespace farm

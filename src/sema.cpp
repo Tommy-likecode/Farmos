@@ -604,7 +604,7 @@ struct Sema {
   void run() {
     for (auto& m : prog.modules) {
       cur_mod = &m;
-      path = m.path;
+      path = m.diag_path.empty() ? m.path : m.diag_path;
       for (auto& s : m.structs)
         for (auto& f : s.fields) f.type = finalize_type(f.type, f.loc, false);
       for (auto& c : m.classes) {
@@ -647,11 +647,11 @@ struct Sema {
     }
 
     for (auto& m : prog.modules) {
-      cur_mod = &m; path = m.path;
+      cur_mod = &m; path = m.diag_path.empty() ? m.path : m.diag_path;
       for (auto& c : m.consts) check_const(c);
     }
     for (auto& m : prog.modules) {
-      cur_mod = &m; path = m.path;
+      cur_mod = &m; path = m.diag_path.empty() ? m.path : m.diag_path;
       for (auto& f : m.functions) check_function(f);
       for (auto& c : m.classes)
         for (auto& md : c.methods) check_method(c, md);

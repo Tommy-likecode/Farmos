@@ -38,6 +38,21 @@ static fs::path resolve_import(const fs::path& from_file, const std::string& rel
   return fs::weakly_canonical(from_file.parent_path() / rel);
 }
 
+// Display path for diagnostics: prefer cwd-relative with forward slashes (spec section 8.1 / tests README).
+static std::string to_diag_path(const fs::path& p) {
+  std::error_code ec;
+  fs::path abs = fs::weakly_canonical(p, ec);
+  if (ec) abs = fs::absolute(p, ec);
+  if (ec) return p.generic_string();
+  fs::path rel = fs::relative(abs, fs::current_path(), ec);
+  if (!ec && !rel.empty()) {
+    std::string s = rel.generic_string();
+    if (s != ".." && s.rfind("../", 0) != 0) return s;
+  }
+  return abs.generic_string();
+}
+
+
 struct Loader {
   Program prog;
   std::unordered_map<std::string, int> loaded; // canonical path -> index
@@ -65,24 +80,30 @@ struct Loader {
       return false;
     }
     stack.push_back(key);
-    Lexer lex(key, src);
+    std::string dpath = to_diag_path(path);
+    Lexer lex(dpath, src);
     Parser parser(lex);
     Module m = parser.parse_module();
     m.path = key;
+    m.diag_path = dpath;
     m.is_main = is_main;
     int idx = (int)prog.modules.size();
     prog.modules.push_back(std::move(m));
     loaded[key] = idx;
 
-    // process imports
-    Module& mod = prog.modules[idx];
-    for (auto& im : mod.imports) {
-      if (!is_relative_fm(im.path)) {
-        error_at(key, im.loc, "E0301", "invalid module path `" + im.path + "`");
-        continue;
+    // Process imports by index/value: recursive load_module may reallocate prog.modules.
+    {
+      size_t nimp = prog.modules[idx].imports.size();
+      for (size_t ii = 0; ii < nimp; ++ii) {
+        ImportDecl im = prog.modules[idx].imports[ii];  // copy; do not hold refs across load
+        if (!is_relative_fm(im.path)) {
+          error_at(prog.modules[idx].diag_path, im.loc, "E0301",
+                   "invalid module path `" + im.path + "`");
+          continue;
+        }
+        fs::path dep = resolve_import(can, im.path);
+        if (!load_module(dep, false)) continue;
       }
-      fs::path dep = resolve_import(can, im.path);
-      if (!load_module(dep, false)) continue;
     }
     stack.pop_back();
     return true;
@@ -100,7 +121,7 @@ struct Loader {
 
       auto put_unique = [&](auto& map, const std::string& name, auto* ptr, SourceLoc loc) {
         if (map.count(name)) {
-          error_at(mod.path, loc, "E0502", "duplicate definition of `" + name + "`");
+          error_at(mod.diag_path, loc, "E0502", "duplicate definition of `" + name + "`");
           return;
         }
         map[name] = ptr;
@@ -154,34 +175,34 @@ struct Loader {
 
           bool bound = false;
           for (auto& f : dep_m->functions) if (f.name == name) {
-            if (!f.exported) error_at(mod.path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
-            else if (clash()) error_at(mod.path, nloc, "E0502", "duplicate definition of `" + name + "`");
+            if (!f.exported) error_at(mod.diag_path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
+            else if (clash()) error_at(mod.diag_path, nloc, "E0502", "duplicate definition of `" + name + "`");
             else mod.vis_functions[name] = &f;
             bound = true; break;
           }
           if (bound) continue;
           for (auto& c : dep_m->consts) if (c.name == name) {
-            if (!c.exported) error_at(mod.path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
-            else if (clash()) error_at(mod.path, nloc, "E0502", "duplicate definition of `" + name + "`");
+            if (!c.exported) error_at(mod.diag_path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
+            else if (clash()) error_at(mod.diag_path, nloc, "E0502", "duplicate definition of `" + name + "`");
             else mod.vis_consts[name] = &c;
             bound = true; break;
           }
           if (bound) continue;
           for (auto& s : dep_m->structs) if (s.name == name) {
-            if (!s.exported) error_at(mod.path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
-            else if (clash()) error_at(mod.path, nloc, "E0502", "duplicate definition of `" + name + "`");
+            if (!s.exported) error_at(mod.diag_path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
+            else if (clash()) error_at(mod.diag_path, nloc, "E0502", "duplicate definition of `" + name + "`");
             else mod.vis_structs[name] = &s;
             bound = true; break;
           }
           if (bound) continue;
           for (auto& c : dep_m->classes) if (c.name == name) {
-            if (!c.exported) error_at(mod.path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
-            else if (clash()) error_at(mod.path, nloc, "E0502", "duplicate definition of `" + name + "`");
+            if (!c.exported) error_at(mod.diag_path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
+            else if (clash()) error_at(mod.diag_path, nloc, "E0502", "duplicate definition of `" + name + "`");
             else mod.vis_classes[name] = &c;
             bound = true; break;
           }
           if (!bound) {
-            error_at(mod.path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
+            error_at(mod.diag_path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
           }
         }
       }
@@ -189,6 +210,26 @@ struct Loader {
   }
 };
 
+
+static std::string lower_ascii(std::string s) {
+  for (char& c : s) c = (char)std::tolower((unsigned char)c);
+  return s;
+}
+
+// MSVC cl / cl.exe (and clang-cl MSVC-style driver) are unsupported as the C backend (spec section 7.1).
+static bool is_msvc_cc(const std::string& cc_raw) {
+  std::string s = cc_raw;
+  while (!s.empty() && (s.front() == '"' || s.front() == '\'')) s.erase(s.begin());
+  while (!s.empty() && (s.back() == '"' || s.back() == '\'')) s.pop_back();
+  fs::path p(s);
+  std::string base = lower_ascii(p.filename().string());
+  if (base == "cl" || base == "cl.exe") return true;
+  if (base == "clang-cl" || base == "clang-cl.exe") return true;
+  std::string whole = lower_ascii(s);
+  if (whole == "cl" || whole == "cl.exe") return true;
+  if (whole == "clang-cl" || whole == "clang-cl.exe") return true;
+  return false;
+}
 
 static std::string find_c_compiler() {
   const char* env = std::getenv("FARM_CC");
@@ -241,47 +282,31 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
     std::cerr << "farmc: no C compiler found (set FARM_CC)\n";
     return 3;
   }
-  // Size-oriented flags; NO -ffast-math
+  // Spec section 7.1: clang or gcc only. MSVC cl is a driver configuration error (exit 3).
+  // Detect BEFORE invoking any process.
+  if (is_msvc_cc(cc)) {
+    std::cerr << "farmc: C compiler must be clang or gcc; MSVC cl is unsupported\n";
+    return 3;
+  }
+  // Size-oriented flags; NO -ffast-math. GNU statement-expressions require clang/gcc.
   std::ostringstream cmd;
-  bool is_msvc = (cc.find("cl") != std::string::npos && cc.find("clang") == std::string::npos);
-  if (is_msvc) {
-    cmd << cc << " /nologo /std:c11 /O1 /GL /Gy /I\"" << rt_h_dir.string() << "\" "
-        << "\"" << c_file.string() << "\" \"" << rt_c.string() << "\" "
-        << "/Fe:\"" << out_exe.string() << "\" /link /LTCG /OPT:REF /OPT:ICF";
-  } else {
-    cmd << cc << " -std=c11 -Os -ffunction-sections -fdata-sections "
-        << "-I\"" << rt_h_dir.string() << "\" "
-        << "\"" << c_file.string() << "\" \"" << rt_c.string() << "\" "
-        << "-o \"" << out_exe.string() << "\" "
-        << "-Wl,--gc-sections -s";
-    // try LTO
-    // Note: some mingw need -flto; add it
-    // Rebuild command with -flto
-  }
-  // Prefer LTO variant for non-msvc
-  if (!is_msvc) {
-    cmd.str("");
-    cmd.clear();
-    cmd << cc << " -std=c11 -Os -flto -ffunction-sections -fdata-sections "
-        << "-I\"" << rt_h_dir.string() << "\" "
-        << "\"" << c_file.string() << "\" \"" << rt_c.string() << "\" "
-        << "-o \"" << out_exe.string() << "\" "
-        << "-Wl,--gc-sections -s -lm";
-  }
+  cmd << cc << " -std=c11 -Os -flto -ffunction-sections -fdata-sections "
+      << "-I\"" << rt_h_dir.string() << "\" "
+      << "\"" << c_file.string() << "\" \"" << rt_c.string() << "\" "
+      << "-o \"" << out_exe.string() << "\" "
+      << "-Wl,--gc-sections -s -lm";
   if (verbose) std::cerr << "farmc: " << cmd.str() << "\n";
   int rc = run_cmd(cmd.str());
   if (rc != 0) {
     // retry without LTO
-    if (!is_msvc) {
-      std::ostringstream cmd2;
-      cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections "
-           << "-I\"" << rt_h_dir.string() << "\" "
-           << "\"" << c_file.string() << "\" \"" << rt_c.string() << "\" "
-           << "-o \"" << out_exe.string() << "\" "
-           << "-Wl,--gc-sections -s -lm";
-      if (verbose) std::cerr << "farmc: retry " << cmd2.str() << "\n";
-      rc = run_cmd(cmd2.str());
-    }
+    std::ostringstream cmd2;
+    cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections "
+         << "-I\"" << rt_h_dir.string() << "\" "
+         << "\"" << c_file.string() << "\" \"" << rt_c.string() << "\" "
+         << "-o \"" << out_exe.string() << "\" "
+         << "-Wl,--gc-sections -s -lm";
+    if (verbose) std::cerr << "farmc: retry " << cmd2.str() << "\n";
+    rc = run_cmd(cmd2.str());
   }
   if (rc != 0) {
     std::cerr << "farmc: C compiler failed\n";
@@ -289,6 +314,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   }
   return 0;
 }
+
 
 static fs::path default_runtime_dir() {
   // farmc.exe next to ../runtime or FARM_RUNTIME
@@ -406,7 +432,7 @@ static int cmd_run(std::vector<std::string> args) {
 int main(int argc, char** argv) {
   using namespace farm;
   if (argc < 2) {
-    std::cout << "farmc — Farmos compiler\nUsage: farmc <build|run|version|help> ...\n";
+    std::cout << "farmc - Farmos compiler\nUsage: farmc <build|run|version|help> ...\n";
     return 2;
   }
   std::string cmd = argv[1];

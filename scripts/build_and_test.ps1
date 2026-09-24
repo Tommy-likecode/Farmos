@@ -9,6 +9,6 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host "Building ..."
 cmake --build $BuildDir --config $Config
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Write-Host "Running ctest ..."
-ctest --test-dir $BuildDir -C $Config --output-on-failure -j 1
+Write-Host "Running default ctest (excluding conformance_bundle) ..."
+ctest --test-dir $BuildDir -C $Config --output-on-failure -j 1 -LE conformance_bundle
 exit $LASTEXITCODE

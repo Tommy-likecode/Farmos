@@ -38,5 +38,5 @@ See `docs/NOTES.md` for more implementation notes.
 
 ## Tests
 
-- Spec conformance: `spec/tests/M1/` (44 fixtures) via ctest `m1_*` / `m1_conformance`
+- Spec conformance: `spec/tests/M1/` (49 fixtures) via ctest `m1_*`; umbrella `m1_conformance` is opt-in (`ctest -L conformance_bundle`)
 - Local regressions: `tests/local/` via ctest `local_*`

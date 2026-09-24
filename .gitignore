@@ -12,3 +12,11 @@ Makefile
 CTestTestfile.cmake
 *.user
 __pycache__/
+
+# local agent scratch
+_audit_*
+_apply_*
+_default_ctest_*
+_bundle_ctest_*
+_hello_size.txt
+

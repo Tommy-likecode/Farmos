@@ -24,7 +24,7 @@ Compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`) evaluate a non-identifier lv
 
 ## Float printing
 
-`print`/`println`/`str` for `float` follow M1 §6.1 / ECMAScript 2024 `Number::toString`: specials `NaN` / `Infinity` / `-Infinity` / `-0`, and shortest round-trip decimals with scientific notation when the decimal exponent \(k < -6\) or \(k \geq 21\`.
+`print`/`println`/`str` for `float` follow M1 section 6.1 / ECMAScript 2024 `Number::toString`: specials `NaN` / `Infinity` / `-Infinity` / `-0`, and shortest round-trip decimals with scientific notation when the decimal exponent \(k < -6\) or \(k \geq 21\`.
 
 Implemented in `runtime/farm_rt.c` via a compact try-precision-1..17 + `strtod` round-trip loop, then ES-style formatting. With `-ffunction-sections` and `--gc-sections`, hello-world programs that never print floats should not retain the float formatter.
 
@@ -35,3 +35,18 @@ Missing-return diagnostics are reported at the closing `}` of the function/metho
 ## Per-module scoping / mangling
 
 Each `.fm` file is a module. Non-exported top-level names are private. C symbols are prefixed per module (`fn_m0_name`, `struct Farm_m0_Name`) so private duplicates link cleanly. Imports bind only exported names (`E0305` if not exported; `E0505` if exported but not imported; `E0303` on duplicate import).
+
+
+## MSVC cl rejection (AC-M1-04)
+
+`farmc` detects `cl` / `cl.exe` / `clang-cl` via `FARM_CC` (or basename) **before** spawning any process, prints
+`farmc: C compiler must be clang or gcc; MSVC cl is unsupported`, and exits 3. The MSVC `/nologo` flag path is removed.
+
+## Diagnostic paths
+
+Diagnostics use cwd-relative forward-slash paths when the source lies under the process cwd (harness sets
+WorkingDirectory to the tests dir and passes relative `*.fm` / `dir/main.fm`).
+
+## Cascade after E0505
+
+After the first `E0505` (undefined name), further diagnostics in that compilation are suppressed (spec section 8.2 MAY).
