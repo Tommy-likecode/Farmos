@@ -101,3 +101,9 @@ add_test(NAME local_041_run_unexpected_stderr
           -ExpectSubstring "unexpected stderr"
 )
 set_tests_properties(local_041_run_unexpected_stderr PROPERTIES LABELS "local")
+
+add_test(NAME local_032_o_noext
+  COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_SOURCE_DIR}/scripts/test_o_noext.ps1"
+          -Farmc $<TARGET_FILE:farmc>
+)
+set_tests_properties(local_032_o_noext PROPERTIES LABELS "local")

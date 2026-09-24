@@ -394,7 +394,24 @@ static int cmd_build(std::vector<std::string> args) {
   }
 
   fs::path rt = default_runtime_dir();
-  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, outfile, verbose);
+  // Spec section 7.1 SHOULD: if -o has no .exe suffix, still produce a PE usable at exactly
+  // that path. MinGW/clang linkers append .exe to suffix-less -o, so link to "<out>.exe"
+  // and rename to the requested path.
+  fs::path out_req(outfile);
+  std::string ext_lc = lower_ascii(out_req.extension().string());
+  bool needs_rename = (ext_lc != ".exe");
+  fs::path link_out = needs_rename ? fs::path(outfile + ".exe") : out_req;
+  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose);
+  if (rc == 0 && needs_rename) {
+    std::error_code ec;
+    fs::remove(out_req, ec);
+    ec.clear();
+    fs::rename(link_out, out_req, ec);
+    if (ec) {
+      std::cerr << "farmc: cannot write output " << out_req.string() << ": " << ec.message() << "\n";
+      rc = 3;
+    }
+  }
   if (!keep_c && emit_c_path.empty() && !do_emit_c) {
     std::error_code ec; fs::remove(tmp_c, ec);
   }
