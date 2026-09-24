@@ -45,7 +45,8 @@ inline bool& diag_cascade_stop() {
 inline void error_at(const std::string& path, SourceLoc loc, const std::string& code, const std::string& msg) {
   if (diag_cascade_stop()) return;
   diags().push_back(Diagnostic{path, loc, code, msg});
-  if (code == "E0505") diag_cascade_stop() = true;
+  // E0505 (undefined name) and E0001 (ill-formed UTF-8): report once, suppress the cascade.
+  if (code == "E0505" || code == "E0001") diag_cascade_stop() = true;
 }
 
 inline void emit_diagnostics() {

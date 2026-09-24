@@ -3,86 +3,76 @@ param(
   [Parameter(Mandatory=$true)][string]$TestsDir,
   [Parameter(Mandatory=$true)][string]$Name
 )
+# Conformance runner for spec/tests/README.md fixtures.
+# Every expected-vs-actual comparison is ORDINAL (case-sensitive, culture-free): README requires exact matching.
 $ErrorActionPreference = "Stop"
 $env:FARM_RUNTIME = Join-Path (Split-Path $Farmc -Parent) "runtime"
 if (-not (Test-Path (Join-Path $env:FARM_RUNTIME "farm_rt.c"))) {
   $env:FARM_RUNTIME = Join-Path (Split-Path (Split-Path $Farmc -Parent) -Parent) "runtime"
 }
 
+function Same([string]$a, [string]$b) { return [string]::Equals($a, $b, [StringComparison]::Ordinal) }
+
 function Norm-DiagPath([string]$p) {
   if ([string]::IsNullOrEmpty($p)) { return "" }
-  $n = ($p -replace '\\','/').Trim()
-  while ($n.StartsWith('./')) { $n = $n.Substring(2) }
+  $n = $p.Replace('\', '/').Trim()
+  while ($n.StartsWith('./', [StringComparison]::Ordinal)) { $n = $n.Substring(2) }
   return $n
 }
 
+# README: compare "including newlines"; CRLF from the Windows console/runtime is normalized to LF.
 function Norm-Newlines([string]$s) {
   if ($null -eq $s) { return "" }
-  return (($s -replace "`r`n","`n") -replace "`r","`n")
+  return $s.Replace("`r`n", "`n").Replace("`r", "`n")
 }
 
 function Parse-Expected([string]$path) {
   $lines = Get-Content -LiteralPath $path -Encoding UTF8
-  $kind = "run"
-  $exitCode = 0
-  $stdout = $null
-  $stderr = $null
-  $hasStdout = $false
-  $hasStderr = $false
+  $kind = $null
+  $exitCode = $null
+  $stdout = $null; $hasStdout = $false
+  $stderr = $null; $hasStderr = $false
   $stderrExact = $null
   $errors = @()
   $mode = $null
   $buf = New-Object System.Collections.Generic.List[string]
 
   foreach ($line in $lines) {
-    if ($line -match '^##') { continue }
-
     if ($null -ne $mode) {
-      if ($line -match '^# end\s*$') {
-        $text = ($buf -join "`n")
-        if ($buf.Count -gt 0) { $text = $text + "`n" } else { $text = "" }
-        if ($mode -eq 'stdout') { $stdout = $text; $hasStdout = $true }
-        elseif ($mode -eq 'stderr') { $stderr = $text; $hasStderr = $true }
+      # README: "Everything between `# stdout:` and `# end` is compared exactly".
+      # Only a `# end` line terminates a block; any other line (including `#`/`##` lines) is literal.
+      if ($line -cmatch '^# end[ \t]*$') {
+        $text = ""
+        if ($buf.Count -gt 0) { $text = ($buf -join "`n") + "`n" }
+        if (Same $mode 'stdout') { $stdout = $text; $hasStdout = $true }
+        else { $stderr = $text; $hasStderr = $true }
         $buf.Clear(); $mode = $null
-        continue
-      }
-      if ($line -match '^#') {
-        $text = ($buf -join "`n")
-        if ($buf.Count -gt 0) { $text = $text + "`n" } else { $text = "" }
-        if ($mode -eq 'stdout') { $stdout = $text; $hasStdout = $true }
-        elseif ($mode -eq 'stderr') { $stderr = $text; $hasStderr = $true }
-        $buf.Clear(); $mode = $null
-        # fall through to header handling
       } else {
         $buf.Add($line)
-        continue
       }
+      continue
     }
+    # README: lines starting with `##` are human comments and MUST be ignored.
+    if ($line.StartsWith('##', [StringComparison]::Ordinal)) { continue }
 
-    if ($line -match '^# kind:\s*(\S+)') { $kind = $Matches[1]; continue }
-    if ($line -match '^# exit:\s*(\d+)') { $exitCode = [int]$Matches[1]; continue }
-    if ($line -match '^# stderr_exact:\s*(true|false)\s*$') {
-      $stderrExact = ($Matches[1] -eq 'true'); continue
-    }
-    if ($line -match '^# error:\s*(\d+):(\d+):\s*(E\d+)\s*$') {
+    if ($line -cmatch '^# kind:[ \t]*(\S+)[ \t]*$') { $kind = $Matches[1]; continue }
+    if ($line -cmatch '^# exit:[ \t]*(-?\d+)[ \t]*$') { $exitCode = [int]$Matches[1]; continue }
+    if ($line -cmatch '^# stderr_exact:[ \t]*(true|false)[ \t]*$') { $stderrExact = (Same $Matches[1] 'true'); continue }
+    if ($line -cmatch '^# error:[ \t]*(\d+):(\d+):[ \t]*(E\d{4})[ \t]*$') {
       $errors += @{ line=[int]$Matches[1]; col=[int]$Matches[2]; code=$Matches[3]; path="" }
       continue
     }
-    if ($line -match '^# error:\s*(.+):(\d+):(\d+):\s*(E\d+)\s*$') {
+    if ($line -cmatch '^# error:[ \t]*(.+):(\d+):(\d+):[ \t]*(E\d{4})[ \t]*$') {
       $errors += @{ line=[int]$Matches[2]; col=[int]$Matches[3]; code=$Matches[4]; path=$Matches[1] }
       continue
     }
-    if ($line -match '^# stdout:\s*$') { $mode = 'stdout'; $buf.Clear(); continue }
-    if ($line -match '^# stderr:\s*$') { $mode = 'stderr'; $buf.Clear(); continue }
+    if ($line -cmatch '^# stdout:[ \t]*$') { $mode = 'stdout'; $buf.Clear(); continue }
+    if ($line -cmatch '^# stderr:[ \t]*$') { $mode = 'stderr'; $buf.Clear(); continue }
   }
-  if ($null -ne $mode) {
-    $text = ($buf -join "`n")
-    if ($buf.Count -gt 0) { $text = $text + "`n" } else { $text = "" }
-    if ($mode -eq 'stdout') { $stdout = $text; $hasStdout = $true }
-    elseif ($mode -eq 'stderr') { $stderr = $text; $hasStderr = $true }
-  }
-
-  if ($null -eq $stderrExact) { $stderrExact = ($kind -eq 'runtime_trap') }
+  if ($null -ne $mode) { throw "unterminated # ${mode}: block (missing # end) in $path" }
+  if ($null -eq $kind) { throw "missing # kind: header in $path" }
+  if ($null -eq $exitCode) { throw "missing # exit: header in $path" }
+  if ($null -eq $stderrExact) { $stderrExact = (Same $kind 'runtime_trap') }
 
   return @{
     kind=$kind; exit=$exitCode
@@ -94,136 +84,118 @@ function Parse-Expected([string]$path) {
 }
 
 $expPath = Join-Path $TestsDir "$Name.expected"
-if (-not (Test-Path $expPath)) { Write-Error "missing $expPath"; exit 1 }
-$exp = Parse-Expected $expPath
+if (-not (Test-Path -LiteralPath $expPath)) { Write-Host "FAIL ${Name}: missing $expPath"; exit 1 }
+try { $exp = Parse-Expected $expPath } catch { Write-Host "FAIL ${Name}: bad expected file: $_"; exit 1 }
 
+# README: multi-file tests use <dir>/main.fm; paths are as given to farmc (relative to the tests dir).
 $mainRel = "$Name.fm"
-$dirMainRel = Join-Path $Name "main.fm"
-if (Test-Path (Join-Path $TestsDir $dirMainRel)) { $mainRel = $dirMainRel }
-elseif (-not (Test-Path (Join-Path $TestsDir $mainRel))) {
-  Write-Error "missing source for $Name"; exit 1
-}
-$mainArg = ($mainRel -replace '\\','/')
+if (Test-Path -LiteralPath (Join-Path (Join-Path $TestsDir $Name) "main.fm")) { $mainRel = "$Name/main.fm" }
+elseif (-not (Test-Path -LiteralPath (Join-Path $TestsDir $mainRel))) { Write-Host "FAIL ${Name}: missing source"; exit 1 }
+$mainArg = $mainRel
 
 $tmp = Join-Path $env:TEMP ("farmc_test_" + $Name + ".exe")
 $outFile = Join-Path $env:TEMP ("farmc_test_" + $Name + ".out.txt")
 $errFile = Join-Path $env:TEMP ("farmc_test_" + $Name + ".err.txt")
 
+function Read-Text([string]$f) {
+  $t = Get-Content -LiteralPath $f -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+  if ($null -eq $t) { return "" }
+  return $t
+}
+
 function Invoke-FarmcBuild {
-  Remove-Item -Force $outFile,$errFile -ErrorAction SilentlyContinue
+  Remove-Item -Force $outFile,$errFile,$tmp -ErrorAction SilentlyContinue
   return (Start-Process -FilePath $Farmc -ArgumentList @('build', $mainArg, '-o', $tmp) `
     -WorkingDirectory $TestsDir -NoNewWindow -Wait -PassThru `
     -RedirectStandardOutput $outFile -RedirectStandardError $errFile)
 }
 
-if ($exp.kind -eq 'compile_error') {
+if (Same $exp.kind 'compile_error') {
   $p = Invoke-FarmcBuild
-  $ec = $p.ExitCode
-  $errText = Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue
-  if ($null -eq $errText) { $errText = "" }
-  if ($ec -ne 1) {
-    Write-Host "FAIL ${Name}: expected farmc exit 1, got $ec"
-    Write-Host $errText
-    exit 1
+  $errText = Read-Text $errFile
+  # README: `farmc build` fails with exit code 1.
+  if ($p.ExitCode -ne 1) { Write-Host "FAIL ${Name}: expected farmc exit 1, got $($p.ExitCode)"; Write-Host $errText; exit 1 }
+  if ($exp.errors.Count -eq 0) { Write-Host "FAIL ${Name}: compile_error fixture lists no # error: lines"; exit 1 }
+  $diags = @()
+  foreach ($ln in ($errText -split "`r?`n")) {
+    if ($ln -cmatch '^(.*):(\d+):(\d+): error\[(E\d{4})\]:') {
+      $diags += @{ path=(Norm-DiagPath $Matches[1]); line=[int]$Matches[2]; col=[int]$Matches[3]; code=$Matches[4] }
+    }
   }
-  if ($exp.errors.Count -eq 0) {
-    Write-Host "FAIL ${Name}: compile_error fixture lists no # error: lines"
-    exit 1
-  }
+  # README: verify path (when present), line, column, and code. Single-file: implied path is the .fm under test.
   foreach ($e in $exp.errors) {
-    $pathPart = Norm-DiagPath $e.path
-    if ($pathPart) {
-      $needle = "{0}:{1}:{2}: error[{3}]" -f $pathPart, $e.line, $e.col, $e.code
-      $found = $false
-      foreach ($line in ($errText -split "`r?`n")) {
-        $ln = $line.TrimEnd()
-        if ($ln -match '^(.*):(\d+):(\d+): error\[(E\d+)\]:') {
-          $gotPath = Norm-DiagPath $Matches[1]
-          $gotLine = [int]$Matches[2]; $gotCol = [int]$Matches[3]; $gotCode = $Matches[4]
-          if ($gotPath -eq $pathPart -and $gotLine -eq $e.line -and $gotCol -eq $e.col -and $gotCode -eq $e.code) {
-            $found = $true; break
-          }
-        }
-      }
-      if (-not $found) {
-        Write-Host "FAIL ${Name}: missing diagnostic $needle"
-        Write-Host $errText
-        exit 1
-      }
-    } else {
-      $rx = [regex]::Escape(":$($e.line):$($e.col): error[$($e.code)]")
-      if ($errText -notmatch $rx) {
-        Write-Host "FAIL ${Name}: missing diagnostic $($e.line):$($e.col): $($e.code)"
-        Write-Host $errText
-        exit 1
-      }
+    $wantPath = Norm-DiagPath $e.path
+    if ([string]::IsNullOrEmpty($wantPath)) { $wantPath = Norm-DiagPath $mainArg }
+    $found = $false
+    foreach ($d in $diags) {
+      if ((Same $d.path $wantPath) -and ($d.line -eq $e.line) -and ($d.col -eq $e.col) -and (Same $d.code $e.code)) { $found = $true; break }
+    }
+    if (-not $found) {
+      Write-Host ("FAIL {0}: missing diagnostic {1}:{2}:{3}: error[{4}]" -f $Name, $wantPath, $e.line, $e.col, $e.code)
+      Write-Host $errText
+      exit 1
     }
   }
   Write-Host "PASS ${Name}"
   exit 0
 }
 
-if ($exp.kind -ne 'run' -and $exp.kind -ne 'runtime_trap') {
-  Write-Host "FAIL ${Name}: unknown kind '$($exp.kind)'"
-  exit 1
-}
+if (-not ((Same $exp.kind 'run') -or (Same $exp.kind 'runtime_trap'))) { Write-Host "FAIL ${Name}: unknown kind '$($exp.kind)'"; exit 1 }
 
+# README harness contract: build must succeed (exit 0) for run/runtime_trap.
 $p = Invoke-FarmcBuild
-if ($p.ExitCode -ne 0) {
-  Write-Host "FAIL ${Name}: compile failed ($($p.ExitCode))"
-  Get-Content $errFile -ErrorAction SilentlyContinue | Write-Host
-  exit 1
-}
+if ($p.ExitCode -ne 0) { Write-Host "FAIL ${Name}: compile failed ($($p.ExitCode))"; Write-Host (Read-Text $errFile); exit 1 }
 
 Remove-Item -Force $outFile,$errFile -ErrorAction SilentlyContinue
-$p2 = Start-Process -FilePath $tmp -NoNewWindow -Wait -PassThru `
-  -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+$p2 = Start-Process -FilePath $tmp -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
 $ec = $p2.ExitCode
-$stdoutRaw = Get-Content -LiteralPath $outFile -Raw -ErrorAction SilentlyContinue
-if ($null -eq $stdoutRaw) { $stdoutRaw = "" }
-$stderrRaw = Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue
-if ($null -eq $stderrRaw) { $stderrRaw = "" }
-
-$stdoutGot = Norm-Newlines $stdoutRaw
-$stderrGot = Norm-Newlines $stderrRaw
+$stdoutGot = Norm-Newlines (Read-Text $outFile)
+$stderrGot = Norm-Newlines (Read-Text $errFile)
 
 if ($ec -ne $exp.exit) {
   Write-Host "FAIL ${Name}: exit $ec expected $($exp.exit)"
-  Write-Host "stdout: $stdoutGot"
-  Write-Host "stderr: $stderrGot"
+  Write-Host "stdout: $stdoutGot"; Write-Host "stderr: $stderrGot"
   exit 1
 }
 
-if ($exp.kind -eq 'run') {
-  if (-not $exp.hasStdout) {
-    Write-Host "FAIL ${Name}: run fixture missing # stdout: section"
-    exit 1
-  }
+if (Same $exp.kind 'run') {
+  if (-not $exp.hasStdout) { Write-Host "FAIL ${Name}: run fixture missing # stdout: block"; exit 1 }
   $wantOut = Norm-Newlines $exp.stdout
-  if ($stdoutGot -ne $wantOut) {
+  if (-not (Same $stdoutGot $wantOut)) {
     Write-Host "FAIL ${Name}: stdout mismatch"
-    Write-Host "GOT:<<<$stdoutGot>>>"
-    Write-Host "WANT:<<<$wantOut>>>"
+    Write-Host "GOT:<<<$stdoutGot>>>"; Write-Host "WANT:<<<$wantOut>>>"
     exit 1
   }
-  if ($stderrGot -ne "") {
+  # README: stderr MUST be empty for run.
+  if ($stderrGot.Length -ne 0) {
     Write-Host "FAIL ${Name}: unexpected stderr (run fixtures require empty stderr)"
     Write-Host "GOT_STDERR:<<<$stderrGot>>>"
     exit 1
   }
 }
 
-if ($exp.kind -eq 'runtime_trap') {
-  if (-not $exp.hasStderr) {
-    Write-Host "FAIL ${Name}: runtime_trap fixture missing # stderr: section"
-    exit 1
-  }
+if (Same $exp.kind 'runtime_trap') {
+  if (-not $exp.hasStderr) { Write-Host "FAIL ${Name}: runtime_trap fixture missing # stderr: block"; exit 1 }
   $wantErr = Norm-Newlines $exp.stderr
   if ($exp.stderrExact) {
-    if ($stderrGot -ne $wantErr) {
+    if (-not (Same $stderrGot $wantErr)) {
       Write-Host "FAIL ${Name}: stderr mismatch"
-      Write-Host "GOT:<<<$stderrGot>>>"
-      Write-Host "WANT:<<<$wantErr>>>"
+      Write-Host "GOT:<<<$stderrGot>>>"; Write-Host "WANT:<<<$wantErr>>>"
+      exit 1
+    }
+  } else {
+    # stderr_exact: false -> expected trap line(s) must appear (ordinal substring).
+    if ($stderrGot.IndexOf($wantErr, [StringComparison]::Ordinal) -lt 0) {
+      Write-Host "FAIL ${Name}: stderr mismatch (substring)"
+      Write-Host "GOT:<<<$stderrGot>>>"; Write-Host "WANT:<<<$wantErr>>>"
+      exit 1
+    }
+  }
+  if ($exp.hasStdout) {
+    $wantOut = Norm-Newlines $exp.stdout
+    if (-not (Same $stdoutGot $wantOut)) {
+      Write-Host "FAIL ${Name}: stdout mismatch"
+      Write-Host "GOT:<<<$stdoutGot>>>"; Write-Host "WANT:<<<$wantOut>>>"
       exit 1
     }
   }

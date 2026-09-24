@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <stdexcept>
 #ifdef _WIN32
 #include <windows.h>
 #include <process.h>
@@ -53,6 +54,50 @@ static std::string to_diag_path(const fs::path& p) {
 }
 
 
+// M1-core section 2.1: full UTF-8 well-formedness check over the raw bytes (Unicode Table 3-7).
+// Returns false and sets `bad` to the byte offset of the first byte of the first ill-formed sequence:
+// stray continuation bytes, C0/C1/F5..FF, overlongs (E0 80..9F, F0 80..8F), surrogates (ED A0..BF),
+// > U+10FFFF (F4 90..), and truncated sequences (including at EOF).
+static bool validate_utf8(const std::string& s, size_t& bad) {
+  const size_t n = s.size();
+  size_t i = 0;
+  while (i < n) {
+    unsigned char c = (unsigned char)s[i];
+    if (c < 0x80) { ++i; continue; }
+    size_t len; unsigned char lo = 0x80, hi = 0xBF;
+    if (c >= 0xC2 && c <= 0xDF) len = 2;
+    else if (c == 0xE0) { len = 3; lo = 0xA0; }
+    else if ((c >= 0xE1 && c <= 0xEC) || c == 0xEE || c == 0xEF) len = 3;
+    else if (c == 0xED) { len = 3; hi = 0x9F; }
+    else if (c == 0xF0) { len = 4; lo = 0x90; }
+    else if (c >= 0xF1 && c <= 0xF3) len = 4;
+    else if (c == 0xF4) { len = 4; hi = 0x8F; }
+    else { bad = i; return false; }                  // 80..BF stray, C0, C1, F5..FF
+    if (i + 1 >= n) { bad = i; return false; }       // truncated at EOF
+    unsigned char c1 = (unsigned char)s[i + 1];
+    if (c1 < lo || c1 > hi) { bad = i; return false; }
+    for (size_t k = 2; k < len; ++k) {
+      if (i + k >= n || (((unsigned char)s[i + k]) & 0xC0) != 0x80) { bad = i; return false; }
+    }
+    i += len;
+  }
+  return true;
+}
+
+// Line/column of byte offset `off` using the same rules as the lexer and all other diagnostics:
+// CR LF / lone CR / LF are one line break; column = 1 + number of Unicode scalars before `off`
+// on that line (bytes before `off` are known well-formed).
+static SourceLoc byte_loc(const std::string& s, size_t off) {
+  SourceLoc l{1, 1};
+  for (size_t i = 0; i < off && i < s.size(); ++i) {
+    unsigned char c = (unsigned char)s[i];
+    if (c == '\n') { l.line++; l.col = 1; }
+    else if (c == '\r') { if (i + 1 < off && s[i + 1] == '\n') ++i; l.line++; l.col = 1; }
+    else if ((c & 0xC0) != 0x80) l.col++;
+  }
+  return l;
+}
+
 struct Loader {
   Program prog;
   std::unordered_map<std::string, int> loaded; // canonical path -> index
@@ -74,13 +119,17 @@ struct Loader {
       error_at(path.string(), SourceLoc{1,1}, "E0304", "module `" + path.string() + "` not found");
       return false;
     }
-    std::string src = read_file(can);
-    if (src.empty() && fs::file_size(can) != 0) {
-      error_at(key, SourceLoc{1,1}, "E0304", "module not found");
-      return false;
+    std::string src = read_file(can);  // leading UTF-8 BOM accepted and stripped (section 2.1)
+    std::string dpath = to_diag_path(path);
+    {
+      size_t bad = 0;
+      if (!validate_utf8(src, bad)) {
+        // Exactly one E0001; common.hpp suppresses any further (cascade) diagnostics.
+        error_at(dpath, byte_loc(src, bad), "E0001", "invalid UTF-8 sequence");
+        return false;
+      }
     }
     stack.push_back(key);
-    std::string dpath = to_diag_path(path);
     Lexer lex(dpath, src);
     Parser parser(lex);
     Module m = parser.parse_module();
@@ -216,24 +265,57 @@ static std::string lower_ascii(std::string s) {
   return s;
 }
 
-// MSVC cl / cl.exe (and clang-cl MSVC-style driver) are unsupported as the C backend (spec section 7.1).
-static bool is_msvc_cc(const std::string& cc_raw) {
-  std::string s = cc_raw;
-  while (!s.empty() && (s.front() == '"' || s.front() == '\'')) s.erase(s.begin());
-  while (!s.empty() && (s.back() == '"' || s.back() == '\'')) s.pop_back();
-  std::string base = lower_ascii(fs::path(s).filename().string());
-  // Extension-stripped stem, case-insensitive: cl.exe / cl.bat / cl.cmd / CL.EXE -> cl
-  auto dot = base.find_last_of('.');
+static std::string trim_ws(const std::string& s) {
+  size_t a = s.find_first_not_of(" \t\r\n");
+  if (a == std::string::npos) return {};
+  size_t b = s.find_last_not_of(" \t\r\n");
+  return s.substr(a, b - a + 1);
+}
+
+// First command token of a FARM_CC value, honoring double quotes: `"C:\x y\cl.bat" /nologo` -> C:\x y\cl.bat
+static std::string first_cmd_token(const std::string& s0) {
+  std::string s = trim_ws(s0);
+  if (s.empty()) return s;
+  if (s[0] == '"') {
+    size_t e = s.find('"', 1);
+    return e == std::string::npos ? s.substr(1) : s.substr(1, e - 1);
+  }
+  size_t e = s.find_first_of(" \t");
+  return e == std::string::npos ? s : s.substr(0, e);
+}
+
+// Basename with extension stripped, case-insensitive, is `cl` (or `clang-cl`, MSVC-style driver).
+static bool token_is_msvc(const std::string& tok) {
+  std::string base = lower_ascii(fs::path(tok).filename().string());
+  size_t dot = base.find_last_of('.');
   std::string stem = (dot == std::string::npos) ? base : base.substr(0, dot);
-  if (stem == "cl") return true;
-  if (stem == "clang-cl") return true;
+  return stem == "cl" || stem == "clang-cl";
+}
+
+// MSVC cl is unsupported as the C backend (spec section 7.1): driver configuration error, exit 3.
+// FARM_CC is used as a command prefix, so it may carry arguments ("cl /nologo") or padding ("cl ").
+static bool is_msvc_cc(const std::string& cc_raw) {
+  std::string t = trim_ws(cc_raw);
+  if (t.empty()) return false;
+  if (token_is_msvc(first_cmd_token(t))) return true;
+  // Unquoted path containing spaces (e.g. C:\Program Files\...\cl.exe /nologo): check each
+  // space-delimited prefix that names an existing file, as Windows command resolution would.
+  if (t[0] != '"') {
+    for (size_t pos = t.find(' '); pos != std::string::npos; pos = t.find(' ', pos + 1)) {
+      std::string pre = t.substr(0, pos);
+      std::error_code ec;
+      if (token_is_msvc(pre) && (fs::exists(pre, ec) || fs::exists(pre + ".exe", ec))) return true;
+    }
+  }
   return false;
 }
 
-
 static std::string find_c_compiler() {
   const char* env = std::getenv("FARM_CC");
-  if (env && *env) return env;
+  if (env) {
+    std::string cc = trim_ws(env);
+    if (!cc.empty()) return cc;
+  }
 #ifdef _WIN32
   // Prefer clang from PATH via where.exe, return first line (full path)
   const char* cands[] = {"clang.exe", "clang", "gcc.exe", "gcc"};
@@ -354,6 +436,19 @@ static int cmd_build(std::vector<std::string> args) {
     }
   }
   if (infile.empty()) { std::cerr << "farmc build: missing file\n"; return 2; }
+  // Test hook for section 7.2 exit 4 (internal compiler error path); see docs/NOTES.md.
+  if (const char* ice = std::getenv("FARMC_TEST_ICE")) {
+    if (std::string(ice) == "1") throw std::logic_error("FARMC_TEST_ICE test hook");
+  }
+  {
+    // Section 7.2: unreadable/missing input is a driver I/O failure (exit 3), not a compile error.
+    std::error_code ec;
+    std::ifstream probe(fs::path(infile), std::ios::binary);
+    if (!fs::is_regular_file(fs::path(infile), ec) || !probe) {
+      std::cerr << "farmc: cannot read input file '" << infile << "'\n";
+      return 3;
+    }
+  }
 
   clear_diags();
   Loader loader;
@@ -446,7 +541,7 @@ static int cmd_run(std::vector<std::string> args) {
 
 } // namespace farm
 
-int main(int argc, char** argv) {
+static int farmc_main(int argc, char** argv) {
   using namespace farm;
   if (argc < 2) {
     std::cout << "farmc - Farmos compiler\nUsage: farmc <build|run|version|help> ...\n";
@@ -466,4 +561,17 @@ int main(int argc, char** argv) {
   if (cmd=="run") return cmd_run(args);
   std::cerr << "farmc: unknown command " << cmd << "\n";
   return 2;
+}
+
+// Section 7.2: any escaped exception is an internal compiler error (exit 4).
+int main(int argc, char** argv) {
+  try {
+    return farmc_main(argc, argv);
+  } catch (const std::exception& e) {
+    std::cerr << "farmc: internal compiler error: " << e.what() << "\n";
+    return 4;
+  } catch (...) {
+    std::cerr << "farmc: internal compiler error: unknown exception\n";
+    return 4;
+  }
 }

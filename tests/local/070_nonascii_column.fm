@@ -1,0 +1,4 @@
+function main(): int {
+  let s: string = "é中文"; let x: int = true;
+  return 0;
+}

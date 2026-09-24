@@ -1,0 +1,4 @@
+﻿function main(): int {
+  println("bom ok");
+  return 0;
+}

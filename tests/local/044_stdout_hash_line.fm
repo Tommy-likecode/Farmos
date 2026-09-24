@@ -1,0 +1,6 @@
+function main(): int {
+  println("# note");
+  println("# stderr:");
+  println("after");
+  return 0;
+}

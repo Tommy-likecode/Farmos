@@ -1,0 +1,4 @@
+function main(): int {
+  println("aí €b");
+  return 0;
+}

@@ -83,93 +83,73 @@ void farm_print_int(int64_t v) {
 }
 
 
-static int farm_bits_eq(double a, double b) {
-  uint64_t x, y;
-  memcpy(&x, &a, sizeof x);
-  memcpy(&y, &b, sizeof y);
-  return x == y;
-}
+/* Shortest round-trip digits via Ryu (Ulf Adams, PLDI 2018), vendored unmodified in runtime/ryu
+ * (upstream github.com/ulfjack/ryu @ 4c0618b0, Apache-2.0 OR BSL-1.0; see runtime/ryu/README.farmos.md).
+ * d2s_buffered_n yields the shortest digit string that round-trips to v; among shortest candidates it
+ * picks the one closest to the exact binary64 value (ties to even), which is exactly the digit choice
+ * Number::toString requires. Only built into programs that print/str a float (gc-sections). */
+#ifndef NDEBUG
+#define NDEBUG 1
+#define FARM_RT_UNDEF_NDEBUG 1
+#endif
+#define RYU_OPTIMIZE_SIZE 1
+#include "ryu/d2s.c"
+#ifdef FARM_RT_UNDEF_NDEBUG
+#undef NDEBUG
+#undef FARM_RT_UNDEF_NDEBUG
+#endif
 
-/* ECMAScript 2024 Number::toString for finite non-zero |v|. Writes into out, returns length. */
+/* ECMAScript 2024 Number::toString(x) layout for finite non-zero x, given the shortest digits
+ * s (k digits) and n such that x = s * 10^(n-k). */
 static int farm_format_float_finite(double v, char *out, size_t cap) {
+  char r[32];
+  int rl = d2s_buffered_n(v, r);           /* e.g. "-1.2345E-7", "1E21" */
+  r[rl] = 0;
+  const char *p = r;
   int neg = 0;
-  if (v < 0) { neg = 1; v = -v; }
-
-  /* Shortest round-trip: try 1..17 significant digits via %e, verify with strtod. */
-  char sci[64];
-  int best_sig = 17;
-  for (int sig = 1; sig <= 17; sig++) {
-    snprintf(sci, sizeof(sci), "%.*e", sig - 1, v);
-    if (farm_bits_eq(strtod(sci, NULL), v)) { best_sig = sig; break; }
+  if (*p == '-') { neg = 1; p++; }
+  char digits[24];
+  int k = 0;
+  while (*p && *p != 'E') { if (*p >= '0' && *p <= '9' && k < 20) digits[k++] = *p; p++; }
+  int e = 0, esign = 1;
+  if (*p == 'E') {
+    p++;
+    if (*p == '-') { esign = -1; p++; }
+    while (*p >= '0' && *p <= '9') { e = e * 10 + (*p - '0'); p++; }
   }
-  snprintf(sci, sizeof(sci), "%.*e", best_sig - 1, v);
-
-  /* Parse m.dddde±ee into digit string s and exponent n where value = s * 10^(n-k), k=len(s). */
-  char digits[32];
-  int nd = 0;
-  int exp10 = 0;
-  {
-    char *p = sci;
-    /* mantissa */
-    if (*p >= '0' && *p <= '9') digits[nd++] = *p++;
-    if (*p == '.') p++;
-    while (*p >= '0' && *p <= '9' && nd < (int)sizeof(digits) - 1) digits[nd++] = *p++;
-    if (*p == 'e' || *p == 'E') {
-      p++;
-      int esign = 1;
-      if (*p == '+') p++;
-      else if (*p == '-') { esign = -1; p++; }
-      int e = 0;
-      while (*p >= '0' && *p <= '9') { e = e * 10 + (*p - '0'); p++; }
-      exp10 = esign * e;
-    }
-  }
-  digits[nd] = 0;
-  /* Trim trailing zeros (keep at least one digit) */
-  while (nd > 1 && digits[nd - 1] == '0') nd--;
-  digits[nd] = 0;
-  int k = nd;
-  /* In %e form, value = (digits as 0.ddd with first digit before point) * 10^exp10
-     i.e. int(digits) * 10^(exp10 - (k-1)) = s * 10^(n-k) with n = exp10 + 1 */
-  int n = exp10 + 1;
+  e *= esign;
+  while (k > 1 && digits[k - 1] == '0') k--;
+  int n = e + 1;                           /* Ryu: d.ddd * 10^e  ->  n = e + 1 */
 
   char body[64];
   int blen = 0;
-  if (k <= n && n <= 21) {
-    /* decimal, integer part has n digits */
+  if (k <= n && n <= 21) {                 /* integer: digits then n-k zeros */
     for (int i = 0; i < n; i++) body[blen++] = (i < k) ? digits[i] : '0';
-    body[blen] = 0;
-  } else if (0 < n && n <= 21) {
-    /* n < k: digits with point after n */
+  } else if (0 < n && n <= 21) {           /* ddd.ddd */
     for (int i = 0; i < n; i++) body[blen++] = digits[i];
     body[blen++] = '.';
     for (int i = n; i < k; i++) body[blen++] = digits[i];
-    body[blen] = 0;
-  } else if (-6 < n && n <= 0) {
-    /* 0.000ddd */
+  } else if (-6 < n && n <= 0) {           /* 0.000ddd */
     body[blen++] = '0';
     body[blen++] = '.';
     for (int i = 0; i < -n; i++) body[blen++] = '0';
     for (int i = 0; i < k; i++) body[blen++] = digits[i];
-    body[blen] = 0;
-  } else {
-    /* scientific: d[.ddd]e±ee  (JS uses 'e' and '+' for positive exponents) */
+  } else {                                 /* d[.ddd]e+N / e-N */
     body[blen++] = digits[0];
     if (k > 1) {
       body[blen++] = '.';
       for (int i = 1; i < k; i++) body[blen++] = digits[i];
     }
     body[blen++] = 'e';
-    int e = n - 1;
-    if (e >= 0) body[blen++] = '+';
-    else { body[blen++] = '-'; e = -e; }
-    /* no leading-zero padding on exponent (JS: "1e-7" not "1e-07") */
-    char eb[16];
-    int el = snprintf(eb, sizeof(eb), "%d", e);
-    for (int i = 0; i < el; i++) body[blen++] = eb[i];
-    body[blen] = 0;
+    int x = n - 1;
+    body[blen++] = (x >= 0) ? '+' : '-';
+    if (x < 0) x = -x;
+    char eb[8];
+    int el = 0;
+    do { eb[el++] = (char)('0' + x % 10); x /= 10; } while (x > 0);
+    while (el > 0) body[blen++] = eb[--el];
   }
-
+  body[blen] = 0;
   if (neg) return snprintf(out, cap, "-%s", body);
   return snprintf(out, cap, "%s", body);
 }
