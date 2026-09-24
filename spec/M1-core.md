@@ -21,7 +21,7 @@ Related: `/workspace/farmos/PLAN.md`. Operator overloading is **deferred to M2**
 - Control flow: `if`/`else`, `while`, `for`, `break`, `continue`, `return`.
 - Modules: `import` / `export` across `.fm` files.
 - Built-ins: `print`, `println`, string length/concat (minimal).
-- `farmc build` producing a native executable on Linux and Windows.
+- `farmc build` producing a native **Windows x64** executable (C backend: **clang or gcc only**; MSVC `cl` unsupported). Linux is out of scope.
 - Diagnostics with path, 1-based line/column, and error codes.
 - Runtime traps for **integer** division by zero and array bounds (no GC). Float `/` by zero is IEEE 754 (no trap).
 - **TypeScript-style surface syntax** so M3 Three.js-style APIs port with near-identical structure (PLAN.md M3 AC).
@@ -50,7 +50,7 @@ Related: `/workspace/farmos/PLAN.md`. Operator overloading is **deferred to M2**
 - Statically typed; **JS/TS-like surface** so Three.js-style code reads naturally (M3 AC: near-identical structure).
 - No GC: program-lifetime arena for class instances (§4.7); value types for structs/arrays/primitives.
 - Runtime/stdlib linked only if used (`--gc-sections`).
-- Hello-world stripped binary ≤ 20 KB on Linux x64.
+- Hello-world stripped binary ≤ 20 KB on **Windows x64** (PLAN.md amended 2026-09-24).
 
 ---
 
@@ -158,7 +158,7 @@ escape ::= "\\" | "\"" | "\n" | "\r" | "\t" | "\0"
 ,  .  :  ;
 ```
 
-No `->` token in M1 (return types use `: Type`). No `++`/`--`. Compound assignment is sugar for `x = x ⊕ y` with single evaluation of `x`.
+No `->` token in M1 (return types use `: Type`). No `++`/`--`. Compound assignment semantics: see §5.13.
 
 ### 2.10 Semicolon rule
 
@@ -198,8 +198,12 @@ decl            ::= function_decl
 - `from` is a **contextual keyword**: recognized only in this production.
 - `from` string MUST be a relative path ending in `.fm` (e.g. `"./math.fm"`); `..` segments allowed under normal FS resolution (Resolved OQ-M1-14). Absolute and bare package names → `E0301`.
 - Import resolution: relative to the importing file's directory. Cycles → `E0302`.
-- Only `export`ed declarations are visible to importers.
-- Duplicate import of the same name → `E0303`.
+- **Per-module scoping (normative):** each `.fm` file is its own module scope.
+  - Non-`export`ed top-level names are **private** to that file. Two modules MAY each define the same private name without conflict.
+  - A name defined in module B is visible in module A if and only if it is `export`ed in B **and** `import`ed in A. Otherwise use in A is an undefined-name error `E0505`.
+  - `import { name } from "./b.fm"` where `name` is not exported from `b.fm` → `E0305` at the `name` token in the import list (path in the diagnostic is the **importing** file path as given to `farmc`).
+  - Duplicate import of the same name into one module → `E0303`.
+- **Non-normative:** the C backend MUST mangle top-level symbols per module so private names from different files do not collide at link time.
 
 ### 3.2 Struct and class
 
@@ -481,7 +485,11 @@ Locals MUST be assigned before read. Initializer required on `let`/`const` synta
 
 ### 5.5 Name resolution across modules
 
-Local → module (incl. imports) → `E0505` if missing. No qualified imports beyond `{ name }`.
+1. Innermost local scope chain.
+2. Current module scope, including names introduced by `import`.
+3. Else `E0505` (undefined name). Foreign exports are **not** implicitly visible.
+
+No qualified / namespace imports beyond `{ name }` list form. See §3.1 for export/import errors (`E0305`, `E0303`).
 
 ### 5.6 Entry point
 
@@ -498,6 +506,7 @@ function main(): int { ... }
 ### 5.7 Required return
 
 - Non-`void` functions/methods: every path returns (`E0508`).
+- **Diagnostic location (normative):** `E0508` MUST be reported at the position (line:col) of the closing `}` of the function or method body (column of that `}`).
 - `return;` only in `: void`; `return expr;` type-checked.
 
 ### 5.8 Unreachable code
@@ -519,6 +528,29 @@ Only in `while`/`for`; else `E0510`.
 ### 5.12 String comparison
 
 `==` / `!=` by UTF-8 bytes; ordered compares lexicographic by unsigned byte values.
+
+
+### 5.13 Compound assignment evaluation order
+
+A compound assignment `lv ⊕= rhs` (where `⊕` is `+`, `-`, `*`, `/`, or `%`) MUST behave as a read-modify-write of `lv` with these evaluation rules:
+
+1. Evaluate all **lvalue subexpressions** of `lv` **exactly once**, left to right:
+   - For `a[i]`: evaluate `a`, then evaluate `i`.
+   - For `o.field`: evaluate `o`.
+   - For a plain identifier: no subexpression evaluation beyond resolving the binding.
+2. Then evaluate `rhs` exactly once.
+3. Then read the current value of the located lvalue, compute `old ⊕ rhs`, and store the result into that same location.
+
+Therefore `a[f()] += 1` MUST call `f` **once** (to obtain the index), then read `a[index]`, add `1`, and write back. It MUST NOT evaluate `f` a second time for the write.
+
+Equivalent pseudo-expansion for `a[i] += rhs` (informative):
+
+```
+tmp_a = a;
+tmp_i = i;
+tmp_r = rhs;
+tmp_a[tmp_i] = tmp_a[tmp_i] + tmp_r;
+```
 
 ---
 
@@ -546,11 +578,16 @@ Built-in overloading only; user overloading deferred to M2+ (Resolved OQ-M1-15).
 - `bool` → `true` / `false`.
 - `int` → decimal, optional `-`, no `+`.
 - `string` → raw bytes.
-- **`float` (exact, deterministic):**
+- **`float` printing (REQUIRED, exact — not fixture-optional):** `print`/`println`/`str` of a `float` MUST emit the same character sequence as the ECMAScript 2024 abstract operation **`Number::toString`** on that IEEE 754 binary64 value, with one Farmos-specific signed-zero rule below. Implementations MUST implement this algorithm (or a proven-equivalent shortest round-trip converter such as Ryu that matches `Number::toString` on all binary64 values); matching only the M1 fixtures is **not** sufficient.
   1. NaN → `NaN`
   2. `+Infinity` → `Infinity`; `-Infinity` → `-Infinity`
-  3. `+0.0` → `0`; `-0.0` → `-0` (Resolved OQ-M1-10)
-  4. Finite non-zero: ECMAScript 2024 `Number::toString` (shortest round-trip; scientific when decimal exponent \(k < -6\) or \(k \geq 21\)).
+  3. **Signed zero (Resolved OQ-M1-10; overrides ES `ToString(-0)` which is `0`):** `+0.0` → `0`; `-0.0` → `-0`
+  4. Finite non-zero: exact `Number::toString` shortest round-trip. Informative consequences (normative via ES):
+     - Integral values in range (e.g. `100.0`) print **without** a decimal point: `100`
+     - Scientific notation uses `e` + explicit sign on the exponent, e.g. `1e+21`, `1e-7` (not `1e21` / `1e-07`)
+     - Decimal form when ES so requires, e.g. `0.1`, `123.456`
+     - Subnormals e.g. `5e-324`
+     - Famous rounding example: `0.1 + 0.2` prints `0.30000000000000004`
 
 ### 6.2 String ops
 
@@ -595,8 +632,10 @@ farmc help
 
 `farmc run` SHOULD be implemented (Resolved OQ-M1-09): build to a temp artifact, execute, forward the child exit code.
 
-- Default output: Linux `./<basename>`; Windows `.\<basename>.exe`.
+- **Host target:** Windows x64 only (PLAN.md). Linux builds are out of scope for M1 acceptance.
+- Default output name: `<basename>.exe` in the current directory (e.g. `hello.fm` → `hello.exe`). `-o` overrides the path; if `-o` has no `.exe` suffix, the driver SHOULD still produce a PE executable usable as that path.
 - `--emit-c`: write C11 and still link by default; `--keep-c` retains `.c`.
+- C compiler: **clang or gcc only**. Invoking MSVC `cl` is unsupported and MUST be treated as a driver configuration error (exit 3) if selected.
 
 ### 7.2 farmc exit codes
 
@@ -610,9 +649,11 @@ farmc help
 
 ### 7.3 C compiler flags (goals)
 
-Linux: `-std=c11 -Os -flto -ffunction-sections -fdata-sections -Wl,--gc-sections` then `strip`. Windows: size-oriented MSVC/clang-cl equivalents.
+Windows x64 with clang or gcc (MinGW), size-oriented, for example:
 
-The driver MUST NOT pass `-ffast-math`, `/fp:fast`, or equivalents that violate IEEE 754 float division or `NaN`/`Infinity` printing (Resolved OQ-M1-16).
+`-std=c11 -Os -flto -ffunction-sections -fdata-sections -Wl,--gc-sections` (gcc/clang GNU ld) or clang/lld equivalents, then strip the PE (see AC-M1-01).
+
+MSVC `cl` is out of scope. The driver MUST NOT pass `-ffast-math`, `/fp:fast`, or equivalents that violate IEEE 754 float division or `NaN`/`Infinity` printing (Resolved OQ-M1-16).
 
 ---
 
@@ -698,23 +739,23 @@ Write one stderr line `runtime error: <message>\n`, then exit:
 
 | ID | Criterion |
 |----|-----------|
-| AC-M1-01 | Linux x64: `farmc build spec/tests/M1/001_hello.fm -o /tmp/hello && strip --strip-all /tmp/hello && wc -c < /tmp/hello` ≤ **20480**. |
-| AC-M1-02 | ≥ **30** M1 tests pass in CI (this pack ≥ 40). |
-| AC-M1-03 | Compile failures use `path:line:col: error[E0xxx]:` with correct 1-based line/col. |
-| AC-M1-04 | Native binary on Linux and Windows. |
-| AC-M1-05 | `kind: run` stdout exact match (float rules §6.1). |
+| AC-M1-01 | **Binary size (Windows x64):** From the repo root on Windows: `farmc build spec\tests\M1\001_hello.fm -o hello.exe` then strip with `llvm-strip --strip-all hello.exe` (or `strip --strip-all hello.exe` if GNU binutils `strip` is on `PATH`). `(Get-Item .\hello.exe).Length` MUST be ≤ **20480**. |
+| AC-M1-02 | ≥ **30** M1 language tests pass via local `scripts\build_and_test.ps1` (ctest). This pack ships ≥ 49 fixtures. |
+| AC-M1-03 | Compile failures use `path:line:col: error[E0xxx]:` with correct 1-based line/col (Unicode scalar columns). |
+| AC-M1-04 | `farmc build` produces a native Windows x64 PE executable using clang or gcc only (not MSVC `cl`). Linux is out of scope. |
+| AC-M1-05 | `kind: run` stdout exact match; float formatting MUST follow §6.1 (`Number::toString` + signed-zero rule), not merely fixture snapshots. |
 | AC-M1-06 | Hello binary has no graphics/math stdlib; size proxy AC-M1-01. |
 | AC-M1-07 | `farmc` exit codes §7.2; user `main` return = process exit. |
-| AC-M1-08 | Integer div-by-zero and OOB traps: exact stderr + exit 101/102; float `/0` prints Infinity/NaN (no trap). |
-| AC-M1-09 | Multi-file import/export passes. |
-| AC-M1-10 | Soft: hello build ≤ 5 s typical CI (non-binding). |
+| AC-M1-08 | Integer div-by-zero and OOB traps: exact stderr + exit 101/102; float `/0` prints `Infinity`/`-Infinity`/`NaN` (no trap). |
+| AC-M1-09 | Multi-file import/export and per-module privacy tests pass. |
+| AC-M1-10 | Soft: hello build ≤ 5 s on TommyLaptop (non-binding). |
 | AC-M1-11 | Class instances may be returned/stored across scopes (program arena); no E0405. |
 
 ---
 
 ## 11. Test case index
 
-Fixtures: `spec/tests/README.md`. Multi-file: `022_modules/main.fm` + `022_modules.expected`.
+Fixtures: `spec/tests/README.md`. Multi-file dirs use `NNN_name/main.fm` + sibling `NNN_name.expected`. Diagnostic `# error:` lines MAY include a path prefix for multi-file tests.
 
 | ID | File | Category | Expected |
 |----|------|----------|----------|
@@ -762,6 +803,11 @@ Fixtures: `spec/tests/README.md`. Multi-file: `022_modules/main.fm` + `022_modul
 | 042 | `042_hex_literals.fm` | run | hex print values |
 | 043 | `043_hex_overflow.fm` | compile_error | E0101 |
 | 044 | `044_hex_incomplete.fm` | compile_error | E0104 |
+| 045 | `045_float_tostring.fm` | run | ES Number::toString samples |
+| 046 | `046_compound_assign_once.fm` | run | `a[f()] += 1` calls f once |
+| 047 | `047_module_private_ok` | run | two modules private `helper` |
+| 048 | `048_import_non_export` | compile_error | E0305 in main |
+| 049 | `049_export_not_imported` | compile_error | E0505 in main |
 
 ---
 
@@ -829,8 +875,17 @@ function makeCube(): Mesh {
 
 ---
 
+## Revision log
+
+| Rev | Date | Note |
+|-----|------|------|
+| FINAL | 2026-09-24 | PM-approved M1 |
+| Rev 2 | 2026-09-24 | Rev 2, 2026-09-24: clarifications (no scope change). E0508 at closing `}`; ES `Number::toString` required; per-module scoping; compound-assign eval once; Windows-x64-only ACs per PLAN.md; fixtures 045–049 |
+
 ## Document history
+
 
 - 2026-09-24: Initial M1 draft.
 - 2026-09-24: Rev. 2 — TypeScript-style surface; program-lifetime class arena; Three.js appendix; E0405/OQ-M1-12 removed; OQ-M1-17 added; test 041.
 - 2026-09-24: FINAL — PM resolved all OQs; hex literals; IEEE float `/0`; resolved-decisions table; tests 042–044; 038 → run.
+- 2026-09-24: Rev 2 clarifications (no scope change) — see Revision log; Windows-only ACs; tests 045–049.

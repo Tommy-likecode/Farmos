@@ -2,6 +2,13 @@
 *.exe
 *.obj
 *.o
+*.a
 .vs/
 CMakeCache.txt
 CMakeFiles/
+Testing/
+cmake_install.cmake
+Makefile
+CTestTestfile.cmake
+*.user
+__pycache__/

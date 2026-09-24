@@ -261,7 +261,9 @@ void Parser::parse_import(Module& m) {
   expect(TokKind::LBrace, "E0202", "expected `{`");
   do {
     if (!check(TokKind::Ident)) { error_at(lex_.path(), cur_.loc, "E0202", "expected import name"); break; }
-    d.names.push_back(cur_.text); advance();
+    d.names.push_back(cur_.text);
+    d.name_locs.push_back(cur_.loc);
+    advance();
   } while (match(TokKind::Comma));
   expect(TokKind::RBrace, "E0202", "expected `}`");
   // contextual from
@@ -395,7 +397,9 @@ StmtPtr Parser::parse_block() {
   while (!check(TokKind::RBrace) && !check(TokKind::Eof)) {
     s->stmts.push_back(parse_stmt());
   }
+  SourceLoc end = cur_.loc;
   expect(TokKind::RBrace, "E0202", "expected `}`");
+  s->end_loc = (prev_.kind == TokKind::RBrace) ? prev_.loc : end;
   return s;
 }
 

@@ -89,95 +89,106 @@ struct Loader {
   }
 
   void bind_imports() {
-    // For each import, check exports and inject into maps with visibility
-    // Build export sets first — maps already collect all; filter by export when resolving names from other modules.
-    // Simpler M1 approach: put only exported decls from non-main into global maps; main's all decls go in.
-    // Actually collect_decls in sema puts everything. We'll rebuild maps properly here.
+    for (size_t i = 0; i < prog.modules.size(); ++i) {
+      auto& mod = prog.modules[i];
+      mod.id = (int)i;
+      mod.prefix = "m" + std::to_string(i);
+      mod.vis_structs.clear();
+      mod.vis_classes.clear();
+      mod.vis_functions.clear();
+      mod.vis_consts.clear();
 
-    prog.structs.clear();
-    prog.classes.clear();
-    prog.functions.clear();
-    prog.consts.clear();
-
-    // First pass: all local decls into per-module, then imports add aliases
-    // Global map: name -> decl. Import brings name into importing module's scope via global map (M1 flat).
-
-    struct PendingImport {
-      std::string importer;
-      ImportDecl* im;
-      std::string dep_key;
-    };
-    std::vector<PendingImport> pending;
-
-    for (auto& m : prog.modules) {
-      auto add_all = [&](bool only_export) {
-        for (auto& s : m.structs) if (!only_export || s.exported) {
-          if (prog.structs.count(s.name)) error_at(m.path, s.loc, "E0502", "duplicate definition of `" + s.name + "`");
-          prog.structs[s.name] = &s;
+      auto put_unique = [&](auto& map, const std::string& name, auto* ptr, SourceLoc loc) {
+        if (map.count(name)) {
+          error_at(mod.path, loc, "E0502", "duplicate definition of `" + name + "`");
+          return;
         }
-        for (auto& c : m.classes) if (!only_export || c.exported) {
-          if (prog.classes.count(c.name)) error_at(m.path, c.loc, "E0502", "duplicate definition of `" + c.name + "`");
-          prog.classes[c.name] = &c;
-        }
-        for (auto& f : m.functions) if (!only_export || f.exported) {
-          if (prog.functions.count(f.name)) error_at(m.path, f.loc, "E0502", "duplicate definition of `" + f.name + "`");
-          prog.functions[f.name] = &f;
-        }
-        for (auto& c : m.consts) if (!only_export || c.exported) {
-          if (prog.consts.count(c.name)) error_at(m.path, c.loc, "E0502", "duplicate definition of `" + c.name + "`");
-          prog.consts[c.name] = &c;
-        }
+        map[name] = ptr;
       };
-      // Always register module's own decls (exported or not) for use within... 
-      // Cross-module: only exports. Same module uses all.
-      // Flat namespace: register ALL decls from all modules; import just checks export and duplicate import.
-      for (auto& s : m.structs) {
-        if (prog.structs.count(s.name)) error_at(m.path, s.loc, "E0502", "duplicate definition of `" + s.name + "`");
-        prog.structs[s.name] = &s;
+
+      for (auto& s : mod.structs) {
+        s.module_id = mod.id;
+        s.c_sym = mod.prefix + "_" + s.name;
+        put_unique(mod.vis_structs, s.name, &s, s.loc);
       }
-      for (auto& c : m.classes) {
-        if (prog.classes.count(c.name)) error_at(m.path, c.loc, "E0502", "duplicate definition of `" + c.name + "`");
-        prog.classes[c.name] = &c;
+      for (auto& c : mod.classes) {
+        c.module_id = mod.id;
+        c.c_sym = mod.prefix + "_" + c.name;
+        put_unique(mod.vis_classes, c.name, &c, c.loc);
       }
-      for (auto& f : m.functions) {
-        if (prog.functions.count(f.name)) error_at(m.path, f.loc, "E0502", "duplicate definition of `" + f.name + "`");
-        prog.functions[f.name] = &f;
+      for (auto& f : mod.functions) {
+        f.module_id = mod.id;
+        f.c_sym = "fn_" + mod.prefix + "_" + f.name;
+        put_unique(mod.vis_functions, f.name, &f, f.loc);
       }
-      for (auto& c : m.consts) {
-        if (prog.consts.count(c.name)) error_at(m.path, c.loc, "E0502", "duplicate definition of `" + c.name + "`");
-        prog.consts[c.name] = &c;
+      for (auto& c : mod.consts) {
+        c.module_id = mod.id;
+        c.c_sym = "v_" + mod.prefix + "_" + c.name;
+        put_unique(mod.vis_consts, c.name, &c, c.loc);
       }
     }
 
-    // Validate imports: exported, no duplicate names in import list
-    for (auto& m : prog.modules) {
+    for (auto& mod : prog.modules) {
       std::unordered_set<std::string> imported;
-      for (auto& im : m.imports) {
+      for (auto& im : mod.imports) {
         if (!is_relative_fm(im.path)) continue;
-        fs::path dep = resolve_import(m.path, im.path);
+        fs::path dep = resolve_import(mod.path, im.path);
         std::error_code ec;
         std::string dep_key = fs::weakly_canonical(dep, ec).string();
         Module* dep_m = nullptr;
         for (auto& x : prog.modules) if (x.path == dep_key) { dep_m = &x; break; }
         if (!dep_m) continue;
-        for (auto& name : im.names) {
+        for (size_t ni = 0; ni < im.names.size(); ++ni) {
+          const std::string& name = im.names[ni];
+          SourceLoc nloc = (ni < im.name_locs.size()) ? im.name_locs[ni] : im.loc;
           if (imported.count(name)) {
-            error_at(m.path, im.loc, "E0303", "duplicate import of `" + name + "`");
+            error_at(mod.path, nloc, "E0303", "duplicate import of `" + name + "`");
             continue;
           }
           imported.insert(name);
-          bool found=false, exported=false;
-          for (auto& f : dep_m->functions) if (f.name==name) { found=true; exported=f.exported; break; }
-          for (auto& c : dep_m->consts) if (c.name==name) { found=true; exported=c.exported; break; }
-          for (auto& s : dep_m->structs) if (s.name==name) { found=true; exported=s.exported; break; }
-          for (auto& c : dep_m->classes) if (c.name==name) { found=true; exported=c.exported; break; }
-          if (!found || !exported)
-            error_at(m.path, im.loc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
+
+          auto clash = [&]() {
+            return mod.vis_functions.count(name) || mod.vis_consts.count(name) ||
+                   mod.vis_structs.count(name) || mod.vis_classes.count(name);
+          };
+
+          bool bound = false;
+          for (auto& f : dep_m->functions) if (f.name == name) {
+            if (!f.exported) error_at(mod.path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
+            else if (clash()) error_at(mod.path, nloc, "E0502", "duplicate definition of `" + name + "`");
+            else mod.vis_functions[name] = &f;
+            bound = true; break;
+          }
+          if (bound) continue;
+          for (auto& c : dep_m->consts) if (c.name == name) {
+            if (!c.exported) error_at(mod.path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
+            else if (clash()) error_at(mod.path, nloc, "E0502", "duplicate definition of `" + name + "`");
+            else mod.vis_consts[name] = &c;
+            bound = true; break;
+          }
+          if (bound) continue;
+          for (auto& s : dep_m->structs) if (s.name == name) {
+            if (!s.exported) error_at(mod.path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
+            else if (clash()) error_at(mod.path, nloc, "E0502", "duplicate definition of `" + name + "`");
+            else mod.vis_structs[name] = &s;
+            bound = true; break;
+          }
+          if (bound) continue;
+          for (auto& c : dep_m->classes) if (c.name == name) {
+            if (!c.exported) error_at(mod.path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
+            else if (clash()) error_at(mod.path, nloc, "E0502", "duplicate definition of `" + name + "`");
+            else mod.vis_classes[name] = &c;
+            bound = true; break;
+          }
+          if (!bound) {
+            error_at(mod.path, nloc, "E0305", "`" + name + "` is not exported from `" + im.path + "`");
+          }
         }
       }
     }
   }
 };
+
 
 static std::string find_c_compiler() {
   const char* env = std::getenv("FARM_CC");

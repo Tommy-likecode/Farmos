@@ -27,16 +27,11 @@ struct Scope {
     }
     return nullptr;
   }
-  bool defined_in_chain_before(const std::string& n, Scope* stop) {
-    for (Scope* s = this; s && s != stop; s = s->parent) {
-      if (s->vars.count(n)) return true;
-    }
-    return false;
-  }
 };
 
 struct Sema {
   Program& prog;
+  Module* cur_mod = nullptr;
   std::string path;
   ClassDecl* cur_class = nullptr;
   TypePtr cur_ret;
@@ -47,6 +42,41 @@ struct Sema {
 
   explicit Sema(Program& p) : prog(p) {}
 
+  StructDecl* find_struct(const std::string& n) {
+    if (!cur_mod) return nullptr;
+    auto it = cur_mod->vis_structs.find(n);
+    return it == cur_mod->vis_structs.end() ? nullptr : it->second;
+  }
+  ClassDecl* find_class(const std::string& n) {
+    if (!cur_mod) return nullptr;
+    auto it = cur_mod->vis_classes.find(n);
+    return it == cur_mod->vis_classes.end() ? nullptr : it->second;
+  }
+  FunctionDecl* find_fn(const std::string& n) {
+    if (!cur_mod) return nullptr;
+    auto it = cur_mod->vis_functions.find(n);
+    return it == cur_mod->vis_functions.end() ? nullptr : it->second;
+  }
+  ConstDecl* find_const(const std::string& n) {
+    if (!cur_mod) return nullptr;
+    auto it = cur_mod->vis_consts.find(n);
+    return it == cur_mod->vis_consts.end() ? nullptr : it->second;
+  }
+
+  // For class/struct type identity across modules, resolve by c_sym globally when needed
+  ClassDecl* find_class_any(const std::string& c_sym) {
+    for (auto& m : prog.modules)
+      for (auto& c : m.classes)
+        if (c.c_sym == c_sym) return &c;
+    return nullptr;
+  }
+  StructDecl* find_struct_any(const std::string& c_sym) {
+    for (auto& m : prog.modules)
+      for (auto& s : m.structs)
+        if (s.c_sym == c_sym) return &s;
+    return nullptr;
+  }
+
   TypePtr finalize_type(TypePtr t, SourceLoc loc, bool allow_void=false) {
     if (!t) return Type::ty_error();
     if (t->kind == TypeKind::Void) {
@@ -54,8 +84,16 @@ struct Sema {
       return t;
     }
     if (t->kind == TypeKind::Struct || t->kind == TypeKind::Class) {
-      if (prog.structs.count(t->name)) return Type::ty_struct(t->name);
-      if (prog.classes.count(t->name)) return Type::ty_class(t->name);
+      if (auto* s = find_struct(t->name)) {
+        auto nt = Type::ty_struct(t->name);
+        nt->name = s->c_sym; // store c_sym in type name for emit
+        // Keep source name? Emit uses type->name for struct tags.
+        // Use c_sym as the Type::name for uniqueness.
+        return Type::ty_struct(s->c_sym);
+      }
+      if (auto* c = find_class(t->name)) {
+        return Type::ty_class(c->c_sym);
+      }
       error_at(path, loc, "E0409", "undefined type `" + t->name + "`");
       return Type::ty_error();
     }
@@ -63,10 +101,6 @@ struct Sema {
       t->elem = finalize_type(t->elem, loc, false);
     }
     return t;
-  }
-
-  void register_module_exports() {
-    // already linked into prog maps by driver before analyze
   }
 
   TypePtr check_binary(Expr& e) {
@@ -86,7 +120,6 @@ struct Sema {
       if (!type_eq(lt, rt)) error_at(path, e.loc, "E0408", "type mismatch: expected `" + lt->str() + "`, found `" + rt->str() + "`");
       return Type::ty_bool();
     }
-    // arithmetic
     if ((op==TokKind::Plus||op==TokKind::Minus||op==TokKind::Star||op==TokKind::Slash||op==TokKind::Percent)) {
       if ((lt->kind==TypeKind::Int && rt->kind==TypeKind::Float) || (lt->kind==TypeKind::Float && rt->kind==TypeKind::Int)) {
         error_at(path, e.loc, "E0402", "mixed `int`/`float` arithmetic without explicit conversion");
@@ -113,19 +146,19 @@ struct Sema {
       case ExprKind::StringLit: e->type = Type::ty_string(); break;
       case ExprKind::This: {
         if (!cur_class) { error_at(path, e->loc, "E0417", "`this` not allowed outside class method/constructor"); e->type=Type::ty_error(); }
-        else e->type = Type::ty_class(cur_class->name);
+        else e->type = Type::ty_class(cur_class->c_sym);
         e->is_lvalue = true;
         break;
       }
       case ExprKind::Ident: {
         if (auto* v = scope->find(e->name)) {
           e->type = v->type; e->is_lvalue = true; e->is_const_binding = v->is_const;
-        } else if (prog.consts.count(e->name)) {
-          e->type = prog.consts[e->name]->type; e->is_lvalue = false; e->is_const_binding = true;
-        } else if (prog.functions.count(e->name)) {
-          // function as value not allowed unless call — mark as special via mangled
-          e->mangled = e->name;
-          e->type = Type::ty_error(); // fixed at call
+        } else if (auto* c = find_const(e->name)) {
+          e->type = c->type; e->is_lvalue = false; e->is_const_binding = true;
+          e->mangled = c->c_sym;
+        } else if (find_fn(e->name)) {
+          e->mangled = find_fn(e->name)->c_sym;
+          e->type = Type::ty_error();
         } else {
           error_at(path, e->loc, "E0505", "undefined name `" + e->name + "`");
           e->type = Type::ty_error();
@@ -168,19 +201,21 @@ struct Sema {
         check_expr(e->lhs);
         auto t = e->lhs->type;
         if (t->kind == TypeKind::Struct) {
-          auto* sd = prog.structs[t->name];
+          auto* sd = find_struct_any(t->name);
+          if (!sd) { error_at(path, e->loc, "E0505", "undefined name `" + e->name + "`"); e->type=Type::ty_error(); break; }
           bool found=false;
           for (auto& f : sd->fields) if (f.name==e->name) { e->type=f.type; found=true; break; }
           if (!found) { error_at(path, e->loc, "E0505", "undefined name `" + e->name + "`"); e->type=Type::ty_error(); }
           e->is_lvalue = true;
-          e->is_const_binding = e->lhs->is_const_binding; // shallow: const struct forbids field assign
+          e->is_const_binding = e->lhs->is_const_binding;
         } else if (t->kind == TypeKind::Class) {
-          auto* cd = prog.classes[t->name];
+          auto* cd = find_class_any(t->name);
+          if (!cd) { error_at(path, e->loc, "E0505", "undefined name `" + e->name + "`"); e->type=Type::ty_error(); break; }
           bool found=false;
           for (auto& f : cd->fields) if (f.name==e->name) { e->type=f.type; found=true; break; }
           if (!found) {
             for (auto& md : cd->methods) if (!md.is_ctor && md.name==e->name) {
-              e->mangled = t->name + "__" + e->name;
+              e->mangled = cd->c_sym + "__" + e->name;
               e->type = Type::ty_error();
               found = true; break;
             }
@@ -190,7 +225,7 @@ struct Sema {
             e->type = Type::ty_error();
           }
           e->is_lvalue = true;
-          e->is_const_binding = false; // shallow const on class
+          e->is_const_binding = false;
         } else {
           error_at(path, e->loc, "E0403", "operator `.` not defined for `" + t->str() + "`");
           e->type = Type::ty_error();
@@ -198,10 +233,8 @@ struct Sema {
         break;
       }
       case ExprKind::Call: {
-        // callee
         if (e->lhs->kind == ExprKind::Ident) {
           std::string n = e->lhs->name;
-          // builtins
           if (n=="print"||n=="println"||n=="len"||n=="push"||n=="str"||n=="int"||n=="float") {
             for (auto& a : e->args) check_expr(a);
             e->mangled = n;
@@ -253,8 +286,7 @@ struct Sema {
             }
             break;
           }
-          if (prog.functions.count(n)) {
-            auto* fn = prog.functions[n];
+          if (auto* fn = find_fn(n)) {
             for (auto& a : e->args) check_expr(a);
             if (e->args.size() != fn->params.size())
               error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(fn->params.size()) + ", found " + std::to_string(e->args.size()));
@@ -263,20 +295,19 @@ struct Sema {
                 if (!type_eq(e->args[i]->type, fn->params[i].type))
                   error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected `" + fn->params[i].type->str() + "`, found `" + e->args[i]->type->str() + "`");
             }
-            e->mangled = n;
+            e->mangled = fn->c_sym;
             e->type = fn->ret;
             break;
           }
         }
-        // method call: obj.method(args)
         if (e->lhs->kind == ExprKind::Field) {
           check_expr(e->lhs->lhs);
           for (auto& a : e->args) check_expr(a);
           auto rt = e->lhs->lhs->type;
           if (rt->kind == TypeKind::Class) {
-            auto* cd = prog.classes[rt->name];
+            auto* cd = find_class_any(rt->name);
             MethodDecl* md = nullptr;
-            for (auto& m : cd->methods) if (!m.is_ctor && m.name == e->lhs->name) { md = &m; break; }
+            if (cd) for (auto& m : cd->methods) if (!m.is_ctor && m.name == e->lhs->name) { md = &m; break; }
             if (!md) { error_at(path, e->loc, "E0505", "undefined name `" + e->lhs->name + "`"); e->type=Type::ty_error(); }
             else {
               if (e->args.size()!=md->params.size())
@@ -284,7 +315,7 @@ struct Sema {
               else for (size_t i=0;i<e->args.size();++i)
                 if (!type_eq(e->args[i]->type, md->params[i].type))
                   error_at(path, e->args[i]->loc, "E0408", "type mismatch");
-              e->mangled = rt->name + "__" + md->name;
+              e->mangled = cd->c_sym + "__" + md->name;
               e->type = md->ret;
             }
           } else {
@@ -293,7 +324,6 @@ struct Sema {
           }
           break;
         }
-        // fallback
         check_expr(e->lhs);
         for (auto& a : e->args) check_expr(a);
         error_at(path, e->loc, "E0505", "undefined name");
@@ -303,7 +333,6 @@ struct Sema {
       case ExprKind::ArrayLit: {
         for (auto& a : e->args) check_expr(a);
         if (e->args.empty()) {
-          // type must come from annotation — leave as error until let
           e->type = Type::ty_error();
           e->mangled = "empty_array";
         } else {
@@ -316,13 +345,13 @@ struct Sema {
         break;
       }
       case ExprKind::StructLit: {
-        if (!prog.structs.count(e->type_name)) {
-          if (prog.classes.count(e->type_name))
+        auto* sd = find_struct(e->type_name);
+        if (!sd) {
+          if (find_class(e->type_name))
             error_at(path, e->loc, "E0416", "classes must be constructed with `new`");
           else error_at(path, e->loc, "E0409", "undefined type `" + e->type_name + "`");
           e->type = Type::ty_error(); break;
         }
-        auto* sd = prog.structs[e->type_name];
         std::unordered_set<std::string> seen;
         for (auto& fv : e->fields) {
           check_expr(fv.second);
@@ -339,13 +368,13 @@ struct Sema {
         }
         for (auto& f : sd->fields) if (!seen.count(f.name))
           error_at(path, e->loc, "E0404", "struct literal missing or duplicate field `" + f.name + "`");
-        e->type = Type::ty_struct(e->type_name);
+        e->type = Type::ty_struct(sd->c_sym);
+        e->mangled = sd->c_sym;
         break;
       }
       case ExprKind::New: {
         for (auto& a : e->args) check_expr(a);
-        if (prog.classes.count(e->type_name)) {
-          auto* cd = prog.classes[e->type_name];
+        if (auto* cd = find_class(e->type_name)) {
           if (cd->ctor_index < 0) { e->type=Type::ty_error(); break; }
           auto& ctor = cd->methods[cd->ctor_index];
           if (e->args.size()!=ctor.params.size())
@@ -353,15 +382,16 @@ struct Sema {
           else for (size_t i=0;i<e->args.size();++i)
             if (!type_eq(e->args[i]->type, ctor.params[i].type))
               error_at(path, e->args[i]->loc, "E0408", "type mismatch");
-          e->type = Type::ty_class(e->type_name);
-        } else if (prog.structs.count(e->type_name)) {
-          auto* sd = prog.structs[e->type_name];
+          e->type = Type::ty_class(cd->c_sym);
+          e->mangled = cd->c_sym;
+        } else if (auto* sd = find_struct(e->type_name)) {
           if (e->args.size()!=sd->fields.size())
             error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(sd->fields.size()) + ", found " + std::to_string(e->args.size()));
           else for (size_t i=0;i<e->args.size();++i)
             if (!type_eq(e->args[i]->type, sd->fields[i].type))
               error_at(path, e->args[i]->loc, "E0408", "type mismatch");
-          e->type = Type::ty_struct(e->type_name);
+          e->type = Type::ty_struct(sd->c_sym);
+          e->mangled = sd->c_sym;
         } else {
           error_at(path, e->loc, "E0409", "undefined type `" + e->type_name + "`");
           e->type = Type::ty_error();
@@ -407,18 +437,15 @@ struct Sema {
         TypePtr ty;
         if (s->has_type_ann) {
           ty = finalize_type(s->decl_type, s->loc, false);
-          // empty array lit with dyn annotation
           if (s->init->kind==ExprKind::ArrayLit && s->init->args.empty() && ty->kind==TypeKind::DynArray) {
             s->init->type = ty;
           } else if (s->init->kind==ExprKind::ArrayLit && ty->kind==TypeKind::DynArray) {
-            // convert fixed lit to dyn
             if (!s->init->args.empty() && type_eq(s->init->args[0]->type, ty->elem))
               s->init->type = ty;
             else if (!type_eq(s->init->type, ty) && !(s->init->type->kind==TypeKind::FixedArray && type_eq(s->init->type->elem, ty->elem)))
               error_at(path, s->init->loc, "E0408", "type mismatch: expected `" + ty->str() + "`, found `" + s->init->type->str() + "`");
             else s->init->type = ty;
           } else if (!type_eq(s->init->type, ty)) {
-            // special: fixed array lit assigned to fixed
             if (!(s->init->type->kind==TypeKind::FixedArray && ty->kind==TypeKind::FixedArray && type_eq(s->init->type->elem, ty->elem) && s->init->type->fixed_len==ty->fixed_len))
               error_at(path, s->init->loc, "E0408", "type mismatch: expected `" + ty->str() + "`, found `" + s->init->type->str() + "`");
           }
@@ -438,8 +465,7 @@ struct Sema {
         check_expr(s->lhs); check_expr(s->rhs);
         check_lvalue_mut(s->lhs);
         if (s->assign_op != TokKind::Assign) {
-          // compound: check binary on types
-          Expr tmp; tmp.kind=ExprKind::Binary; tmp.op = 
+          Expr tmp; tmp.kind=ExprKind::Binary; tmp.op =
             s->assign_op==TokKind::PlusEq?TokKind::Plus:
             s->assign_op==TokKind::MinusEq?TokKind::Minus:
             s->assign_op==TokKind::StarEq?TokKind::Star:
@@ -521,16 +547,7 @@ struct Sema {
     bool ret=false;
     check_stmt(f.body, &ret);
     if (f.ret->kind != TypeKind::Void && !ret) {
-      // Report at closing `}` of body: body.loc is `{`; approximate with last stmt or body loc.
-      // Tests expect the `}` line: compute from body — use a synthetic loc on next line after last stmt.
-      SourceLoc el = f.body->loc;
-      if (!f.body->stmts.empty()) {
-        el = f.body->stmts.back()->loc;
-        el.line += 1; el.col = 1; // closing brace typically next line col 1
-      } else {
-        el.col = 1;
-      }
-      // Better: parser should set end_loc. For fixture 026, body has one stmt at line 2, `}` at 3:1.
+      SourceLoc el = f.body->end_loc.line ? f.body->end_loc : f.body->loc;
       error_at(path, el, "E0508", "missing return on some paths in `" + f.name + "`");
     }
     scope = nullptr;
@@ -543,7 +560,6 @@ struct Sema {
     bool ret=false;
     check_stmt(m.body, &ret);
     if (m.is_ctor) {
-      // each field assigned at least once — simple scan
       std::unordered_set<std::string> assigned;
       std::function<void(StmtPtr)> scan = [&](StmtPtr s) {
         if (!s) return;
@@ -558,7 +574,8 @@ struct Sema {
         if (!assigned.count(f.name))
           error_at(path, m.loc, "E0418", "constructor does not assign field `" + f.name + "`");
     } else if (m.ret->kind != TypeKind::Void && !ret) {
-      error_at(path, m.body->loc, "E0508", "missing return on some paths in `" + m.name + "`");
+      SourceLoc el = m.body->end_loc.line ? m.body->end_loc : m.body->loc;
+      error_at(path, el, "E0508", "missing return on some paths in `" + m.name + "`");
     }
     scope = nullptr;
   }
@@ -571,10 +588,9 @@ struct Sema {
       if (!type_eq(c.init->type, c.type))
         error_at(path, c.init->loc, "E0408", "type mismatch");
     } else c.type = c.init->type;
-    // top-level: no class new
     std::function<bool(ExprPtr)> has_class_new = [&](ExprPtr e)->bool {
       if (!e) return false;
-      if (e->kind==ExprKind::New && prog.classes.count(e->type_name)) return true;
+      if (e->kind==ExprKind::New && find_class(e->type_name)) return true;
       if (has_class_new(e->lhs)||has_class_new(e->rhs)) return true;
       for (auto& a:e->args) if (has_class_new(a)) return true;
       for (auto& f:e->fields) if (has_class_new(f.second)) return true;
@@ -586,8 +602,8 @@ struct Sema {
   }
 
   void run() {
-    // finalize types on decls
     for (auto& m : prog.modules) {
+      cur_mod = &m;
       path = m.path;
       for (auto& s : m.structs)
         for (auto& f : s.fields) f.type = finalize_type(f.type, f.loc, false);
@@ -609,24 +625,33 @@ struct Sema {
       }
     }
 
-    // main check
     Module* mainm = nullptr;
-    for (auto& m : prog.modules) if (m.is_main) mainm = &m;
-    if (!mainm || !prog.functions.count("main")) {
-      error_at(prog.modules[0].path, SourceLoc{1,1}, "E0506", "missing or invalid `function main(): int` in main file");
+    FunctionDecl* mainfn = nullptr;
+    for (auto& m : prog.modules) if (m.is_main) {
+      mainm = &m;
+      auto it = m.vis_functions.find("main");
+      if (it != m.vis_functions.end()) mainfn = it->second;
+    }
+    if (!mainm || !mainfn) {
+      error_at(prog.modules.empty() ? std::string("<input>") : prog.modules[0].path,
+               SourceLoc{1,1}, "E0506", "missing or invalid `function main(): int` in main file");
     } else {
-      auto* fn = prog.functions["main"];
-      if (fn->params.size()!=0 || fn->ret->kind != TypeKind::Int)
-        error_at(mainm->path, fn->loc, "E0506", "missing or invalid `function main(): int` in main file");
+      if (mainfn->params.size()!=0 || mainfn->ret->kind != TypeKind::Int)
+        error_at(mainm->path, mainfn->loc, "E0506", "missing or invalid `function main(): int` in main file");
+    }
+    for (auto& m : prog.modules) {
+      for (auto& f : m.functions) {
+        if (!m.is_main && f.name == "main")
+          error_at(m.path, f.loc, "E0507", "`main` is only allowed in the main file");
+      }
     }
 
-    // consts first (init)
     for (auto& m : prog.modules) {
-      path = m.path;
+      cur_mod = &m; path = m.path;
       for (auto& c : m.consts) check_const(c);
     }
     for (auto& m : prog.modules) {
-      path = m.path;
+      cur_mod = &m; path = m.path;
       for (auto& f : m.functions) check_function(f);
       for (auto& c : m.classes)
         for (auto& md : c.methods) check_method(c, md);

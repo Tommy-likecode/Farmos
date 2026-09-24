@@ -1,0 +1,7 @@
+import { from_a } from "./a.fm";
+import { from_b } from "./b.fm";
+function main(): int {
+  println(from_a());
+  println(from_b());
+  return 0;
+}

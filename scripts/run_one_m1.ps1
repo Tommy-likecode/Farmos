@@ -21,8 +21,12 @@ function Parse-Expected([string]$path) {
     if ($line -match '^# kind:\s*(\S+)') { $kind = $Matches[1]; continue }
     if ($line -match '^# exit:\s*(\d+)') { $exit = [int]$Matches[1]; continue }
     if ($line -match '^# stderr_exact:\s*true') { $stderrExact = $true; continue }
-    if ($line -match '^# error:\s*(\d+):(\d+):\s*(E\d+)') {
-      $errors += @{ line=[int]$Matches[1]; col=[int]$Matches[2]; code=$Matches[3] }
+    if ($line -match '^# error:\s*(\d+):(\d+):\s*(E\d+)\s*$') {
+      $errors += @{ line=[int]$Matches[1]; col=[int]$Matches[2]; code=$Matches[3]; path="" }
+      continue
+    }
+    if ($line -match '^# error:\s*(.+):(\d+):(\d+):\s*(E\d+)\s*$') {
+      $errors += @{ line=[int]$Matches[2]; col=[int]$Matches[3]; code=$Matches[4]; path=$Matches[1] }
       continue
     }
     if ($line -eq '# stdout:') { $mode='stdout'; $buf=@(); continue }

@@ -1,0 +1,3 @@
+# kind: compile_error
+# exit: 1
+# error: 049_export_not_imported/main.fm:2:11: E0505

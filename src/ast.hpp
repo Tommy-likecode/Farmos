@@ -91,6 +91,7 @@ enum class StmtKind {
 struct Stmt {
   StmtKind kind;
   SourceLoc loc;
+  SourceLoc end_loc;
   std::string name;
   TypePtr decl_type; // optional annotation
   ExprPtr init;
@@ -132,6 +133,8 @@ struct StructDecl {
   std::vector<FieldDecl> fields;
   SourceLoc loc;
   bool exported = false;
+  std::string c_sym;
+  int module_id = 0;
 };
 
 struct ClassDecl {
@@ -141,6 +144,8 @@ struct ClassDecl {
   SourceLoc loc;
   bool exported = false;
   int ctor_index = -1;
+  std::string c_sym;
+  int module_id = 0;
 };
 
 struct FunctionDecl {
@@ -150,6 +155,8 @@ struct FunctionDecl {
   StmtPtr body;
   SourceLoc loc;
   bool exported = false;
+  std::string c_sym;
+  int module_id = 0;
 };
 
 struct ConstDecl {
@@ -159,22 +166,31 @@ struct ConstDecl {
   SourceLoc loc;
   bool exported = false;
   bool has_type_ann = false;
+  std::string c_sym;
+  int module_id = 0;
 };
 
 struct ImportDecl {
   std::vector<std::string> names;
+  std::vector<SourceLoc> name_locs;
   std::string path; // string literal path
   SourceLoc loc;
 };
 
 struct Module {
   std::string path;
+  int id = 0;
+  std::string prefix;
   std::vector<ImportDecl> imports;
   std::vector<StructDecl> structs;
   std::vector<ClassDecl> classes;
   std::vector<FunctionDecl> functions;
   std::vector<ConstDecl> consts;
   bool is_main = false;
+  std::unordered_map<std::string, StructDecl*> vis_structs;
+  std::unordered_map<std::string, ClassDecl*> vis_classes;
+  std::unordered_map<std::string, FunctionDecl*> vis_functions;
+  std::unordered_map<std::string, ConstDecl*> vis_consts;
 };
 
 } // namespace farm

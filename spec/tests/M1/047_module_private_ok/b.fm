@@ -1,0 +1,7 @@
+function helper(): int {
+  return 2;
+}
+
+export function from_b(): int {
+  return helper();
+}

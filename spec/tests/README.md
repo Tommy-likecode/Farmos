@@ -73,13 +73,16 @@ runtime error: division by zero
 
 **Compile diagnostics** (`compile_error`):
 
-One or more:
+One or more of:
 
 ```
 # error: <line>:<col>: E0xxx
+# error: <path>:<line>:<col>: E0xxx
 ```
 
-The runner MUST verify that `farmc` emits a diagnostic whose line, column, and code match. The message text SHOULD match the template in `M1-core.md` but tests only *require* line, column, and code.
+The form with `<path>` is used for multi-file tests. `<path>` is the path string that appears in the diagnostic — the path of the file containing the error **as given to `farmc`** (for fixtures, the harness invokes `farmc build <dir>/main.fm`, so expect e.g. `048_import_non_export/main.fm`). The runner MUST verify path (when present), line, column, and code. Message text SHOULD match `M1-core.md` templates but is not required by fixtures.
+
+Single-file tests omit `<path>`; the implied file is the `.fm` under test.
 
 Column numbers are **1-based Unicode scalar values** (see M1-core.md §8).
 
@@ -104,4 +107,4 @@ farmc build <main.fm> -o <tmp_bin>   # expect exit 0 for run/runtime_trap; 1 for
 <tmp_bin>                             # capture exit, stdout, stderr
 ```
 
-Compare against `.expected`. No implementation ships in this tree; eggtooth/CI will wire the harness.
+Compare against `.expected`. No implementation ships in this tree. On Windows, language tests are driven by `scripts\\build_and_test.ps1` (ctest) per PLAN.md; Linux is out of scope.

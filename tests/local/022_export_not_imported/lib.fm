@@ -1,0 +1,1 @@
+export function public_fn(): int { return 7; }

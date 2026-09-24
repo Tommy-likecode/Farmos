@@ -1,0 +1,5 @@
+import { secret } from "./lib.fm";
+
+function main(): int {
+  return secret();
+}

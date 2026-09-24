@@ -86,7 +86,7 @@ struct Emitter {
         }
         return "((FarmString){ \"" + esc + "\", (int64_t)" + std::to_string((int64_t)e->str_val.size()) + " })";
       }
-      case ExprKind::Ident: return "v_" + e->name;
+      case ExprKind::Ident: return !e->mangled.empty() ? e->mangled : ("v_" + e->name);
       case ExprKind::This: return "this";
       case ExprKind::Unary: {
         auto a = emit_expr(e->rhs);
@@ -194,8 +194,17 @@ struct Emitter {
             return "farm_bool_to_int(" + a + ")";
           }
           if (n=="float") return "farm_int_to_float(" + emit_expr(e->args[0]) + ")";
-          if (prog.functions.count(n)) {
-            std::string call = "fn_" + n + "(";
+          if (!e->mangled.empty() && e->mangled != n) {
+            std::string call = e->mangled + "(";
+            for (size_t i=0;i<e->args.size();++i) {
+              if (i) call += ", ";
+              call += emit_expr(e->args[i]);
+            }
+            call += ")";
+            return call;
+          }
+          if (!e->mangled.empty()) {
+            std::string call = e->mangled + "(";
             for (size_t i=0;i<e->args.size();++i) {
               if (i) call += ", ";
               call += emit_expr(e->args[i]);
@@ -241,15 +250,17 @@ struct Emitter {
       case ExprKind::New: {
         if (e->type->kind == TypeKind::Class) {
           std::string v = fresh("obj");
-          out << "struct Farm_" << e->type_name << "* " << v << " = (struct Farm_" << e->type_name << "*)farm_arena_alloc(sizeof(struct Farm_" << e->type_name << "));\n";
-          out << e->type_name << "__constructor(" << v;
+          out << "struct Farm_" << e->mangled << "* " << v << " = (struct Farm_" << e->mangled << "*)farm_arena_alloc(sizeof(struct Farm_" << e->mangled << "));\n";
+          out << e->mangled << "__constructor(" << v;
           for (auto& a : e->args) out << ", " << emit_expr(a);
           out << ");\n";
           return v;
         }
         std::string ty = c_type(e->type);
         std::string v = fresh("st");
-        auto* sd = prog.structs[e->type_name];
+        StructDecl* sd = nullptr;
+        for (auto& mm : prog.modules) for (auto& ss : mm.structs) if (ss.c_sym == e->mangled) { sd = &ss; break; }
+        if (!sd) return "0";
         out << ty << " " << v << ";\n";
         for (size_t i=0;i<e->args.size();++i)
           out << v << ".f_" << sd->fields[i].name << " = " << emit_expr(e->args[i]) << ";\n";
@@ -408,12 +419,12 @@ struct Emitter {
     out << "#include \"farm_rt.h\"\n\n";
     for (auto& m : prog.modules) {
       for (auto& s : m.structs) {
-        out << "struct Farm_" << s.name << " {\n";
+        out << "struct Farm_" << s.c_sym << " {\n";
         for (auto& f : s.fields) out << "  " << c_type(f.type) << " f_" << f.name << ";\n";
         out << "};\n";
       }
       for (auto& c : m.classes) {
-        out << "struct Farm_" << c.name << " {\n";
+        out << "struct Farm_" << c.c_sym << " {\n";
         for (auto& f : c.fields) out << "  " << c_type(f.type) << " f_" << f.name << ";\n";
         out << "};\n";
       }
@@ -421,7 +432,7 @@ struct Emitter {
     emit_fixed_typedefs();
     for (auto& m : prog.modules) {
       for (auto& f : m.functions) {
-        out << c_type(f.ret) << " fn_" << f.name << "(";
+        out << c_type(f.ret) << " " << f.c_sym << "(";
         for (size_t i=0;i<f.params.size();++i) {
           if (i) out << ", ";
           out << c_type(f.params[i].type) << " v_" << f.params[i].name;
@@ -430,8 +441,8 @@ struct Emitter {
       }
       for (auto& c : m.classes) {
         for (auto& md : c.methods) {
-          std::string name = md.is_ctor ? (c.name + "__constructor") : (c.name + "__" + md.name);
-          out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.name << "* this";
+          std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
+          out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.c_sym << "* this";
           for (auto& p : md.params) out << ", " << c_type(p.type) << " v_" << p.name;
           out << ");\n";
         }
@@ -439,20 +450,20 @@ struct Emitter {
     }
     for (auto& m : prog.modules)
       for (auto& c : m.consts)
-        out << "static " << c_type(c.type) << " v_" << c.name << ";\n";
+        out << "static " << c_type(c.type) << " " << c.c_sym << ";\n";
 
     out << "static void farm_init_globals(void) {\n";
     for (auto& m : prog.modules) {
       for (auto& c : m.consts) {
         std::string v = emit_expr(c.init);
-        out << "  v_" << c.name << " = " << v << ";\n";
+        out << "  " << c.c_sym << " = " << v << ";\n";
       }
     }
     out << "}\n";
 
     for (auto& m : prog.modules) {
       for (auto& f : m.functions) {
-        out << c_type(f.ret) << " fn_" << f.name << "(";
+        out << c_type(f.ret) << " " << f.c_sym << "(";
         for (size_t i=0;i<f.params.size();++i) {
           if (i) out << ", ";
           out << c_type(f.params[i].type) << " v_" << f.params[i].name;
@@ -463,8 +474,8 @@ struct Emitter {
       }
       for (auto& c : m.classes) {
         for (auto& md : c.methods) {
-          std::string name = md.is_ctor ? (c.name + "__constructor") : (c.name + "__" + md.name);
-          out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.name << "* this";
+          std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
+          out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.c_sym << "* this";
           for (auto& p : md.params) out << ", " << c_type(p.type) << " v_" << p.name;
           out << ") ";
           emit_stmt(md.body);
@@ -472,7 +483,11 @@ struct Emitter {
         }
       }
     }
-    out << "int main(void) {\n  farm_init_globals();\n  int64_t __rc = fn_main();\n  return (int)__rc;\n}\n";
+    std::string main_sym = "fn_m0_main";
+    for (auto& mm : prog.modules) if (mm.is_main) {
+      for (auto& ff : mm.functions) if (ff.name == "main") { main_sym = ff.c_sym; break; }
+    }
+    out << "int main(void) {\n  farm_init_globals();\n  int64_t __rc = " << main_sym << "();\n  return (int)__rc;\n}\n";
     return out.str();
   }
 };
