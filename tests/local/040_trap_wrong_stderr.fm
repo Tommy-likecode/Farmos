@@ -1,0 +1,4 @@
+function main(): int {
+  println(1 / 0);
+  return 0;
+}

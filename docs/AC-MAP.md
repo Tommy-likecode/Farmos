@@ -1,23 +1,24 @@
-# AC-M1 map (Rev 2)
+# AC-M1 map (from M1-core.md §10)
 
-Maps acceptance criteria AC-M1-01..11 to M1-core.md Rev 2 sections, PLAN.md, and proof tests in this tree.
+Each **Criterion** cell quotes M1-core.md §10 Acceptance criteria verbatim (Rev 2).
 Do **not** implement M2 rule OQ-M2-11 (int literal to float) under M1.
 
-| AC | Requirement (short) | Spec (M1-core.md Rev 2) | PLAN.md | Proof |
-|----|---------------------|-------------------------|---------|-------|
-| AC-M1-01 | Stripped hello.exe ≤ 20 KB on Windows x64 | section 7.1 / section 7.3 size-oriented flags; AC in PLAN | M1 AC amended 2026-09-24 | `hello.fm` build + `llvm-strip`; measured size in claim |
-| AC-M1-02 | ≥ 30 language tests pass via local `scripts/build_and_test.ps1` | section 8 fixtures; `spec/tests/M1/` | M1 AC | 49 `m1_*` + local tests; default `ctest -LE conformance_bundle` |
-| AC-M1-03 | Clear compile errors with line/column | section 8.1 format `path:line:col: error[E0xxx]` | M1 AC | compile_error fixtures; runner asserts path/line/col/code |
-| AC-M1-04 | C backend clang/gcc only; MSVC `cl` → driver config error exit 3 | section 7.1 (around L638), section 7.2 exit 3 | PLAN: clang/gcc; MSVC unsupported | `local_030_farm_cc_cl` (`FARM_CC=cl`, fake `cl.bat` marker absent) |
-| AC-M1-05 | Types, control flow, functions, structs/classes | section section 2-5 language core | M1 scope | fixtures `001`-`041` family |
-| AC-M1-06 | Modules: import/export, relative paths, cycles | section 3 modules; E0301-E0305 | M1 modules | `042`-`049`; local `020`/`021`/`022` |
-| AC-M1-07 | Per-module scoping; private names; C mangling | section 3 visibility (Rev 2); non-exported private | (impl NOTES) | `local_020_priv_helpers`, `021`, `022`; mangled `mN_` symbols |
-| AC-M1-08 | IEEE float `/` and `Infinity`/`-Infinity`/`NaN`; print rule 4 ES `Number::toString` | section 6 float; print rules | M1 | float fixtures + `local_002_float_tostring` |
-| AC-M1-09 | Compound assignment evaluates non-ident lvalue once | assignment semantics | (impl) | `local_001_compound_assign_once`, `local_003_compound_field_once` |
-| AC-M1-10 | E0508 at closing `}` of function/method body | section 8.3 E0508 + location rule | (impl NOTES) | `local_010_e0508_indented`, `local_011_e0508_sameline` |
-| AC-M1-11 | `farmc` CLI: build/run/version/help; exit codes 0-4 | section 7.1-section 7.2 | M1 CLI | CLI smoke + exit-code fixtures; MSVC path exit 3 |
+| ID | Criterion (quoted from §10) | Proof in this tree |
+|----|-----------------------------|--------------------|
+| AC-M1-01 | **Binary size (Windows x64):** From the repo root on Windows: `farmc build spec\tests\M1\001_hello.fm -o hello.exe` then strip with `llvm-strip --strip-all hello.exe` (or `strip --strip-all hello.exe` if GNU binutils `strip` is on `PATH`). `(Get-Item .\hello.exe).Length` MUST be ≤ **20480**. | `farmc build` of `001_hello` / `examples/hello.fm` + `llvm-strip`; measured stripped size ≤ 20480 (claim reports bytes). |
+| AC-M1-02 | ≥ **30** M1 language tests pass via local `scripts\build_and_test.ps1` (ctest). This pack ships ≥ 49 fixtures. | Default `ctest -LE conformance_bundle`: 49 `m1_*` + local regressions; `scripts/build_and_test.ps1`. |
+| AC-M1-03 | Compile failures use `path:line:col: error[E0xxx]:` with correct 1-based line/col (Unicode scalar columns). | `compile_error` fixtures (e.g. `023`–`027`, `039`–`040`, `043`–`044`, `048`–`049`); runner asserts path (when present), line, col, code. |
+| AC-M1-04 | `farmc build` produces a native Windows x64 PE executable using clang or gcc only (not MSVC `cl`). Linux is out of scope. | Successful PE builds via clang/gcc; `local_030_farm_cc_cl` / `local_031_farm_cc_cl_fullpath` reject `FARM_CC=cl` (exit 3, no invoke). |
+| AC-M1-05 | `kind: run` stdout exact match; float formatting MUST follow §6.1 (`Number::toString` + signed-zero rule), not merely fixture snapshots. | All `kind: run` fixtures via harness stdout assert; `m1_045_float_tostring`, `local_002_float_tostring`, `m1_038_float_ieee`. |
+| AC-M1-06 | Hello binary has no graphics/math stdlib; size proxy AC-M1-01. | Hello links only `farm_rt`; stripped size under AC-M1-01 budget. |
+| AC-M1-07 | `farmc` exit codes §7.2; user `main` return = process exit. | `m1_028_main_exit_code`; compile_error → farmc exit 1; MSVC config → exit 3. |
+| AC-M1-08 | Integer div-by-zero and OOB traps: exact stderr + exit 101/102; float `/0` prints `Infinity`/`-Infinity`/`NaN` (no trap). | `m1_029_div_by_zero_int`, `m1_018_array_bounds_trap` (stderr exact); `m1_038_float_ieee` / float fixtures (no trap). Negative: `local_040_trap_wrong_stderr`. |
+| AC-M1-09 | Multi-file import/export and per-module privacy tests pass. | `m1_022_modules`, `m1_047_module_private_ok`, `m1_048_import_non_export`, `m1_049_export_not_imported`; local `020`/`021`/`022`. |
+| AC-M1-10 | Soft: hello build ≤ 5 s on TommyLaptop (non-binding). | Timed `farmc build` of hello on TommyLaptop (soft / non-binding). |
+| AC-M1-11 | Class instances may be returned/stored across scopes (program arena); no E0405. | `m1_041_class_escape`, `m1_021_class_methods`. |
 
-## Labels / suite layout
+## Suite layout
 
-- Default ctest: `-LE conformance_bundle` → all `m1_*` (49) + `local_*` (no double-run of fixtures).
-- Opt-in umbrella: `ctest -L conformance_bundle` or `-R m1_conformance`.
+- Default ctest: `-LE conformance_bundle` → all `m1_*` (49) + positive `local_*` (no double-run of fixtures).
+- Opt-in umbrella: `ctest -L conformance_bundle` or `-R '^m1_conformance$'`.
+- Negative runner proofs: `local_040_trap_wrong_stderr`, `local_041_run_unexpected_stderr` (wrapper expects runner failure).

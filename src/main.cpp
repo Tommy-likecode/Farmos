@@ -221,15 +221,15 @@ static bool is_msvc_cc(const std::string& cc_raw) {
   std::string s = cc_raw;
   while (!s.empty() && (s.front() == '"' || s.front() == '\'')) s.erase(s.begin());
   while (!s.empty() && (s.back() == '"' || s.back() == '\'')) s.pop_back();
-  fs::path p(s);
-  std::string base = lower_ascii(p.filename().string());
-  if (base == "cl" || base == "cl.exe") return true;
-  if (base == "clang-cl" || base == "clang-cl.exe") return true;
-  std::string whole = lower_ascii(s);
-  if (whole == "cl" || whole == "cl.exe") return true;
-  if (whole == "clang-cl" || whole == "clang-cl.exe") return true;
+  std::string base = lower_ascii(fs::path(s).filename().string());
+  // Extension-stripped stem, case-insensitive: cl.exe / cl.bat / cl.cmd / CL.EXE -> cl
+  auto dot = base.find_last_of('.');
+  std::string stem = (dot == std::string::npos) ? base : base.substr(0, dot);
+  if (stem == "cl") return true;
+  if (stem == "clang-cl") return true;
   return false;
 }
+
 
 static std::string find_c_compiler() {
   const char* env = std::getenv("FARM_CC");
