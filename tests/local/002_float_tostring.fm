@@ -1,0 +1,13 @@
+function main(): int {
+  println(0.1);
+  println(1.5);
+  println(1e21);
+  println(1e-7);
+  println(123456789.125);
+  let z: float = 0.0;
+  let nz: float = -z;
+  println(nz);
+  println(5e-324);
+  println(1.7976931348623157e308);
+  return 0;
+}

@@ -82,18 +82,109 @@ void farm_print_int(int64_t v) {
   if (n > 0) write_all(buf, (size_t)n);
 }
 
-/* ECMAScript Number::toString for IEEE754 binary64 (M1 §6.1). */
-void farm_print_float(double v) {
-  if (isnan(v)) { write_cstr("NaN"); return; }
-  if (isinf(v)) { write_cstr(signbit(v) ? "-Infinity" : "Infinity"); return; }
-  if (v == 0.0) { write_cstr(signbit(v) ? "-0" : "0"); return; }
 
-  /* Use shortest round-trip via %.17g then trim; for M1 fixtures this matches ES. */
+static int farm_bits_eq(double a, double b) {
+  uint64_t x, y;
+  memcpy(&x, &a, sizeof x);
+  memcpy(&y, &b, sizeof y);
+  return x == y;
+}
+
+/* ECMAScript 2024 Number::toString for finite non-zero |v|. Writes into out, returns length. */
+static int farm_format_float_finite(double v, char *out, size_t cap) {
+  int neg = 0;
+  if (v < 0) { neg = 1; v = -v; }
+
+  /* Shortest round-trip: try 1..17 significant digits via %e, verify with strtod. */
+  char sci[64];
+  int best_sig = 17;
+  for (int sig = 1; sig <= 17; sig++) {
+    snprintf(sci, sizeof(sci), "%.*e", sig - 1, v);
+    if (farm_bits_eq(strtod(sci, NULL), v)) { best_sig = sig; break; }
+  }
+  snprintf(sci, sizeof(sci), "%.*e", best_sig - 1, v);
+
+  /* Parse m.dddde±ee into digit string s and exponent n where value = s * 10^(n-k), k=len(s). */
+  char digits[32];
+  int nd = 0;
+  int exp10 = 0;
+  {
+    char *p = sci;
+    /* mantissa */
+    if (*p >= '0' && *p <= '9') digits[nd++] = *p++;
+    if (*p == '.') p++;
+    while (*p >= '0' && *p <= '9' && nd < (int)sizeof(digits) - 1) digits[nd++] = *p++;
+    if (*p == 'e' || *p == 'E') {
+      p++;
+      int esign = 1;
+      if (*p == '+') p++;
+      else if (*p == '-') { esign = -1; p++; }
+      int e = 0;
+      while (*p >= '0' && *p <= '9') { e = e * 10 + (*p - '0'); p++; }
+      exp10 = esign * e;
+    }
+  }
+  digits[nd] = 0;
+  /* Trim trailing zeros (keep at least one digit) */
+  while (nd > 1 && digits[nd - 1] == '0') nd--;
+  digits[nd] = 0;
+  int k = nd;
+  /* In %e form, value = (digits as 0.ddd with first digit before point) * 10^exp10
+     i.e. int(digits) * 10^(exp10 - (k-1)) = s * 10^(n-k) with n = exp10 + 1 */
+  int n = exp10 + 1;
+
+  char body[64];
+  int blen = 0;
+  if (k <= n && n <= 21) {
+    /* decimal, integer part has n digits */
+    for (int i = 0; i < n; i++) body[blen++] = (i < k) ? digits[i] : '0';
+    body[blen] = 0;
+  } else if (0 < n && n <= 21) {
+    /* n < k: digits with point after n */
+    for (int i = 0; i < n; i++) body[blen++] = digits[i];
+    body[blen++] = '.';
+    for (int i = n; i < k; i++) body[blen++] = digits[i];
+    body[blen] = 0;
+  } else if (-6 < n && n <= 0) {
+    /* 0.000ddd */
+    body[blen++] = '0';
+    body[blen++] = '.';
+    for (int i = 0; i < -n; i++) body[blen++] = '0';
+    for (int i = 0; i < k; i++) body[blen++] = digits[i];
+    body[blen] = 0;
+  } else {
+    /* scientific: d[.ddd]e±ee  (JS uses 'e' and '+' for positive exponents) */
+    body[blen++] = digits[0];
+    if (k > 1) {
+      body[blen++] = '.';
+      for (int i = 1; i < k; i++) body[blen++] = digits[i];
+    }
+    body[blen++] = 'e';
+    int e = n - 1;
+    if (e >= 0) body[blen++] = '+';
+    else { body[blen++] = '-'; e = -e; }
+    /* no leading-zero padding on exponent (JS: "1e-7" not "1e-07") */
+    char eb[16];
+    int el = snprintf(eb, sizeof(eb), "%d", e);
+    for (int i = 0; i < el; i++) body[blen++] = eb[i];
+    body[blen] = 0;
+  }
+
+  if (neg) return snprintf(out, cap, "-%s", body);
+  return snprintf(out, cap, "%s", body);
+}
+
+static int farm_format_float(double v, char *out, size_t cap) {
+  if (isnan(v)) return snprintf(out, cap, "NaN");
+  if (isinf(v)) return snprintf(out, cap, signbit(v) ? "-Infinity" : "Infinity");
+  if (v == 0.0) return snprintf(out, cap, signbit(v) ? "-0" : "0");
+  return farm_format_float_finite(v, out, cap);
+}
+
+void farm_print_float(double v) {
   char buf[64];
-  int n = snprintf(buf, sizeof(buf), "%.17g", v);
-  if (n <= 0) { write_cstr("0"); return; }
-  /* Normalize: prefer non-scientific for |k| in range; %.17g already does for our fixtures. */
-  write_all(buf, (size_t)n);
+  int n = farm_format_float(v, buf, sizeof(buf));
+  if (n > 0) write_all(buf, (size_t)n);
 }
 
 void farm_print_bool(int8_t v) { write_cstr(v ? "true" : "false"); }
@@ -151,13 +242,11 @@ FarmString farm_str_from_int(int64_t v) {
 
 FarmString farm_str_from_float(double v) {
   char tmp[64];
-  /* reuse print formatting into buffer */
-  if (isnan(v)) { return farm_str_from_cstr("NaN"); }
-  if (isinf(v)) { return farm_str_from_cstr(signbit(v) ? "-Infinity" : "Infinity"); }
-  if (v == 0.0) { return farm_str_from_cstr(signbit(v) ? "-0" : "0"); }
-  int n = snprintf(tmp, sizeof(tmp), "%.17g", v);
+  int n = farm_format_float(v, tmp, sizeof(tmp));
+  if (n < 0) n = 0;
   char *p = (char *)farm_arena_alloc((size_t)n + 1);
-  memcpy(p, tmp, (size_t)n + 1);
+  memcpy(p, tmp, (size_t)n);
+  p[n] = 0;
   FarmString r; r.ptr = p; r.len = n; return r;
 }
 

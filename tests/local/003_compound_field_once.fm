@@ -1,0 +1,16 @@
+class Box {
+  v: int;
+  constructor(v: int) {
+    this.v = v;
+  }
+}
+
+function make(): Box {
+  println(7);
+  return new Box(10);
+}
+
+function main(): int {
+  make().v += 3;
+  return 0;
+}

@@ -58,3 +58,24 @@ foreach(exp ${M1_EXPECTED})
     )
   endif()
 endforeach()
+
+
+# Local regression tests (outside spec/tests/M1)
+set(FARMC_LOCAL_TESTS_DIR "${CMAKE_SOURCE_DIR}/tests/local")
+file(GLOB LOCAL_EXPECTED "${FARMC_LOCAL_TESTS_DIR}/*.expected")
+foreach(exp ${LOCAL_EXPECTED})
+  get_filename_component(name ${exp} NAME_WE)
+  if(WIN32)
+    add_test(NAME local_${name}
+      COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File "${CMAKE_SOURCE_DIR}/scripts/run_one_m1.ps1"
+              -Farmc $<TARGET_FILE:farmc>
+              -TestsDir "${FARMC_LOCAL_TESTS_DIR}"
+              -Name "${name}"
+    )
+  else()
+    add_test(NAME local_${name}
+      COMMAND bash "${CMAKE_SOURCE_DIR}/scripts/run_one_m1.sh"
+              $<TARGET_FILE:farmc> "${FARMC_LOCAL_TESTS_DIR}" "${name}"
+    )
+  endif()
+endforeach()

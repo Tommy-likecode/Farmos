@@ -259,23 +259,86 @@ struct Emitter {
     }
   }
 
-  void emit_assign(ExprPtr lv, const std::string& rval) {
+  /* Pointer to lvalue storage; base/index evaluated exactly once (temps written to `out`). */
+  std::string emit_lvalue_ptr(ExprPtr lv) {
     if (lv->kind == ExprKind::Ident) {
-      out << "v_" << lv->name << " = " << rval << ";\n";
-    } else if (lv->kind == ExprKind::Field) {
-      auto base = emit_expr(lv->lhs);
-      if (lv->lhs->type->kind == TypeKind::Class)
-        out << "(" << base << ")->f_" << lv->name << " = " << rval << ";\n";
-      else
-        out << "(" << base << ").f_" << lv->name << " = " << rval << ";\n";
-    } else if (lv->kind == ExprKind::Index) {
-      auto arr = emit_expr(lv->lhs);
-      auto idx = emit_expr(lv->rhs);
-      if (lv->lhs->type->kind == TypeKind::FixedArray)
-        out << "{ int64_t __i=(" << idx << "); farm_bounds_check(__i, (int64_t)" << lv->lhs->type->fixed_len << "); (" << arr << ").data[__i] = " << rval << "; }\n";
-      else
-        out << "{ int64_t __i=(" << idx << "); *(" << c_type(lv->type) << "*)farm_dyn_index(&(" << arr << "), __i) = " << rval << "; }\n";
+      return "&v_" + lv->name;
     }
+    if (lv->kind == ExprKind::Field) {
+      if (lv->lhs->type->kind == TypeKind::Class) {
+        std::string base = emit_expr(lv->lhs);
+        std::string bp = fresh("bp");
+        out << c_type(lv->lhs->type) << " " << bp << " = " << base << ";\n";
+        return "&(" + bp + "->f_" + lv->name + ")";
+      }
+      /* struct field: address of enclosing struct value, then field */
+      std::string sp = emit_lvalue_ptr(lv->lhs);
+      return "&((" + sp + ")->f_" + lv->name + ")";
+    }
+    if (lv->kind == ExprKind::Index) {
+      std::string ip = fresh("ix");
+      std::string idx = emit_expr(lv->rhs);
+      out << "int64_t " << ip << " = " << idx << ";\n";
+      if (lv->lhs->type->kind == TypeKind::FixedArray) {
+        std::string ap = emit_lvalue_ptr(lv->lhs);
+        out << "farm_bounds_check(" << ip << ", (int64_t)" << lv->lhs->type->fixed_len << ");\n";
+        return "&((" + ap + ")->data[" + ip + "])";
+      }
+      if (lv->lhs->kind == ExprKind::Ident) {
+        out << "farm_bounds_check(" << ip << ", v_" << lv->lhs->name << ".len);\n";
+        return "((" + c_type(lv->type) + "*)v_" + lv->lhs->name + ".data) + " + ip;
+      }
+      if (lv->lhs->kind == ExprKind::Field) {
+        std::string dp = emit_lvalue_ptr(lv->lhs);
+        out << "farm_bounds_check(" << ip << ", (" << dp << ")->len);\n";
+        return "((" + c_type(lv->type) + "*)(" + dp + ")->data) + " + ip;
+      }
+      std::string arr = emit_expr(lv->lhs);
+      std::string at = fresh("da");
+      out << "FarmDynArray " << at << " = " << arr << ";\n";
+      out << "farm_bounds_check(" << ip << ", " << at << ".len);\n";
+      return "((" + c_type(lv->type) + "*)" + at + ".data) + " + ip;
+    }
+    return "((void*)0)";
+  }
+
+  void emit_assign(ExprPtr lv, const std::string& rval) {
+    std::string ptr = emit_lvalue_ptr(lv);
+    out << "*(" << ptr << ") = " << rval << ";\n";
+  }
+
+  void emit_compound_assign(ExprPtr lv, TokKind op, ExprPtr rhs) {
+    std::string ptr = emit_lvalue_ptr(lv);
+    std::string pv = fresh("lv");
+    out << c_type(lv->type) << " *" << pv << " = " << ptr << ";\n";
+    std::string rv = emit_expr(rhs);
+    std::string oldv = fresh("ov");
+    out << c_type(lv->type) << " " << oldv << " = *" << pv << ";\n";
+    TokKind bop = op==TokKind::PlusEq?TokKind::Plus:
+      op==TokKind::MinusEq?TokKind::Minus:
+      op==TokKind::StarEq?TokKind::Star:
+      op==TokKind::SlashEq?TokKind::Slash:TokKind::Percent;
+    std::string result;
+    if (lv->type->kind == TypeKind::Int) {
+      if (bop == TokKind::Plus)
+        result = "((int64_t)((uint64_t)(" + oldv + ")+(uint64_t)(" + rv + ")))";
+      else if (bop == TokKind::Minus)
+        result = "((int64_t)((uint64_t)(" + oldv + ")-(uint64_t)(" + rv + ")))";
+      else if (bop == TokKind::Star)
+        result = "((int64_t)((uint64_t)(" + oldv + ")*(uint64_t)(" + rv + ")))";
+      else if (bop == TokKind::Slash)
+        result = "({ int64_t __b=(" + rv + "); farm_div0_check(__b); " + oldv + "/__b; })";
+      else
+        result = "({ int64_t __b=(" + rv + "); farm_div0_check(__b); " + oldv + "%__b; })";
+    } else if (lv->type->kind == TypeKind::Float) {
+      char o = bop==TokKind::Plus?'+':bop==TokKind::Minus?'-':bop==TokKind::Star?'*':'/';
+      result = std::string("((") + oldv + ")" + o + "(" + rv + "))";
+    } else if (lv->type->kind == TypeKind::String && bop == TokKind::Plus) {
+      result = "farm_str_concat(" + oldv + "," + rv + ")";
+    } else {
+      result = oldv;
+    }
+    out << "*" << pv << " = " << result << ";\n";
   }
 
   void emit_stmt(StmtPtr s) {
@@ -296,15 +359,7 @@ struct Emitter {
           std::string r = emit_expr(s->rhs);
           emit_assign(s->lhs, r);
         } else {
-          auto bin = std::make_shared<Expr>();
-          bin->kind = ExprKind::Binary; bin->loc = s->loc; bin->lhs = s->lhs; bin->rhs = s->rhs;
-          bin->type = s->lhs->type;
-          bin->op = s->assign_op==TokKind::PlusEq?TokKind::Plus:
-            s->assign_op==TokKind::MinusEq?TokKind::Minus:
-            s->assign_op==TokKind::StarEq?TokKind::Star:
-            s->assign_op==TokKind::SlashEq?TokKind::Slash:TokKind::Percent;
-          std::string r = emit_expr(bin);
-          emit_assign(s->lhs, r);
+          emit_compound_assign(s->lhs, s->assign_op, s->rhs);
         }
         break;
       }
