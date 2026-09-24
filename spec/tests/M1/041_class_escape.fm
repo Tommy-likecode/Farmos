@@ -1,0 +1,21 @@
+class Box {
+  v: int;
+
+  constructor(v: int) {
+    this.v = v;
+  }
+
+  get(): int {
+    return this.v;
+  }
+}
+
+function makeBox(v: int): Box {
+  return new Box(v);
+}
+
+function main(): int {
+  let b: Box = makeBox(99);
+  println(b.get());
+  return 0;
+}

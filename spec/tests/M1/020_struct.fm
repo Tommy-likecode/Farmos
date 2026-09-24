@@ -1,0 +1,17 @@
+struct Point {
+  x: int;
+  y: int;
+}
+
+function main(): int {
+  let p: Point = new Point(3, 4);
+  println(p.x);
+  println(p.y);
+  let q: Point = p;
+  q.x = 10;
+  println(p.x);
+  println(q.x);
+  let r: Point = Point { x: 1, y: 2 };
+  println(r.x);
+  return 0;
+}

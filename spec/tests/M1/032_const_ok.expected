@@ -1,0 +1,6 @@
+# kind: run
+# exit: 0
+# stdout:
+const-ok
+7
+# end

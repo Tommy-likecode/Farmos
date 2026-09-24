@@ -1,0 +1,8 @@
+function main(): int {
+  println(0.0);
+  println(1.5);
+  println(2.0);
+  println(-3.25);
+  println(1e3);
+  return 0;
+}

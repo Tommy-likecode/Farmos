@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+# stdout:
+-5
+6
+false
+true
+3
+# end

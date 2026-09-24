@@ -1,0 +1,15 @@
+function main(): int {
+  if (1 < 2) {
+    println("yes");
+  } else {
+    println("no");
+  }
+  if (false) {
+    println("a");
+  } else if (true) {
+    println("b");
+  } else {
+    println("c");
+  }
+  return 0;
+}

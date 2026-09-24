@@ -1,0 +1,5 @@
+function main(): int {
+  println(true);
+  println(false);
+  return 0;
+}

@@ -1,0 +1,6 @@
+import { square, answer } from "./math.fm";
+
+function main(): int {
+  println(square(answer));
+  return 0;
+}

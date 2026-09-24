@@ -1,0 +1,4 @@
+function main(): int {
+  let x: int = 0x;
+  return 0;
+}

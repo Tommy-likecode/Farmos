@@ -1,0 +1,4 @@
+function main(): int {
+  let x: float = 1 + 2.0;
+  return 0;
+}

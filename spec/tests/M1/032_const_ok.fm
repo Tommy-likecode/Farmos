@@ -1,0 +1,7 @@
+function main(): int {
+  const msg: string = "const-ok";
+  const n: int = 3 + 4;
+  println(msg);
+  println(n);
+  return 0;
+}

@@ -1,0 +1,5 @@
+function main(): int {
+  let a: int[2] = [1, 2];
+  println(a[2]);
+  return 0;
+}

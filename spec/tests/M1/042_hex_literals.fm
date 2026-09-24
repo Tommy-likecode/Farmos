@@ -1,0 +1,8 @@
+function main(): int {
+  println(0xff0000);
+  println(0xFf0000);
+  println(0XFF0000);
+  println(0x0);
+  println(0x7fffffffffffffff);
+  return 0;
+}

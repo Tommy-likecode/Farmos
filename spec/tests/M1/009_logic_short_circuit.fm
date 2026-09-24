@@ -1,0 +1,7 @@
+function main(): int {
+  println(true || (1 / 0 == 0));
+  println(false && (1 / 0 == 0));
+  println(true && true);
+  println(false || true);
+  return 0;
+}

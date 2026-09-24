@@ -1,0 +1,4 @@
+D:/Tommy/Farmos/build/CMakeFiles/farmc.dir
+D:/Tommy/Farmos/build/CMakeFiles/test.dir
+D:/Tommy/Farmos/build/CMakeFiles/edit_cache.dir
+D:/Tommy/Farmos/build/CMakeFiles/rebuild_cache.dir

@@ -1,0 +1,5 @@
+# kind: runtime_trap
+# exit: 102
+# stderr:
+runtime error: index out of bounds
+# end

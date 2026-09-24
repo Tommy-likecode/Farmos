@@ -1,0 +1,8 @@
+function main(): int {
+  println(-5);
+  println(+6);
+  println(!true);
+  println(!false);
+  println(-(-3));
+  return 0;
+}

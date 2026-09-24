@@ -1,0 +1,4 @@
+# kind: run
+# exit: 42
+# stdout:
+# end

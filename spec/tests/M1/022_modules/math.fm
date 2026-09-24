@@ -1,0 +1,5 @@
+export function square(x: int): int {
+  return x * x;
+}
+
+export const answer: int = 7;

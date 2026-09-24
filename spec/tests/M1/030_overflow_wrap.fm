@@ -1,0 +1,7 @@
+function main(): int {
+  let x: int = 9223372036854775807;
+  let y: int = x + 1;
+  println(y);
+  println(y - 1);
+  return 0;
+}

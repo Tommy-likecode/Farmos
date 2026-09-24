@@ -1,0 +1,5 @@
+# kind: runtime_trap
+# exit: 101
+# stderr:
+runtime error: division by zero
+# end

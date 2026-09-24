@@ -1,0 +1,9 @@
+function main(): int {
+  println(3 + 4);
+  println(10 - 3);
+  println(6 * 7);
+  println(20 / 3);
+  println(20 % 3);
+  println(-8 / 3);
+  return 0;
+}

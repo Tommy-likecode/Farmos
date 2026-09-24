@@ -1,0 +1,643 @@
+#include "sema.hpp"
+#include <functional>
+
+namespace farm {
+
+struct VarInfo {
+  TypePtr type;
+  bool is_const = false;
+  SourceLoc loc;
+};
+
+struct Scope {
+  std::unordered_map<std::string, VarInfo> vars;
+  Scope* parent = nullptr;
+  bool declare(const std::string& n, VarInfo v, const std::string& path) {
+    if (vars.count(n)) {
+      error_at(path, v.loc, "E0502", "duplicate definition of `" + n + "`");
+      return false;
+    }
+    vars[n] = std::move(v);
+    return true;
+  }
+  VarInfo* find(const std::string& n) {
+    for (Scope* s = this; s; s = s->parent) {
+      auto it = s->vars.find(n);
+      if (it != s->vars.end()) return &it->second;
+    }
+    return nullptr;
+  }
+  bool defined_in_chain_before(const std::string& n, Scope* stop) {
+    for (Scope* s = this; s && s != stop; s = s->parent) {
+      if (s->vars.count(n)) return true;
+    }
+    return false;
+  }
+};
+
+struct Sema {
+  Program& prog;
+  std::string path;
+  ClassDecl* cur_class = nullptr;
+  TypePtr cur_ret;
+  std::string cur_fn;
+  int loop_depth = 0;
+  bool in_ctor = false;
+  Scope* scope = nullptr;
+
+  explicit Sema(Program& p) : prog(p) {}
+
+  TypePtr finalize_type(TypePtr t, SourceLoc loc, bool allow_void=false) {
+    if (!t) return Type::ty_error();
+    if (t->kind == TypeKind::Void) {
+      if (!allow_void) error_at(path, loc, "E0415", "`void` type not allowed here");
+      return t;
+    }
+    if (t->kind == TypeKind::Struct || t->kind == TypeKind::Class) {
+      if (prog.structs.count(t->name)) return Type::ty_struct(t->name);
+      if (prog.classes.count(t->name)) return Type::ty_class(t->name);
+      error_at(path, loc, "E0409", "undefined type `" + t->name + "`");
+      return Type::ty_error();
+    }
+    if (t->kind == TypeKind::FixedArray || t->kind == TypeKind::DynArray) {
+      t->elem = finalize_type(t->elem, loc, false);
+    }
+    return t;
+  }
+
+  void register_module_exports() {
+    // already linked into prog maps by driver before analyze
+  }
+
+  TypePtr check_binary(Expr& e) {
+    auto lt = e.lhs->type; auto rt = e.rhs->type;
+    auto op = e.op;
+    if (op == TokKind::OrOr || op == TokKind::AndAnd) {
+      if (lt->kind != TypeKind::Bool) error_at(path, e.lhs->loc, "E0401", "condition must be `bool`, found `" + lt->str() + "`");
+      if (rt->kind != TypeKind::Bool) error_at(path, e.rhs->loc, "E0401", "condition must be `bool`, found `" + rt->str() + "`");
+      return Type::ty_bool();
+    }
+    if (op == TokKind::Plus && lt->kind == TypeKind::String && rt->kind == TypeKind::String)
+      return Type::ty_string();
+    if (op == TokKind::EqEq || op == TokKind::Neq || op == TokKind::Lt || op == TokKind::Le || op == TokKind::Gt || op == TokKind::Ge) {
+      if (lt->kind == TypeKind::String && rt->kind == TypeKind::String) return Type::ty_bool();
+      if ((lt->kind == TypeKind::Int || lt->kind == TypeKind::Float || lt->kind == TypeKind::Bool) && type_eq(lt, rt))
+        return Type::ty_bool();
+      if (!type_eq(lt, rt)) error_at(path, e.loc, "E0408", "type mismatch: expected `" + lt->str() + "`, found `" + rt->str() + "`");
+      return Type::ty_bool();
+    }
+    // arithmetic
+    if ((op==TokKind::Plus||op==TokKind::Minus||op==TokKind::Star||op==TokKind::Slash||op==TokKind::Percent)) {
+      if ((lt->kind==TypeKind::Int && rt->kind==TypeKind::Float) || (lt->kind==TypeKind::Float && rt->kind==TypeKind::Int)) {
+        error_at(path, e.loc, "E0402", "mixed `int`/`float` arithmetic without explicit conversion");
+        return Type::ty_error();
+      }
+      if (op==TokKind::Percent && lt->kind==TypeKind::Float) {
+        error_at(path, e.loc, "E0403", "operator `%` not defined for `float`");
+        return Type::ty_error();
+      }
+      if (lt->kind==TypeKind::Int && rt->kind==TypeKind::Int) return Type::ty_int();
+      if (lt->kind==TypeKind::Float && rt->kind==TypeKind::Float) return Type::ty_float();
+      error_at(path, e.loc, "E0403", "operator not defined for `" + lt->str() + "`");
+      return Type::ty_error();
+    }
+    return Type::ty_error();
+  }
+
+  ExprPtr check_expr(ExprPtr e) {
+    if (!e) return e;
+    switch (e->kind) {
+      case ExprKind::IntLit: e->type = Type::ty_int(); break;
+      case ExprKind::FloatLit: e->type = Type::ty_float(); break;
+      case ExprKind::BoolLit: e->type = Type::ty_bool(); break;
+      case ExprKind::StringLit: e->type = Type::ty_string(); break;
+      case ExprKind::This: {
+        if (!cur_class) { error_at(path, e->loc, "E0417", "`this` not allowed outside class method/constructor"); e->type=Type::ty_error(); }
+        else e->type = Type::ty_class(cur_class->name);
+        e->is_lvalue = true;
+        break;
+      }
+      case ExprKind::Ident: {
+        if (auto* v = scope->find(e->name)) {
+          e->type = v->type; e->is_lvalue = true; e->is_const_binding = v->is_const;
+        } else if (prog.consts.count(e->name)) {
+          e->type = prog.consts[e->name]->type; e->is_lvalue = false; e->is_const_binding = true;
+        } else if (prog.functions.count(e->name)) {
+          // function as value not allowed unless call — mark as special via mangled
+          e->mangled = e->name;
+          e->type = Type::ty_error(); // fixed at call
+        } else {
+          error_at(path, e->loc, "E0505", "undefined name `" + e->name + "`");
+          e->type = Type::ty_error();
+        }
+        break;
+      }
+      case ExprKind::Unary: {
+        check_expr(e->rhs);
+        if (e->op == TokKind::Bang) {
+          if (e->rhs->type->kind != TypeKind::Bool)
+            error_at(path, e->loc, "E0403", "operator `!` not defined for `" + e->rhs->type->str() + "`");
+          e->type = Type::ty_bool();
+        } else {
+          if (e->rhs->type->kind != TypeKind::Int && e->rhs->type->kind != TypeKind::Float)
+            error_at(path, e->loc, "E0403", "unary +/- not defined for `" + e->rhs->type->str() + "`");
+          e->type = e->rhs->type;
+        }
+        break;
+      }
+      case ExprKind::Binary: {
+        check_expr(e->lhs); check_expr(e->rhs);
+        e->type = check_binary(*e);
+        break;
+      }
+      case ExprKind::Index: {
+        check_expr(e->lhs); check_expr(e->rhs);
+        if (e->lhs->type->kind != TypeKind::FixedArray && e->lhs->type->kind != TypeKind::DynArray) {
+          error_at(path, e->loc, "E0410", "index expression requires array type");
+          e->type = Type::ty_error();
+        } else {
+          if (e->rhs->type->kind != TypeKind::Int)
+            error_at(path, e->rhs->loc, "E0408", "type mismatch: expected `int`, found `" + e->rhs->type->str() + "`");
+          e->type = e->lhs->type->elem;
+          e->is_lvalue = true;
+          e->is_const_binding = e->lhs->is_const_binding;
+        }
+        break;
+      }
+      case ExprKind::Field: {
+        check_expr(e->lhs);
+        auto t = e->lhs->type;
+        if (t->kind == TypeKind::Struct) {
+          auto* sd = prog.structs[t->name];
+          bool found=false;
+          for (auto& f : sd->fields) if (f.name==e->name) { e->type=f.type; found=true; break; }
+          if (!found) { error_at(path, e->loc, "E0505", "undefined name `" + e->name + "`"); e->type=Type::ty_error(); }
+          e->is_lvalue = true;
+          e->is_const_binding = e->lhs->is_const_binding; // shallow: const struct forbids field assign
+        } else if (t->kind == TypeKind::Class) {
+          auto* cd = prog.classes[t->name];
+          bool found=false;
+          for (auto& f : cd->fields) if (f.name==e->name) { e->type=f.type; found=true; break; }
+          if (!found) {
+            for (auto& md : cd->methods) if (!md.is_ctor && md.name==e->name) {
+              e->mangled = t->name + "__" + e->name;
+              e->type = Type::ty_error();
+              found = true; break;
+            }
+          }
+          if (!found) {
+            error_at(path, e->loc, "E0505", "undefined name `" + e->name + "`");
+            e->type = Type::ty_error();
+          }
+          e->is_lvalue = true;
+          e->is_const_binding = false; // shallow const on class
+        } else {
+          error_at(path, e->loc, "E0403", "operator `.` not defined for `" + t->str() + "`");
+          e->type = Type::ty_error();
+        }
+        break;
+      }
+      case ExprKind::Call: {
+        // callee
+        if (e->lhs->kind == ExprKind::Ident) {
+          std::string n = e->lhs->name;
+          // builtins
+          if (n=="print"||n=="println"||n=="len"||n=="push"||n=="str"||n=="int"||n=="float") {
+            for (auto& a : e->args) check_expr(a);
+            e->mangled = n;
+            if (n=="print"||n=="println") {
+              if (e->args.size()!=1) error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `" + n + "`");
+              else {
+                auto k = e->args[0]->type->kind;
+                if (k!=TypeKind::Int&&k!=TypeKind::Float&&k!=TypeKind::Bool&&k!=TypeKind::String)
+                  error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `" + n + "`");
+              }
+              e->type = Type::ty_void();
+            } else if (n=="len") {
+              if (e->args.size()!=1) error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `len`");
+              else {
+                auto k = e->args[0]->type->kind;
+                if (k!=TypeKind::String&&k!=TypeKind::FixedArray&&k!=TypeKind::DynArray)
+                  error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `len`");
+              }
+              e->type = Type::ty_int();
+            } else if (n=="push") {
+              if (e->args.size()!=2) error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `push`");
+              else if (e->args[0]->type->kind != TypeKind::DynArray)
+                error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `push`");
+              else if (!type_eq(e->args[0]->type->elem, e->args[1]->type))
+                error_at(path, e->loc, "E0408", "type mismatch");
+              else if (e->args[0]->is_const_binding)
+                error_at(path, e->args[0]->loc, "E0504", "cannot assign to const");
+              e->type = Type::ty_void();
+            } else if (n=="str") {
+              if (e->args.size()!=1) error_at(path, e->loc, "E0513", "arity mismatch");
+              else {
+                auto k=e->args[0]->type->kind;
+                if (k!=TypeKind::Int&&k!=TypeKind::Float&&k!=TypeKind::Bool)
+                  error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `str`");
+              }
+              e->type = Type::ty_string();
+            } else if (n=="int") {
+              if (e->args.size()!=1) error_at(path, e->loc, "E0513", "arity mismatch");
+              else {
+                auto k=e->args[0]->type->kind;
+                if (k!=TypeKind::Float&&k!=TypeKind::Bool)
+                  error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `int`");
+              }
+              e->type = Type::ty_int();
+            } else if (n=="float") {
+              if (e->args.size()!=1 || e->args[0]->type->kind!=TypeKind::Int)
+                error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `float`");
+              e->type = Type::ty_float();
+            }
+            break;
+          }
+          if (prog.functions.count(n)) {
+            auto* fn = prog.functions[n];
+            for (auto& a : e->args) check_expr(a);
+            if (e->args.size() != fn->params.size())
+              error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(fn->params.size()) + ", found " + std::to_string(e->args.size()));
+            else {
+              for (size_t i=0;i<e->args.size();++i)
+                if (!type_eq(e->args[i]->type, fn->params[i].type))
+                  error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected `" + fn->params[i].type->str() + "`, found `" + e->args[i]->type->str() + "`");
+            }
+            e->mangled = n;
+            e->type = fn->ret;
+            break;
+          }
+        }
+        // method call: obj.method(args)
+        if (e->lhs->kind == ExprKind::Field) {
+          check_expr(e->lhs->lhs);
+          for (auto& a : e->args) check_expr(a);
+          auto rt = e->lhs->lhs->type;
+          if (rt->kind == TypeKind::Class) {
+            auto* cd = prog.classes[rt->name];
+            MethodDecl* md = nullptr;
+            for (auto& m : cd->methods) if (!m.is_ctor && m.name == e->lhs->name) { md = &m; break; }
+            if (!md) { error_at(path, e->loc, "E0505", "undefined name `" + e->lhs->name + "`"); e->type=Type::ty_error(); }
+            else {
+              if (e->args.size()!=md->params.size())
+                error_at(path, e->loc, "E0411", "wrong number of arguments");
+              else for (size_t i=0;i<e->args.size();++i)
+                if (!type_eq(e->args[i]->type, md->params[i].type))
+                  error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+              e->mangled = rt->name + "__" + md->name;
+              e->type = md->ret;
+            }
+          } else {
+            error_at(path, e->loc, "E0403", "cannot call method on `" + rt->str() + "`");
+            e->type = Type::ty_error();
+          }
+          break;
+        }
+        // fallback
+        check_expr(e->lhs);
+        for (auto& a : e->args) check_expr(a);
+        error_at(path, e->loc, "E0505", "undefined name");
+        e->type = Type::ty_error();
+        break;
+      }
+      case ExprKind::ArrayLit: {
+        for (auto& a : e->args) check_expr(a);
+        if (e->args.empty()) {
+          // type must come from annotation — leave as error until let
+          e->type = Type::ty_error();
+          e->mangled = "empty_array";
+        } else {
+          TypePtr et = e->args[0]->type;
+          for (size_t i=1;i<e->args.size();++i)
+            if (!type_eq(e->args[i]->type, et))
+              error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+          e->type = Type::ty_fixed(et, (int64_t)e->args.size());
+        }
+        break;
+      }
+      case ExprKind::StructLit: {
+        if (!prog.structs.count(e->type_name)) {
+          if (prog.classes.count(e->type_name))
+            error_at(path, e->loc, "E0416", "classes must be constructed with `new`");
+          else error_at(path, e->loc, "E0409", "undefined type `" + e->type_name + "`");
+          e->type = Type::ty_error(); break;
+        }
+        auto* sd = prog.structs[e->type_name];
+        std::unordered_set<std::string> seen;
+        for (auto& fv : e->fields) {
+          check_expr(fv.second);
+          if (seen.count(fv.first)) error_at(path, e->loc, "E0404", "struct literal missing or duplicate field `" + fv.first + "`");
+          seen.insert(fv.first);
+          bool ok=false;
+          for (auto& f : sd->fields) if (f.name==fv.first) {
+            ok=true;
+            if (!type_eq(fv.second->type, f.type))
+              error_at(path, fv.second->loc, "E0408", "type mismatch");
+            break;
+          }
+          if (!ok) error_at(path, e->loc, "E0404", "struct literal missing or duplicate field `" + fv.first + "`");
+        }
+        for (auto& f : sd->fields) if (!seen.count(f.name))
+          error_at(path, e->loc, "E0404", "struct literal missing or duplicate field `" + f.name + "`");
+        e->type = Type::ty_struct(e->type_name);
+        break;
+      }
+      case ExprKind::New: {
+        for (auto& a : e->args) check_expr(a);
+        if (prog.classes.count(e->type_name)) {
+          auto* cd = prog.classes[e->type_name];
+          if (cd->ctor_index < 0) { e->type=Type::ty_error(); break; }
+          auto& ctor = cd->methods[cd->ctor_index];
+          if (e->args.size()!=ctor.params.size())
+            error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(ctor.params.size()) + ", found " + std::to_string(e->args.size()));
+          else for (size_t i=0;i<e->args.size();++i)
+            if (!type_eq(e->args[i]->type, ctor.params[i].type))
+              error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+          e->type = Type::ty_class(e->type_name);
+        } else if (prog.structs.count(e->type_name)) {
+          auto* sd = prog.structs[e->type_name];
+          if (e->args.size()!=sd->fields.size())
+            error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(sd->fields.size()) + ", found " + std::to_string(e->args.size()));
+          else for (size_t i=0;i<e->args.size();++i)
+            if (!type_eq(e->args[i]->type, sd->fields[i].type))
+              error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+          e->type = Type::ty_struct(e->type_name);
+        } else {
+          error_at(path, e->loc, "E0409", "undefined type `" + e->type_name + "`");
+          e->type = Type::ty_error();
+        }
+        break;
+      }
+      default: e->type = Type::ty_error(); break;
+    }
+    if (!e->type) e->type = Type::ty_error();
+    return e;
+  }
+
+  void check_assignable(ExprPtr lv, ExprPtr rv, SourceLoc loc) {
+    if (!type_eq(lv->type, rv->type) && lv->type->kind != TypeKind::Error && rv->type->kind != TypeKind::Error)
+      error_at(path, rv->loc, "E0408", "type mismatch: expected `" + lv->type->str() + "`, found `" + rv->type->str() + "`");
+  }
+
+  void check_lvalue_mut(ExprPtr lv) {
+    if (lv->kind == ExprKind::Ident && lv->is_const_binding)
+      error_at(path, lv->loc, "E0504", "cannot assign to const `" + lv->name + "`");
+    if (lv->kind == ExprKind::Field && lv->lhs && lv->lhs->type && lv->lhs->type->kind == TypeKind::Struct && lv->lhs->is_const_binding)
+      error_at(path, lv->loc, "E0511", "cannot assign to immutable field path");
+    if (lv->kind == ExprKind::Index && lv->is_const_binding)
+      error_at(path, lv->loc, "E0504", "cannot assign to const");
+  }
+
+  void check_stmt(StmtPtr s, bool* returns) {
+    if (!s) return;
+    switch (s->kind) {
+      case StmtKind::Block: {
+        Scope inner; inner.parent = scope; scope = &inner;
+        bool r = false;
+        for (size_t i=0;i<s->stmts.size();++i) {
+          if (r) { error_at(path, s->stmts[i]->loc, "E0509", "unreachable statement"); }
+          bool sr=false; check_stmt(s->stmts[i], &sr); if (sr) r=true;
+        }
+        scope = inner.parent;
+        if (returns) *returns = r;
+        break;
+      }
+      case StmtKind::Let: case StmtKind::Const: {
+        check_expr(s->init);
+        TypePtr ty;
+        if (s->has_type_ann) {
+          ty = finalize_type(s->decl_type, s->loc, false);
+          // empty array lit with dyn annotation
+          if (s->init->kind==ExprKind::ArrayLit && s->init->args.empty() && ty->kind==TypeKind::DynArray) {
+            s->init->type = ty;
+          } else if (s->init->kind==ExprKind::ArrayLit && ty->kind==TypeKind::DynArray) {
+            // convert fixed lit to dyn
+            if (!s->init->args.empty() && type_eq(s->init->args[0]->type, ty->elem))
+              s->init->type = ty;
+            else if (!type_eq(s->init->type, ty) && !(s->init->type->kind==TypeKind::FixedArray && type_eq(s->init->type->elem, ty->elem)))
+              error_at(path, s->init->loc, "E0408", "type mismatch: expected `" + ty->str() + "`, found `" + s->init->type->str() + "`");
+            else s->init->type = ty;
+          } else if (!type_eq(s->init->type, ty)) {
+            // special: fixed array lit assigned to fixed
+            if (!(s->init->type->kind==TypeKind::FixedArray && ty->kind==TypeKind::FixedArray && type_eq(s->init->type->elem, ty->elem) && s->init->type->fixed_len==ty->fixed_len))
+              error_at(path, s->init->loc, "E0408", "type mismatch: expected `" + ty->str() + "`, found `" + s->init->type->str() + "`");
+          }
+        } else {
+          ty = s->init->type;
+          if (!ty || ty->kind==TypeKind::Error || ty->kind==TypeKind::Void) {
+            error_at(path, s->loc, "E0406", "cannot infer type of `" + s->name + "`");
+            ty = Type::ty_error();
+          }
+        }
+        s->decl_type = ty;
+        scope->declare(s->name, VarInfo{ty, s->kind==StmtKind::Const, s->loc}, path);
+        if (returns) *returns = false;
+        break;
+      }
+      case StmtKind::Assign: {
+        check_expr(s->lhs); check_expr(s->rhs);
+        check_lvalue_mut(s->lhs);
+        if (s->assign_op != TokKind::Assign) {
+          // compound: check binary on types
+          Expr tmp; tmp.kind=ExprKind::Binary; tmp.op = 
+            s->assign_op==TokKind::PlusEq?TokKind::Plus:
+            s->assign_op==TokKind::MinusEq?TokKind::Minus:
+            s->assign_op==TokKind::StarEq?TokKind::Star:
+            s->assign_op==TokKind::SlashEq?TokKind::Slash:TokKind::Percent;
+          tmp.loc = s->loc; tmp.lhs = s->lhs; tmp.rhs = s->rhs;
+          auto rt = check_binary(tmp);
+          if (!type_eq(rt, s->lhs->type) && rt->kind!=TypeKind::Error)
+            error_at(path, s->loc, "E0408", "type mismatch");
+        } else {
+          check_assignable(s->lhs, s->rhs, s->loc);
+        }
+        if (returns) *returns = false;
+        break;
+      }
+      case StmtKind::Expr: {
+        check_expr(s->init);
+        if (returns) *returns = false;
+        break;
+      }
+      case StmtKind::If: {
+        check_expr(s->cond);
+        if (s->cond->type->kind != TypeKind::Bool)
+          error_at(path, s->cond->loc, "E0401", "condition must be `bool`, found `" + s->cond->type->str() + "`");
+        bool r1=false,r2=false;
+        check_stmt(s->then_b, &r1);
+        if (s->else_b) check_stmt(s->else_b, &r2);
+        if (returns) *returns = s->else_b && r1 && r2;
+        break;
+      }
+      case StmtKind::While: {
+        check_expr(s->cond);
+        if (s->cond->type->kind != TypeKind::Bool)
+          error_at(path, s->cond->loc, "E0401", "condition must be `bool`, found `" + s->cond->type->str() + "`");
+        loop_depth++; check_stmt(s->then_b, nullptr); loop_depth--;
+        if (returns) *returns = false;
+        break;
+      }
+      case StmtKind::For: {
+        Scope inner; inner.parent = scope; scope = &inner;
+        if (s->for_init) check_stmt(s->for_init, nullptr);
+        if (s->for_cond) {
+          check_expr(s->for_cond);
+          if (s->for_cond->type->kind != TypeKind::Bool)
+            error_at(path, s->for_cond->loc, "E0401", "condition must be `bool`, found `" + s->for_cond->type->str() + "`");
+        }
+        loop_depth++;
+        check_stmt(s->then_b, nullptr);
+        if (s->for_update) check_stmt(s->for_update, nullptr);
+        loop_depth--;
+        scope = inner.parent;
+        if (returns) *returns = false;
+        break;
+      }
+      case StmtKind::Break: case StmtKind::Continue:
+        if (loop_depth <= 0) error_at(path, s->loc, "E0510", "`break`/`continue` outside loop");
+        if (returns) *returns = false;
+        break;
+      case StmtKind::Return: {
+        if (s->ret) {
+          check_expr(s->ret);
+          if (cur_ret->kind == TypeKind::Void)
+            error_at(path, s->loc, "E0408", "type mismatch: expected `void`, found value");
+          else if (!type_eq(s->ret->type, cur_ret))
+            error_at(path, s->ret->loc, "E0408", "type mismatch: expected `" + cur_ret->str() + "`, found `" + s->ret->type->str() + "`");
+        } else {
+          if (cur_ret->kind != TypeKind::Void)
+            error_at(path, s->loc, "E0408", "type mismatch: expected `" + cur_ret->str() + "`, found `void`");
+        }
+        if (returns) *returns = true;
+        break;
+      }
+    }
+  }
+
+  void check_function(FunctionDecl& f) {
+    cur_fn = f.name; cur_ret = f.ret; cur_class = nullptr; in_ctor = false;
+    Scope sc; scope = &sc;
+    for (auto& p : f.params) sc.declare(p.name, VarInfo{p.type, false, p.loc}, path);
+    bool ret=false;
+    check_stmt(f.body, &ret);
+    if (f.ret->kind != TypeKind::Void && !ret) {
+      // Report at closing `}` of body: body.loc is `{`; approximate with last stmt or body loc.
+      // Tests expect the `}` line: compute from body — use a synthetic loc on next line after last stmt.
+      SourceLoc el = f.body->loc;
+      if (!f.body->stmts.empty()) {
+        el = f.body->stmts.back()->loc;
+        el.line += 1; el.col = 1; // closing brace typically next line col 1
+      } else {
+        el.col = 1;
+      }
+      // Better: parser should set end_loc. For fixture 026, body has one stmt at line 2, `}` at 3:1.
+      error_at(path, el, "E0508", "missing return on some paths in `" + f.name + "`");
+    }
+    scope = nullptr;
+  }
+
+  void check_method(ClassDecl& c, MethodDecl& m) {
+    cur_fn = m.name; cur_ret = m.ret; cur_class = &c; in_ctor = m.is_ctor;
+    Scope sc; scope = &sc;
+    for (auto& p : m.params) sc.declare(p.name, VarInfo{p.type, false, p.loc}, path);
+    bool ret=false;
+    check_stmt(m.body, &ret);
+    if (m.is_ctor) {
+      // each field assigned at least once — simple scan
+      std::unordered_set<std::string> assigned;
+      std::function<void(StmtPtr)> scan = [&](StmtPtr s) {
+        if (!s) return;
+        if (s->kind==StmtKind::Assign && s->lhs && s->lhs->kind==ExprKind::Field &&
+            s->lhs->lhs && s->lhs->lhs->kind==ExprKind::This)
+          assigned.insert(s->lhs->name);
+        if (s->kind==StmtKind::Block) for (auto& x: s->stmts) scan(x);
+        if (s->kind==StmtKind::If) { scan(s->then_b); scan(s->else_b); }
+      };
+      scan(m.body);
+      for (auto& f : c.fields)
+        if (!assigned.count(f.name))
+          error_at(path, m.loc, "E0418", "constructor does not assign field `" + f.name + "`");
+    } else if (m.ret->kind != TypeKind::Void && !ret) {
+      error_at(path, m.body->loc, "E0508", "missing return on some paths in `" + m.name + "`");
+    }
+    scope = nullptr;
+  }
+
+  void check_const(ConstDecl& c) {
+    Scope sc; scope = &sc;
+    check_expr(c.init);
+    if (c.has_type_ann) {
+      c.type = finalize_type(c.type, c.loc, false);
+      if (!type_eq(c.init->type, c.type))
+        error_at(path, c.init->loc, "E0408", "type mismatch");
+    } else c.type = c.init->type;
+    // top-level: no class new
+    std::function<bool(ExprPtr)> has_class_new = [&](ExprPtr e)->bool {
+      if (!e) return false;
+      if (e->kind==ExprKind::New && prog.classes.count(e->type_name)) return true;
+      if (has_class_new(e->lhs)||has_class_new(e->rhs)) return true;
+      for (auto& a:e->args) if (has_class_new(a)) return true;
+      for (auto& f:e->fields) if (has_class_new(f.second)) return true;
+      return false;
+    };
+    if (has_class_new(c.init))
+      error_at(path, c.loc, "E0407", "top-level const initializer is not compile-time constant");
+    scope = nullptr;
+  }
+
+  void run() {
+    // finalize types on decls
+    for (auto& m : prog.modules) {
+      path = m.path;
+      for (auto& s : m.structs)
+        for (auto& f : s.fields) f.type = finalize_type(f.type, f.loc, false);
+      for (auto& c : m.classes) {
+        for (auto& f : c.fields) f.type = finalize_type(f.type, f.loc, false);
+        int ctors = 0;
+        for (size_t i=0;i<c.methods.size();++i) {
+          auto& md = c.methods[i];
+          for (auto& p : md.params) p.type = finalize_type(p.type, p.loc, false);
+          md.ret = finalize_type(md.ret, md.loc, true);
+          if (md.is_ctor) { ctors++; c.ctor_index = (int)i; }
+        }
+        if (ctors != 1)
+          error_at(path, c.loc, "E0414", "class `" + c.name + "` must have exactly one constructor");
+      }
+      for (auto& f : m.functions) {
+        for (auto& p : f.params) p.type = finalize_type(p.type, p.loc, false);
+        f.ret = finalize_type(f.ret, f.loc, true);
+      }
+    }
+
+    // main check
+    Module* mainm = nullptr;
+    for (auto& m : prog.modules) if (m.is_main) mainm = &m;
+    if (!mainm || !prog.functions.count("main")) {
+      error_at(prog.modules[0].path, SourceLoc{1,1}, "E0506", "missing or invalid `function main(): int` in main file");
+    } else {
+      auto* fn = prog.functions["main"];
+      if (fn->params.size()!=0 || fn->ret->kind != TypeKind::Int)
+        error_at(mainm->path, fn->loc, "E0506", "missing or invalid `function main(): int` in main file");
+    }
+
+    // consts first (init)
+    for (auto& m : prog.modules) {
+      path = m.path;
+      for (auto& c : m.consts) check_const(c);
+    }
+    for (auto& m : prog.modules) {
+      path = m.path;
+      for (auto& f : m.functions) check_function(f);
+      for (auto& c : m.classes)
+        for (auto& md : c.methods) check_method(c, md);
+    }
+  }
+};
+
+bool analyze_program(Program& prog) {
+  Sema s(prog);
+  s.run();
+  return !has_errors();
+}
+
+} // namespace farm

@@ -1,0 +1,9 @@
+function main(): int {
+  let x: int = 1;
+  {
+    let x: int = 2;
+    println(x);
+  }
+  println(x);
+  return 0;
+}

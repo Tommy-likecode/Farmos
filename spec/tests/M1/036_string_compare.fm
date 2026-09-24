@@ -1,0 +1,7 @@
+function main(): int {
+  println("abc" == "abc");
+  println("abc" != "abd");
+  println("a" < "b");
+  println("b" >= "a");
+  return 0;
+}

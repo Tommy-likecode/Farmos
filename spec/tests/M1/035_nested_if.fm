@@ -1,0 +1,10 @@
+function main(): int {
+  let a: int = 2;
+  let b: int = 3;
+  if (a < b) {
+    if (b < 10) {
+      println("inner");
+    }
+  }
+  return 0;
+}

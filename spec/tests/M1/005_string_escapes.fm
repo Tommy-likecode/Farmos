@@ -1,0 +1,5 @@
+function main(): int {
+  println("a\nb\tc\\d\"e");
+  println("\u{41}");
+  return 0;
+}

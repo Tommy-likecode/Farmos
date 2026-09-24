@@ -1,0 +1,11 @@
+# kind: run
+# exit: 0
+# stdout:
+Infinity
+-Infinity
+NaN
+false
+true
+false
+false
+# end

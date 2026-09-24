@@ -1,0 +1,11 @@
+function main(): int {
+  println(1.0 / 0.0);
+  println(-1.0 / 0.0);
+  println(0.0 / 0.0);
+  let n: float = 0.0 / 0.0;
+  println(n == n);
+  println(n != n);
+  println(n < 1.0);
+  println(n > 1.0);
+  return 0;
+}

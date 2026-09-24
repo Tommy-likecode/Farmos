@@ -1,0 +1,9 @@
+function main(): int {
+  let s: string = "hel" + "lo";
+  println(s);
+  println(len(s));
+  println(len(""));
+  println(str(42));
+  println(str(true));
+  return 0;
+}

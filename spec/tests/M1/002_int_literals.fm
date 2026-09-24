@@ -1,0 +1,7 @@
+function main(): int {
+  println(0);
+  println(42);
+  println(-7);
+  println(9223372036854775807);
+  return 0;
+}
