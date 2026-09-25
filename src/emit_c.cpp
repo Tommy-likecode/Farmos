@@ -636,7 +636,7 @@ struct Emitter {
           // Check if this is a farmos:math built-in method with empty body
           bool is_builtin = (md.body->kind == StmtKind::Block && 
                              md.body->stmts.empty() &&
-                             s.name.find("Vector") == 0); // Vector2/3/4
+                             (s.name.find("Vector") == 0 || s.name.find("Matrix") == 0)); // Vector2/3/4, Matrix3/4
           
           if (is_builtin) {
             // Generate built-in implementation
@@ -741,12 +741,12 @@ struct Emitter {
               out << "  double g=m[2], h=m[5], i=m[8];\n";
               out << "  return a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g);\n";
             } else if (s.name == "Matrix3" && md.name == "makeScale") {
-              // Set to scale matrix
+              // Set to scale matrix and return by value
               out << "  double* m = this->f_elements.data;\n";
               out << "  m[0] = v_sx; m[3] = 0.0;   m[6] = 0.0;\n";
               out << "  m[1] = 0.0;  m[4] = v_sy;  m[7] = 0.0;\n";
               out << "  m[2] = 0.0;  m[5] = 0.0;   m[8] = 1.0;\n";
-              out << "  return this;\n";
+              out << "  return *this;\n";
             } else {
               // Default implementation based on return type
               if (md.ret->kind == TypeKind::Float) {
@@ -794,6 +794,7 @@ struct Emitter {
             out << "  farm_print_float(v.f_" << s.fields[i].name << ");\n";
           }
           out << "  printf(\")\");\n";
+          out << "  fflush(stdout);\n"; // Flush closing paren before function returns
         }
         out << "}\n";
         
@@ -801,6 +802,7 @@ struct Emitter {
         out << "void farm_print_" << sanitize(s.name) << "_ln(struct Farm_" << s.c_sym << " v) {\n";
         out << "  farm_print_" << sanitize(s.name) << "(v);\n";
         out << "  putchar('\\n');\n";
+        out << "  fflush(stdout);\n"; // Flush newline before returning
         out << "}\n";
       }
     }
