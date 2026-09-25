@@ -381,6 +381,12 @@ struct Emitter {
             out << "  " << v << ".f_max.f_x = -1.0/0.0;\n"; // -inf
             out << "  " << v << ".f_max.f_y = -1.0/0.0;\n";
             out << "  " << v << ".f_max.f_z = -1.0/0.0;\n";
+          } else if (sd->name == "Euler") {
+            // Default Euler: (0, 0, 0, "XYZ")
+            out << "  " << v << ".f_x = 0.0;\n";
+            out << "  " << v << ".f_y = 0.0;\n";
+            out << "  " << v << ".f_z = 0.0;\n";
+            out << "  " << v << ".f_order = (FarmString){.ptr=\"XYZ\", .len=3};\n";
           } else {
             // Default: zero all fields
             for (auto& f : sd->fields) {
@@ -415,6 +421,19 @@ struct Emitter {
               }
             }
           }
+        } else if (sd->name == "Color" && e->args.size() == 1) {
+          // Color(hex: int) constructor
+          std::string hex_val = emit_expr(e->args[0]);
+          out << v << ".f_r = ((" << hex_val << " >> 16) & 255) / 255.0;\n";
+          out << v << ".f_g = ((" << hex_val << " >> 8) & 255) / 255.0;\n";
+          out << v << ".f_b = (" << hex_val << " & 255) / 255.0;\n";
+        } else if (sd->name == "Euler" && e->args.size() == 3) {
+          // Euler(x, y, z) constructor with default order "XYZ"
+          for (size_t i=0; i<3; ++i) {
+            std::string arg_val = emit_expr(e->args[i]);
+            out << v << ".f_" << sd->fields[i].name << " = " << arg_val << ";\n";
+          }
+          out << v << ".f_order = (FarmString){.ptr=\"XYZ\", .len=3};\n";
         } else {
           // Explicit constructor with all arguments
           for (size_t i=0;i<e->args.size();++i) {

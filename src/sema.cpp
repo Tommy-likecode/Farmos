@@ -538,10 +538,10 @@ struct Sema {
           e->type = Type::ty_class(cd->c_sym);
           e->mangled = cd->c_sym;
         } else if (auto* sd = find_struct(e->type_name)) {
-          // M2: Allow default constructor with zero args, or full constructor matching all fields
-          if (e->args.size() != 0 && e->args.size() != sd->fields.size())
-            error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(sd->fields.size()) + " or 0, found " + std::to_string(e->args.size()));
-          else {
+          // M2: Allow custom constructors for specific types
+          bool valid_ctor = false;
+          if (e->args.size() == 0 || e->args.size() == sd->fields.size()) {
+            valid_ctor = true;
             for (size_t i=0;i<e->args.size();++i) {
               // M2: Try int→float coercion
               if (!type_eq(e->args[i]->type, sd->fields[i].type) &&
@@ -552,7 +552,24 @@ struct Sema {
               if (!type_eq(e->args[i]->type, sd->fields[i].type))
                 error_at(path, e->args[i]->loc, "E0408", "type mismatch");
             }
+          } else if (sd->name == "Color" && e->args.size() == 1 && e->args[0]->type->kind == TypeKind::Int) {
+            // Color(hex: int) constructor
+            valid_ctor = true;
+          } else if (sd->name == "Euler" && e->args.size() == 3) {
+            // Euler(x, y, z) constructor with default order
+            valid_ctor = true;
+            for (size_t i=0; i<3; ++i) {
+              if (e->args[i]->type->kind == TypeKind::Int) {
+                e->args[i] = try_coerce_int_to_float(e->args[i]);
+              }
+              if (e->args[i]->type->kind != TypeKind::Float)
+                error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected float");
+            }
           }
+          
+          if (!valid_ctor)
+            error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(sd->fields.size()) + " or 0, found " + std::to_string(e->args.size()));
+          
           e->type = Type::ty_struct(sd->c_sym);
           e->mangled = sd->c_sym;
         } else {
