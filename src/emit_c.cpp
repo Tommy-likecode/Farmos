@@ -1227,7 +1227,11 @@ struct Emitter {
             if (field.type->kind == TypeKind::Float) {
               out << "  farm_print_float(v.f_" << field.name << ");\n";
             } else if (field.type->kind == TypeKind::String) {
+              out << "  printf(\"\\\"\");\n";  // Opening quote
+              out << "  fflush(stdout);\n";
               out << "  farm_print_string(v.f_" << field.name << ");\n";
+              out << "  printf(\"\\\"\");\n";  // Closing quote
+              out << "  fflush(stdout);\n";
             } else if (field.type->kind == TypeKind::Bool) {
               out << "  farm_print_bool(v.f_" << field.name << ");\n";
             } else if (field.type->kind == TypeKind::Struct) {
