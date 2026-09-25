@@ -259,9 +259,10 @@ struct Emitter {
               // Receiver is an lvalue, pass its address directly
               recv = emit_lvalue_ptr(e->lhs->lhs);
             } else {
-              // Receiver is an rvalue (temporary), store in temp variable
+              // Receiver is an rvalue (temporary), emit it first then store
+              std::string recv_val = emit_expr(e->lhs->lhs);
               std::string tmp = fresh("rcv");
-              out << c_type(e->lhs->lhs->type) << " " << tmp << " = " << emit_expr(e->lhs->lhs) << ";\n";
+              out << c_type(e->lhs->lhs->type) << " " << tmp << " = " << recv_val << ";\n";
               recv = "&" + tmp;
             }
           } else {
