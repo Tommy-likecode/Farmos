@@ -504,6 +504,35 @@ struct Emitter {
       result = std::string("((") + oldv + ")" + o + "(" + rv + "))";
     } else if (lv->type->kind == TypeKind::String && bop == TokKind::Plus) {
       result = "farm_str_concat(" + oldv + "," + rv + ")";
+    } else if (lv->type->kind == TypeKind::Struct) {
+      // M2: Try operator overload for compound assignment
+      std::string op_name;
+      if (bop == TokKind::Plus) op_name = "__farm_op_add";
+      else if (bop == TokKind::Minus) op_name = "__farm_op_sub";
+      else if (bop == TokKind::Star) op_name = "__farm_op_mul";
+      else if (bop == TokKind::Slash) op_name = "__farm_op_div";
+      
+      if (!op_name.empty()) {
+        StructDecl* sd = nullptr;
+        for (auto& mm : prog.modules) {
+          for (auto& ss : mm.structs) {
+            if (ss.c_sym == lv->type->name) {
+              sd = &ss;
+              break;
+            }
+          }
+          if (sd) break;
+        }
+        if (sd) {
+          for (auto& md : sd->methods) {
+            if (md.name == op_name) {
+              result = sd->c_sym + "__" + op_name + "(&" + oldv + ", " + rv + ")";
+              break;
+            }
+          }
+        }
+      }
+      if (result.empty()) result = oldv;
     } else {
       result = oldv;
     }
@@ -1140,6 +1169,8 @@ struct Emitter {
         if (s.name == "Matrix4" || s.name == "Matrix3") {
           out << "  printf(\"" << s.name << "{...}\");\n";
         } else {
+          // M2: RayHit prints with field names
+          bool with_field_names = (s.name == "RayHit");
           out << "  printf(\"" << s.name << "(\");\n";
           out << "  fflush(stdout);\n"; // Flush before unbuffered writes
           for (size_t i = 0; i < s.fields.size(); ++i) {
@@ -1148,6 +1179,10 @@ struct Emitter {
               out << "  fflush(stdout);\n";
             }
             auto& field = s.fields[i];
+            if (with_field_names) {
+              out << "  printf(\"" << field.name << ": \");\n";
+              out << "  fflush(stdout);\n";
+            }
             if (field.type->kind == TypeKind::Float) {
               out << "  farm_print_float(v.f_" << field.name << ");\n";
             } else if (field.type->kind == TypeKind::String) {
