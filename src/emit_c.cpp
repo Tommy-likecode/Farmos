@@ -571,7 +571,7 @@ struct Emitter {
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide",
              "applyMatrix3", "applyMatrix4", "applyQuaternion", 
-             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "makeRotationX", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle", "crossVectors"};
+             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "makeRotationX", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle", "crossVectors", "expandByPoint"};
           std::string ret_type = c_type(md.ret);
           if (md.ret->kind == TypeKind::Struct && 
               md.ret->name == s.c_sym && 
@@ -626,7 +626,7 @@ struct Emitter {
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide", 
              "applyMatrix3", "applyMatrix4", "applyQuaternion", 
-             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "makeRotationX", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle", "crossVectors"};
+             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "makeRotationX", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle", "crossVectors", "expandByPoint"};
           std::string ret_type = c_type(md.ret);
           bool returns_this_ptr = false;
           if (md.ret->kind == TypeKind::Struct && 
@@ -962,6 +962,34 @@ struct Emitter {
               out << "  return (dist <= (this->f_radius + v_s.f_radius)) ? 1 : 0;\n";
             } else if (s.name == "Box3" && md.name == "isEmpty") {
               out << "  return (this->f_max.f_x < this->f_min.f_x || this->f_max.f_y < this->f_min.f_y || this->f_max.f_z < this->f_min.f_z) ? 1 : 0;\n";
+            } else if (s.name == "Box3" && md.name == "expandByPoint") {
+              out << "  if (v_p.f_x < this->f_min.f_x) this->f_min.f_x = v_p.f_x;\n";
+              out << "  if (v_p.f_y < this->f_min.f_y) this->f_min.f_y = v_p.f_y;\n";
+              out << "  if (v_p.f_z < this->f_min.f_z) this->f_min.f_z = v_p.f_z;\n";
+              out << "  if (v_p.f_x > this->f_max.f_x) this->f_max.f_x = v_p.f_x;\n";
+              out << "  if (v_p.f_y > this->f_max.f_y) this->f_max.f_y = v_p.f_y;\n";
+              out << "  if (v_p.f_z > this->f_max.f_z) this->f_max.f_z = v_p.f_z;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Box3" && md.name == "containsPoint") {
+              out << "  return (v_p.f_x >= this->f_min.f_x && v_p.f_x <= this->f_max.f_x &&\n";
+              out << "          v_p.f_y >= this->f_min.f_y && v_p.f_y <= this->f_max.f_y &&\n";
+              out << "          v_p.f_z >= this->f_min.f_z && v_p.f_z <= this->f_max.f_z) ? 1 : 0;\n";
+            } else if (s.name == "Box3" && md.name == "getCenter") {
+              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  result.f_x = (this->f_min.f_x + this->f_max.f_x) * 0.5;\n";
+              out << "  result.f_y = (this->f_min.f_y + this->f_max.f_y) * 0.5;\n";
+              out << "  result.f_z = (this->f_min.f_z + this->f_max.f_z) * 0.5;\n";
+              out << "  return result;\n";
+            } else if (s.name == "Box3" && md.name == "getSize") {
+              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  result.f_x = this->f_max.f_x - this->f_min.f_x;\n";
+              out << "  result.f_y = this->f_max.f_y - this->f_min.f_y;\n";
+              out << "  result.f_z = this->f_max.f_z - this->f_min.f_z;\n";
+              out << "  return result;\n";
+            } else if (s.name == "Box3" && md.name == "intersectsBox") {
+              out << "  return (this->f_max.f_x >= v_box.f_min.f_x && this->f_min.f_x <= v_box.f_max.f_x &&\n";
+              out << "          this->f_max.f_y >= v_box.f_min.f_y && this->f_min.f_y <= v_box.f_max.f_y &&\n";
+              out << "          this->f_max.f_z >= v_box.f_min.f_z && this->f_min.f_z <= v_box.f_max.f_z) ? 1 : 0;\n";
             } else if (s.name == "Matrix3" && md.name == "determinant") {
               // 3x3 matrix determinant (column-major order)
               out << "  double* m = this->f_elements.data;\n";

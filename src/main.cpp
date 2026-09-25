@@ -907,6 +907,69 @@ static Module create_farmos_math_module() {
       b.methods.push_back(std::move(md));
     }
     
+    // expandByPoint(p: Vector3): Box3
+    {
+      MethodDecl md;
+      md.name = "expandByPoint";
+      md.params.push_back(Param{"p", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Box3");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      b.methods.push_back(std::move(md));
+    }
+    
+    // containsPoint(p: Vector3): bool
+    {
+      MethodDecl md;
+      md.name = "containsPoint";
+      md.params.push_back(Param{"p", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      b.methods.push_back(std::move(md));
+    }
+    
+    // getCenter(): Vector3
+    {
+      MethodDecl md;
+      md.name = "getCenter";
+      md.ret = Type::ty_struct("Vector3");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      b.methods.push_back(std::move(md));
+    }
+    
+    // getSize(): Vector3
+    {
+      MethodDecl md;
+      md.name = "getSize";
+      md.ret = Type::ty_struct("Vector3");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      b.methods.push_back(std::move(md));
+    }
+    
+    // intersectsBox(box: Box3): bool
+    {
+      MethodDecl md;
+      md.name = "intersectsBox";
+      md.params.push_back(Param{"box", Type::ty_struct("Box3"), SourceLoc{1,1}});
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      b.methods.push_back(std::move(md));
+    }
+    
     m.structs.push_back(std::move(b));
   }
   
