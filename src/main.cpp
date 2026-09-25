@@ -522,6 +522,19 @@ static Module create_farmos_math_module() {
       m4.methods.push_back(std::move(md));
     }
     
+    // makeRotationX(theta: float): Matrix4
+    {
+      MethodDecl md;
+      md.name = "makeRotationX";
+      md.params.push_back(Param{"theta", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
     m.structs.push_back(std::move(m4));
   }
   

@@ -44,7 +44,7 @@ for test_file in $M2_DIR/*.fm; do
             failing_tests+=("$test_name")
             echo "FAIL: $test_name (expected compile error, but compiled successfully)"
         fi
-    elif [ "$kind" == "run" ]; then
+    elif [ "$kind" == "run" ] || [ "$kind" == "run_approx" ]; then
         # Test expects successful compilation and run
         if [ $compile_result -ne 0 ]; then
             ((fail_count++))
@@ -55,15 +55,53 @@ for test_file in $M2_DIR/*.fm; do
             actual_stdout=$("/tmp/test_${test_name}" 2>&1)
             actual_exit=$?
             
-            # Compare exit code and stdout
-            if [ "$actual_exit" == "$expected_exit" ] && [ "$actual_stdout" == "$expected_stdout" ]; then
-                ((pass_count++))
-                passing_tests+=("$test_name")
-                echo "PASS: $test_name"
+            if [ "$kind" == "run_approx" ]; then
+                # For run_approx, compare with tolerance
+                epsilon=$(grep "^# epsilon:" "$expected_file" | cut -d: -f2 | xargs)
+                if [ -z "$epsilon" ]; then
+                    epsilon="1e-15"
+                fi
+                
+                # Simple line-by-line comparison (treating each line as a float)
+                match=true
+                IFS=$'\n' read -d '' -r -a expected_lines <<< "$expected_stdout"
+                IFS=$'\n' read -d '' -r -a actual_lines <<< "$actual_stdout"
+                
+                if [ "${#expected_lines[@]}" -ne "${#actual_lines[@]}" ]; then
+                    match=false
+                else
+                    for i in "${!expected_lines[@]}"; do
+                        exp="${expected_lines[$i]}"
+                        act="${actual_lines[$i]}"
+                        
+                        # Try float comparison with epsilon
+                        if ! awk -v a="$act" -v e="$exp" -v eps="$epsilon" 'BEGIN { exit !(a-e < eps && e-a < eps) }' 2>/dev/null; then
+                            match=false
+                            break
+                        fi
+                    done
+                fi
+                
+                if [ "$actual_exit" == "$expected_exit" ] && [ "$match" == "true" ]; then
+                    ((pass_count++))
+                    passing_tests+=("$test_name")
+                    echo "PASS: $test_name (approx)"
+                else
+                    ((fail_count++))
+                    failing_tests+=("$test_name")
+                    echo "FAIL: $test_name (approx output or exit code mismatch)"
+                fi
             else
-                ((fail_count++))
-                failing_tests+=("$test_name")
-                echo "FAIL: $test_name (output or exit code mismatch)"
+                # Compare exit code and stdout exactly
+                if [ "$actual_exit" == "$expected_exit" ] && [ "$actual_stdout" == "$expected_stdout" ]; then
+                    ((pass_count++))
+                    passing_tests+=("$test_name")
+                    echo "PASS: $test_name"
+                else
+                    ((fail_count++))
+                    failing_tests+=("$test_name")
+                    echo "FAIL: $test_name (output or exit code mismatch)"
+                fi
             fi
         fi
     elif [ "$kind" == "runtime_trap" ]; then

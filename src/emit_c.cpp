@@ -569,7 +569,7 @@ struct Emitter {
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide",
              "applyMatrix3", "applyMatrix4", "applyQuaternion", 
-             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle", "crossVectors"};
+             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "makeRotationX", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle", "crossVectors"};
           std::string ret_type = c_type(md.ret);
           if (md.ret->kind == TypeKind::Struct && 
               md.ret->name == s.c_sym && 
@@ -624,7 +624,7 @@ struct Emitter {
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide", 
              "applyMatrix3", "applyMatrix4", "applyQuaternion", 
-             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle", "crossVectors"};
+             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "makeRotationX", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle", "crossVectors"};
           std::string ret_type = c_type(md.ret);
           bool returns_this_ptr = false;
           if (md.ret->kind == TypeKind::Struct && 
@@ -849,6 +849,15 @@ struct Emitter {
               out << "  e[1] = 0;  e[5] = 1; e[9] = 0;  e[13] = 0;\n";
               out << "  e[2] = -s; e[6] = 0; e[10] = c; e[14] = 0;\n";
               out << "  e[3] = 0;  e[7] = 0; e[11] = 0; e[15] = 1;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Matrix4" && md.name == "makeRotationX") {
+              out << "  double c = cos(v_theta);\n";
+              out << "  double s = sin(v_theta);\n";
+              out << "  double* e = this->f_elements.data;\n";
+              out << "  e[0] = 1; e[4] = 0;  e[8] = 0;  e[12] = 0;\n";
+              out << "  e[1] = 0; e[5] = c;  e[9] = -s; e[13] = 0;\n";
+              out << "  e[2] = 0; e[6] = s;  e[10] = c; e[14] = 0;\n";
+              out << "  e[3] = 0; e[7] = 0;  e[11] = 0; e[15] = 1;\n";
               out << "  return this;\n";
             } else if (s.name == "Vector3" && md.name == "applyMatrix4") {
               // Apply 4x4 matrix to (x, y, z, 1) homogeneous coordinate
