@@ -343,6 +343,19 @@ static Module create_farmos_math_module() {
     v3.methods.push_back(std::move(md));
   }
   
+  // distanceToSquared(v: Vector3): float
+  {
+    MethodDecl md;
+    md.name = "distanceToSquared";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
   m.structs.push_back(std::move(v3));
   
   // Vector2 struct
