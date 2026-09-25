@@ -483,12 +483,16 @@ struct Emitter {
     out << "#include <stdio.h>\n";
     out << "#include <math.h>\n";
     out << "#include \"farm_rt.h\"\n\n";
+    // Emit all structs first (so classes can reference them)
     for (auto& m : prog.modules) {
       for (auto& s : m.structs) {
         out << "struct Farm_" << s.c_sym << " {\n";
         for (auto& f : s.fields) out << "  " << c_type(f.type) << " f_" << f.name << ";\n";
         out << "};\n";
       }
+    }
+    // Then emit all classes
+    for (auto& m : prog.modules) {
       for (auto& c : m.classes) {
         out << "struct Farm_" << c.c_sym << " {\n";
         for (auto& f : c.fields) out << "  " << c_type(f.type) << " f_" << f.name << ";\n";

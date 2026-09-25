@@ -1,0 +1,14 @@
+import { Vector3 } from "farmos:math";
+
+class Camera {
+  position: Vector3;
+  constructor() {
+    this.position = new Vector3(0.0, 0.0, 0.0);
+  }
+}
+
+function main(): int {
+  let camera: Camera = new Camera();
+  println(camera.position);
+  return 0;
+}
