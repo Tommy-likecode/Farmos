@@ -364,12 +364,46 @@ struct Emitter {
             out << "  " << v << ".f_y = 0.0;\n";
             out << "  " << v << ".f_z = 0.0;\n";
             out << "  " << v << ".f_w = 1.0;\n";
+          } else if (sd->name == "Box3") {
+            // Empty box: min = +infinity, max = -infinity
+            out << "  " << v << ".f_min.f_x = 1.0/0.0;\n";  // +inf
+            out << "  " << v << ".f_min.f_y = 1.0/0.0;\n";
+            out << "  " << v << ".f_min.f_z = 1.0/0.0;\n";
+            out << "  " << v << ".f_max.f_x = -1.0/0.0;\n"; // -inf
+            out << "  " << v << ".f_max.f_y = -1.0/0.0;\n";
+            out << "  " << v << ".f_max.f_z = -1.0/0.0;\n";
           } else {
             // Default: zero all fields
             for (auto& f : sd->fields) {
-              std::string zero_val = "0";
-              if (f.type->kind == TypeKind::Float) zero_val = "0.0";
-              out << v << ".f_" << f.name << " = " << zero_val << ";\n";
+              if (f.type->kind == TypeKind::Struct) {
+                // Nested struct - create default instance
+                std::string nested_ty = c_type(f.type);
+                std::string nested_v = fresh("st");
+                out << nested_ty << " " << nested_v << ";\n";
+                // Zero-initialize nested struct fields recursively
+                StructDecl* nested_sd = nullptr;
+                for (auto& mm : prog.modules) {
+                  for (auto& ss : mm.structs) {
+                    if (ss.c_sym == f.type->name) {
+                      nested_sd = &ss;
+                      break;
+                    }
+                  }
+                  if (nested_sd) break;
+                }
+                if (nested_sd) {
+                  for (auto& nf : nested_sd->fields) {
+                    std::string zero_val = "0";
+                    if (nf.type->kind == TypeKind::Float) zero_val = "0.0";
+                    out << nested_v << ".f_" << nf.name << " = " << zero_val << ";\n";
+                  }
+                }
+                out << v << ".f_" << f.name << " = " << nested_v << ";\n";
+              } else {
+                std::string zero_val = "0";
+                if (f.type->kind == TypeKind::Float) zero_val = "0.0";
+                out << v << ".f_" << f.name << " = " << zero_val << ";\n";
+              }
             }
           }
         } else {
