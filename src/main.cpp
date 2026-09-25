@@ -505,6 +505,19 @@ static Module create_farmos_math_module() {
     v2.methods.push_back(std::move(md));
   }
   
+  // applyMatrix3(m: Matrix3): Vector2
+  {
+    MethodDecl md;
+    md.name = "applyMatrix3";
+    md.params.push_back(Param{"m", Type::ty_struct("Matrix3"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector2");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v2.methods.push_back(std::move(md));
+  }
+  
   m.structs.push_back(std::move(v2));
   
   // Vector4 struct

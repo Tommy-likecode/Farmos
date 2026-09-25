@@ -567,7 +567,8 @@ struct Emitter {
           // If method is mutating (returns this), return pointer for chaining
           // Mutating methods: add, multiplyScalar, cross, normalize, lerp, set
           static const std::set<std::string> mutating_methods = 
-            {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide"};
+            {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide",
+             "applyMatrix3", "applyMatrix4", "applyQuaternion"};
           std::string ret_type = c_type(md.ret);
           if (md.ret->kind == TypeKind::Struct && 
               md.ret->name == s.c_sym && 
@@ -620,7 +621,8 @@ struct Emitter {
         for (auto& md : s.methods) {
           // If method is mutating (returns this), return pointer for chaining
           static const std::set<std::string> mutating_methods = 
-            {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide"};
+            {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide", 
+             "applyMatrix3", "applyMatrix4", "applyQuaternion"};
           std::string ret_type = c_type(md.ret);
           bool returns_this_ptr = false;
           if (md.ret->kind == TypeKind::Struct && 
@@ -713,6 +715,14 @@ struct Emitter {
             } else if (s.name == "Vector2" && md.name == "multiplyScalar") {
               out << "  this->f_x *= v_s;\n";
               out << "  this->f_y *= v_s;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Vector2" && md.name == "applyMatrix3") {
+              // Apply 3x3 matrix to (x, y, 1) homogeneous coordinate
+              out << "  double* e = v_m.f_elements.data;\n";
+              out << "  double x = e[0] * this->f_x + e[3] * this->f_y + e[6];\n";
+              out << "  double y = e[1] * this->f_x + e[4] * this->f_y + e[7];\n";
+              out << "  this->f_x = x;\n";
+              out << "  this->f_y = y;\n";
               out << "  return this;\n";
             } else if (s.name == "Vector4" && md.name == "dot") {
               out << "  return this->f_x * v_v.f_x + this->f_y * v_v.f_y + this->f_z * v_v.f_z + this->f_w * v_v.f_w;\n";
