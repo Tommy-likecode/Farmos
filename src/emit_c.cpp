@@ -122,6 +122,21 @@ struct Emitter {
           // Operator overload - emit as method call
           std::string lhs_val = emit_expr(e->lhs);
           std::string rhs_val = emit_expr(e->rhs);
+          
+          // M2: Reverse operators (scalar * vector) - swap and pass scalar by value
+          if (e->is_reverse_op) {
+            // For reverse ops, lhs is scalar, rhs is struct
+            if (e->type->kind == TypeKind::Struct) {
+              std::string ty = c_type(e->type);
+              std::string v = fresh("op_result");
+              out << ty << " " << v << " = " << e->mangled << "(&" << rhs_val << ", " << lhs_val << ");\n";
+              return v;
+            } else {
+              return e->mangled + "(&" + rhs_val + ", " + lhs_val + ")";
+            }
+          }
+          
+          // Normal operators
           if (e->type->kind == TypeKind::Struct) {
             // Returns struct - need temp variable
             std::string ty = c_type(e->type);
@@ -1037,6 +1052,13 @@ struct Emitter {
               out << "  result.f_x = -this->f_x;\n";
               out << "  result.f_y = -this->f_y;\n";
               out << "  result.f_z = -this->f_z;\n";
+              out << "  return result;\n";
+            } else if (s.name == "Vector3" && md.name == "__farm_op_rmul") {
+              // scalar * vector (reverse multiply)
+              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  result.f_x = v_scalar * this->f_x;\n";
+              out << "  result.f_y = v_scalar * this->f_y;\n";
+              out << "  result.f_z = v_scalar * this->f_z;\n";
               out << "  return result;\n";
             } else if (s.name == "Quaternion" && md.name == "multiply") {
               // this = this * q

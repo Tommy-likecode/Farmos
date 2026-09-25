@@ -82,6 +82,7 @@ struct Expr {
   std::string mangled; // function symbol
   bool is_lvalue = false;
   bool is_const_binding = false;
+  bool is_reverse_op = false;  // M2: For left-associative operators (scalar * vector)
 };
 
 enum class StmtKind {

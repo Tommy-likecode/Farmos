@@ -160,7 +160,7 @@ struct Sema {
       if (lt->kind==TypeKind::Int && rt->kind==TypeKind::Int) return Type::ty_int();
       if (lt->kind==TypeKind::Float && rt->kind==TypeKind::Float) return Type::ty_float();
       
-      // M2: Try operator overloading for struct types
+      // M2: Try operator overloading for struct types (left operand is struct)
       if (lt->kind == TypeKind::Struct) {
         std::string op_name;
         if (op == TokKind::Plus) op_name = "__farm_op_add";
@@ -180,6 +180,31 @@ struct Sema {
                 }
                 // Rewrite as method call
                 e.mangled = sd->c_sym + "__" + op_name;
+                return md.ret;
+              }
+            }
+          }
+        }
+      }
+      
+      // M2: Try left-associative operator (scalar * vector, etc.) - right operand is struct
+      if (rt->kind == TypeKind::Struct && (op == TokKind::Star || op == TokKind::Slash)) {
+        std::string op_name;
+        if (op == TokKind::Star) op_name = "__farm_op_rmul";  // reverse multiply
+        else if (op == TokKind::Slash) op_name = "__farm_op_rdiv";
+        
+        if (!op_name.empty()) {
+          auto* sd = find_struct_any(rt->name);
+          if (sd) {
+            for (auto& md : sd->methods) {
+              if (md.name == op_name && md.params.size() == 1) {
+                // Found reverse operator - check parameter type matches left
+                if (!type_eq(md.params[0].type, lt)) {
+                  error_at(path, e.lhs->loc, "E0408", "type mismatch");
+                  return Type::ty_error();
+                }
+                e.mangled = sd->c_sym + "__" + op_name;
+                e.is_reverse_op = true;  // Mark for codegen
                 return md.ret;
               }
             }
