@@ -569,7 +569,7 @@ struct Emitter {
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide",
              "applyMatrix3", "applyMatrix4", "applyQuaternion", 
-             "makeTranslation", "makeScale", "makeRotation", "multiply", "invert", "transpose", "setHex"};
+             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle"};
           std::string ret_type = c_type(md.ret);
           if (md.ret->kind == TypeKind::Struct && 
               md.ret->name == s.c_sym && 
@@ -624,7 +624,7 @@ struct Emitter {
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide", 
              "applyMatrix3", "applyMatrix4", "applyQuaternion", 
-             "makeTranslation", "makeScale", "makeRotation", "multiply", "invert", "transpose", "setHex"};
+             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle"};
           std::string ret_type = c_type(md.ret);
           bool returns_this_ptr = false;
           if (md.ret->kind == TypeKind::Struct && 
@@ -641,7 +641,8 @@ struct Emitter {
           bool is_builtin = (md.body->kind == StmtKind::Block && 
                              md.body->stmts.empty() &&
                              (s.name.find("Vector") == 0 || s.name.find("Matrix") == 0 || 
-                              s.name == "Quaternion" || s.name == "Color" || s.name == "Ray" || s.name == "Sphere")); // Math types
+                              s.name == "Quaternion" || s.name == "Color" || s.name == "Ray" || 
+                              s.name == "Sphere" || s.name == "Box3")); // Math types
           
           if (is_builtin) {
             // Generate built-in implementation
@@ -840,6 +841,15 @@ struct Emitter {
                 out << "  m[" << i << "] = v_n" << i << ";\n";
               }
               out << "  return this;\n";
+            } else if (s.name == "Matrix4" && md.name == "makeRotationY") {
+              out << "  double c = cos(v_theta);\n";
+              out << "  double s = sin(v_theta);\n";
+              out << "  double* e = this->f_elements.data;\n";
+              out << "  e[0] = c;  e[4] = 0; e[8] = s;  e[12] = 0;\n";
+              out << "  e[1] = 0;  e[5] = 1; e[9] = 0;  e[13] = 0;\n";
+              out << "  e[2] = -s; e[6] = 0; e[10] = c; e[14] = 0;\n";
+              out << "  e[3] = 0;  e[7] = 0; e[11] = 0; e[15] = 1;\n";
+              out << "  return this;\n";
             } else if (s.name == "Vector3" && md.name == "applyMatrix4") {
               // Apply 4x4 matrix to (x, y, z, 1) homogeneous coordinate
               out << "  double* e = v_m.f_elements.data;\n";
@@ -873,6 +883,14 @@ struct Emitter {
               out << "  return this;\n";
             } else if (s.name == "Quaternion" && md.name == "equals") {
               out << "  return (this->f_x == v_q.f_x && this->f_y == v_q.f_y && this->f_z == v_q.f_z && this->f_w == v_q.f_w) ? 1 : 0;\n";
+            } else if (s.name == "Quaternion" && md.name == "setFromAxisAngle") {
+              out << "  double half = v_angle * 0.5;\n";
+              out << "  double s = sin(half);\n";
+              out << "  this->f_x = v_axis.f_x * s;\n";
+              out << "  this->f_y = v_axis.f_y * s;\n";
+              out << "  this->f_z = v_axis.f_z * s;\n";
+              out << "  this->f_w = cos(half);\n";
+              out << "  return this;\n";
             } else if (s.name == "Color" && md.name == "setHex") {
               out << "  this->f_r = ((v_hex >> 16) & 255) / 255.0;\n";
               out << "  this->f_g = ((v_hex >> 8) & 255) / 255.0;\n";
@@ -883,6 +901,11 @@ struct Emitter {
               out << "  this->f_g *= v_s;\n";
               out << "  this->f_b *= v_s;\n";
               out << "  return this;\n";
+            } else if (s.name == "Color" && md.name == "getHex") {
+              out << "  int r = (int)(this->f_r * 255.0);\n";
+              out << "  int g = (int)(this->f_g * 255.0);\n";
+              out << "  int b = (int)(this->f_b * 255.0);\n";
+              out << "  return (r << 16) | (g << 8) | b;\n";
             } else if (s.name == "Ray" && md.name == "at") {
               out << "  struct Farm_m1_Vector3 result;\n";
               out << "  result.f_x = this->f_origin.f_x + this->f_direction.f_x * v_t;\n";
@@ -918,6 +941,8 @@ struct Emitter {
               out << "  double dz = this->f_center.f_z - v_s.f_center.f_z;\n";
               out << "  double dist = sqrt(dx*dx + dy*dy + dz*dz);\n";
               out << "  return (dist <= (this->f_radius + v_s.f_radius)) ? 1 : 0;\n";
+            } else if (s.name == "Box3" && md.name == "isEmpty") {
+              out << "  return (this->f_max.f_x < this->f_min.f_x || this->f_max.f_y < this->f_min.f_y || this->f_max.f_z < this->f_min.f_z) ? 1 : 0;\n";
             } else if (s.name == "Matrix3" && md.name == "determinant") {
               // 3x3 matrix determinant (column-major order)
               out << "  double* m = this->f_elements.data;\n";

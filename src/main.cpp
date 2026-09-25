@@ -495,6 +495,19 @@ static Module create_farmos_math_module() {
       m4.methods.push_back(std::move(md));
     }
     
+    // makeRotationY(theta: float): Matrix4
+    {
+      MethodDecl md;
+      md.name = "makeRotationY";
+      md.params.push_back(Param{"theta", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
     m.structs.push_back(std::move(m4));
   }
   
@@ -571,6 +584,20 @@ static Module create_farmos_math_module() {
       md.name = "equals";
       md.params.push_back(Param{"q", Type::ty_struct("Quaternion"), SourceLoc{1,1}});
       md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      q.methods.push_back(std::move(md));
+    }
+    
+    // setFromAxisAngle(axis: Vector3, angle: float): Quaternion
+    {
+      MethodDecl md;
+      md.name = "setFromAxisAngle";
+      md.params.push_back(Param{"axis", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+      md.params.push_back(Param{"angle", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Quaternion");
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
@@ -728,6 +755,18 @@ static Module create_farmos_math_module() {
       c.methods.push_back(std::move(md));
     }
     
+    // getHex(): int
+    {
+      MethodDecl md;
+      md.name = "getHex";
+      md.ret = Type::ty_int();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      c.methods.push_back(std::move(md));
+    }
+    
     m.structs.push_back(std::move(c));
   }
   
@@ -828,6 +867,19 @@ static Module create_farmos_math_module() {
     b.loc = SourceLoc{1, 1};
     b.fields.push_back(FieldDecl{"min", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
     b.fields.push_back(FieldDecl{"max", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    
+    // isEmpty(): bool
+    {
+      MethodDecl md;
+      md.name = "isEmpty";
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      b.methods.push_back(std::move(md));
+    }
+    
     m.structs.push_back(std::move(b));
   }
   
