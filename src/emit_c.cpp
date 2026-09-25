@@ -606,6 +606,37 @@ struct Emitter {
               out << "  return sqrt(this->f_x * this->f_x + this->f_y * this->f_y + this->f_z * this->f_z);\n";
             } else if (s.name == "Vector3" && md.name == "lengthSq") {
               out << "  return this->f_x * this->f_x + this->f_y * this->f_y + this->f_z * this->f_z;\n";
+            } else if (s.name == "Vector3" && md.name == "normalize") {
+              out << "  double len = sqrt(this->f_x * this->f_x + this->f_y * this->f_y + this->f_z * this->f_z);\n";
+              out << "  if (len > 0.0) {\n";
+              out << "    this->f_x /= len;\n";
+              out << "    this->f_y /= len;\n";
+              out << "    this->f_z /= len;\n";
+              out << "  }\n";
+              out << "  return *this;\n";
+            } else if (s.name == "Vector3" && md.name == "clone") {
+              out << "  struct Farm_" << s.c_sym << " result;\n";
+              out << "  result.f_x = this->f_x;\n";
+              out << "  result.f_y = this->f_y;\n";
+              out << "  result.f_z = this->f_z;\n";
+              out << "  return result;\n";
+            } else if (s.name == "Vector3" && md.name == "lerp") {
+              out << "  this->f_x += (v_v.f_x - this->f_x) * v_alpha;\n";
+              out << "  this->f_y += (v_v.f_y - this->f_y) * v_alpha;\n";
+              out << "  this->f_z += (v_v.f_z - this->f_z) * v_alpha;\n";
+              out << "  return *this;\n";
+            } else if (s.name == "Vector3" && md.name == "equals") {
+              out << "  return (this->f_x == v_v.f_x && this->f_y == v_v.f_y && this->f_z == v_v.f_z) ? 1 : 0;\n";
+            } else if (s.name == "Vector3" && md.name == "set") {
+              out << "  this->f_x = v_x;\n";
+              out << "  this->f_y = v_y;\n";
+              out << "  this->f_z = v_z;\n";
+              out << "  return *this;\n";
+            } else if (s.name == "Vector3" && md.name == "distanceTo") {
+              out << "  double dx = this->f_x - v_v.f_x;\n";
+              out << "  double dy = this->f_y - v_v.f_y;\n";
+              out << "  double dz = this->f_z - v_v.f_z;\n";
+              out << "  return sqrt(dx*dx + dy*dy + dz*dz);\n";
             } else {
               // Default implementation based on return type
               if (md.ret->kind == TypeKind::Float) {

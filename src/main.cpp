@@ -264,6 +264,85 @@ static Module create_farmos_math_module() {
     v3.methods.push_back(std::move(md));
   }
   
+  // normalize(): Vector3
+  {
+    MethodDecl md;
+    md.name = "normalize";
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // clone(): Vector3
+  {
+    MethodDecl md;
+    md.name = "clone";
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // lerp(v: Vector3, alpha: float): Vector3
+  {
+    MethodDecl md;
+    md.name = "lerp";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.params.push_back(Param{"alpha", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // equals(v: Vector3): bool
+  {
+    MethodDecl md;
+    md.name = "equals";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_bool();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // set(x, y, z: float): Vector3
+  {
+    MethodDecl md;
+    md.name = "set";
+    md.params.push_back(Param{"x", Type::ty_float(), SourceLoc{1,1}});
+    md.params.push_back(Param{"y", Type::ty_float(), SourceLoc{1,1}});
+    md.params.push_back(Param{"z", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // distanceTo(v: Vector3): float
+  {
+    MethodDecl md;
+    md.name = "distanceTo";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
   m.structs.push_back(std::move(v3));
   
   // Vector2 struct

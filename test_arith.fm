@@ -1,0 +1,6 @@
+function main(): int {
+  let x: float = 1.5;
+  let y: float = x * 2;
+  println(y);
+  return 0;
+}

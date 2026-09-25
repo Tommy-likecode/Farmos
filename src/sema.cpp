@@ -121,6 +121,14 @@ struct Sema {
       return Type::ty_bool();
     }
     if ((op==TokKind::Plus||op==TokKind::Minus||op==TokKind::Star||op==TokKind::Slash||op==TokKind::Percent)) {
+      // Try int→float coercion for mixed int/float arithmetic (§4A)
+      if (lt->kind == TypeKind::Float && rt->kind == TypeKind::Int) {
+        e.rhs = try_coerce_int_to_float(e.rhs);
+        rt = e.rhs->type;
+      } else if (rt->kind == TypeKind::Float && lt->kind == TypeKind::Int) {
+        e.lhs = try_coerce_int_to_float(e.lhs);
+        lt = e.lhs->type;
+      }
       if ((lt->kind==TypeKind::Int && rt->kind==TypeKind::Float) || (lt->kind==TypeKind::Float && rt->kind==TypeKind::Int)) {
         error_at(path, e.loc, "E0402", "mixed `int`/`float` arithmetic without explicit conversion");
         return Type::ty_error();
@@ -521,6 +529,10 @@ struct Sema {
         TypePtr ty;
         if (s->has_type_ann) {
           ty = finalize_type(s->decl_type, s->loc, false);
+          // Try int→float coercion
+          if (ty->kind == TypeKind::Float) {
+            s->init = try_coerce_int_to_float(s->init);
+          }
           if (s->init->kind==ExprKind::ArrayLit && s->init->args.empty() && ty->kind==TypeKind::DynArray) {
             s->init->type = ty;
           } else if (s->init->kind==ExprKind::ArrayLit && ty->kind==TypeKind::DynArray) {
@@ -559,6 +571,10 @@ struct Sema {
           if (!type_eq(rt, s->lhs->type) && rt->kind!=TypeKind::Error)
             error_at(path, s->loc, "E0408", "type mismatch");
         } else {
+          // Try int→float coercion if assigning to float
+          if (s->lhs->type->kind == TypeKind::Float) {
+            s->rhs = try_coerce_int_to_float(s->rhs);
+          }
           check_assignable(s->lhs, s->rhs, s->loc);
         }
         if (returns) *returns = false;
