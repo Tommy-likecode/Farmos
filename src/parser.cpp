@@ -141,6 +141,7 @@ ExprPtr Parser::parse_unary() {
 
 ExprPtr Parser::parse_postfix() {
   ExprPtr e = parse_primary();
+  SourceLoc base_loc = e->loc; // Save location of base expression for field paths
   for (;;) {
     if (match(TokKind::LBrack)) {
       auto n = std::make_shared<Expr>();
@@ -150,12 +151,16 @@ ExprPtr Parser::parse_postfix() {
       e = n;
     } else if (match(TokKind::Dot)) {
       auto n = std::make_shared<Expr>();
-      n->kind = ExprKind::Field; n->loc = prev_.loc;
+      n->kind = ExprKind::Field;
+      n->loc = base_loc; // Point to start of field path
       n->lhs = e;
       if (!check(TokKind::Ident)) {
         error_at(lex_.path(), cur_.loc, "E0202", "expected field name");
         n->name = "?";
-      } else { n->name = cur_.text; advance(); }
+      } else { 
+        n->name = cur_.text; 
+        advance(); 
+      }
       e = n;
     } else if (match(TokKind::LParen)) {
       auto n = std::make_shared<Expr>();
@@ -403,15 +408,26 @@ void Parser::parse_const_decl(Module& m, bool exported) {
 }
 
 void Parser::parse_operator(Module& m, bool exported) {
-  OperatorDecl op; op.exported = exported; op.loc = cur_.loc;
-  advance(); // operator
-  // Expect one of the overloadable operators: + - * / % == !=
+  OperatorDecl op; op.exported = exported;
+  advance(); // operator keyword
+  
+  // Save operator token location for error reporting
+  op.loc = cur_.loc;
+  
+  // Check for overloadable operators: + - * / % == !=
   if (match_any({TokKind::Plus, TokKind::Minus, TokKind::Star, TokKind::Slash, TokKind::Percent, TokKind::EqEq, TokKind::Neq})) {
     op.op = prev_.kind;
-  } else {
+  } 
+  // Check for non-overloadable operators and emit E0605
+  else if (match_any({TokKind::Lt, TokKind::Le, TokKind::Gt, TokKind::Ge, TokKind::OrOr, TokKind::AndAnd})) {
+    error_at(lex_.path(), prev_.loc, "E0605", "operator is not overloadable");
+    op.op = prev_.kind; // save for context
+  } 
+  else {
     error_at(lex_.path(), cur_.loc, "E0202", "expected operator token");
     op.op = TokKind::Plus; // dummy
   }
+  
   expect(TokKind::LParen, "E0202", "expected `(`");
   op.params = parse_param_list();
   expect(TokKind::RParen, "E0202", "expected `)`");
