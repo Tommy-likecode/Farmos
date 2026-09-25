@@ -161,6 +161,54 @@ static SourceLoc byte_loc(const std::string& s, size_t off) {
   return l;
 }
 
+// Check if import path is a farmos: builtin module
+static bool is_farmos_builtin(const std::string& path) {
+  return path.rfind("farmos:", 0) == 0;
+}
+
+// Create synthetic farmos:math module
+static Module create_farmos_math_module() {
+  Module m;
+  m.path = "farmos:math";
+  m.diag_path = "farmos:math";
+  m.is_main = false;
+  
+  // Vector3 struct
+  StructDecl v3;
+  v3.name = "Vector3";
+  v3.exported = true;
+  v3.loc = SourceLoc{1, 1};
+  v3.fields.push_back(FieldDecl{"x", Type::ty_float(), SourceLoc{1, 1}});
+  v3.fields.push_back(FieldDecl{"y", Type::ty_float(), SourceLoc{1, 1}});
+  v3.fields.push_back(FieldDecl{"z", Type::ty_float(), SourceLoc{1, 1}});
+  m.structs.push_back(std::move(v3));
+  
+  // Vector2 struct
+  StructDecl v2;
+  v2.name = "Vector2";
+  v2.exported = true;
+  v2.loc = SourceLoc{1, 1};
+  v2.fields.push_back(FieldDecl{"x", Type::ty_float(), SourceLoc{1, 1}});
+  v2.fields.push_back(FieldDecl{"y", Type::ty_float(), SourceLoc{1, 1}});
+  m.structs.push_back(std::move(v2));
+  
+  // Vector4 struct
+  StructDecl v4;
+  v4.name = "Vector4";
+  v4.exported = true;
+  v4.loc = SourceLoc{1, 1};
+  v4.fields.push_back(FieldDecl{"x", Type::ty_float(), SourceLoc{1, 1}});
+  v4.fields.push_back(FieldDecl{"y", Type::ty_float(), SourceLoc{1, 1}});
+  v4.fields.push_back(FieldDecl{"z", Type::ty_float(), SourceLoc{1, 1}});
+  v4.fields.push_back(FieldDecl{"w", Type::ty_float(), SourceLoc{1, 1}});
+  m.structs.push_back(std::move(v4));
+  
+  // Add other math types as needed
+  // For now, start with just vectors to get first tests passing
+  
+  return m;
+}
+
 struct Loader {
   Program prog;
   std::unordered_map<std::string, int> loaded; // canonical path -> index
@@ -208,6 +256,25 @@ struct Loader {
       size_t nimp = prog.modules[idx].imports.size();
       for (size_t ii = 0; ii < nimp; ++ii) {
         ImportDecl im = prog.modules[idx].imports[ii];  // copy; do not hold refs across load
+        
+        // Handle farmos: builtin modules
+        if (is_farmos_builtin(im.path)) {
+          if (im.path == "farmos:math") {
+            // Ensure farmos:math is loaded once
+            if (!loaded.count("farmos:math")) {
+              Module math_mod = create_farmos_math_module();
+              int mid = (int)prog.modules.size();
+              prog.modules.push_back(std::move(math_mod));
+              loaded["farmos:math"] = mid;
+            }
+            continue;
+          } else {
+            error_at(prog.modules[idx].diag_path, im.loc, "E0304",
+                     "unknown builtin module `" + im.path + "`");
+            continue;
+          }
+        }
+        
         if (!is_relative_fm(im.path)) {
           error_at(prog.modules[idx].diag_path, im.loc, "E0301",
                    "invalid module path `" + im.path + "`");
@@ -264,6 +331,57 @@ struct Loader {
     for (auto& mod : prog.modules) {
       std::unordered_set<std::string> imported;
       for (auto& im : mod.imports) {
+        // Handle farmos: builtin modules
+        if (is_farmos_builtin(im.path)) {
+          Module* dep_m = nullptr;
+          for (auto& x : prog.modules) if (x.path == im.path) { dep_m = &x; break; }
+          if (!dep_m) continue;
+          
+          for (size_t ni = 0; ni < im.names.size(); ++ni) {
+            const std::string& name = im.names[ni];
+            SourceLoc nloc = (ni < im.name_locs.size()) ? im.name_locs[ni] : im.loc;
+            if (imported.count(name)) {
+              error_at(mod.path, nloc, "E0303", "duplicate import of `" + name + "`");
+              continue;
+            }
+            imported.insert(name);
+            
+            auto clash = [&]() {
+              return mod.vis_functions.count(name) || mod.vis_consts.count(name) ||
+                     mod.vis_structs.count(name) || mod.vis_classes.count(name);
+            };
+            
+            if (dep_m->vis_structs.count(name)) {
+              if (clash()) {
+                error_at(mod.diag_path, nloc, "E0510", "import `" + name + "` conflicts with existing definition");
+                continue;
+              }
+              mod.vis_structs[name] = dep_m->vis_structs[name];
+            } else if (dep_m->vis_classes.count(name)) {
+              if (clash()) {
+                error_at(mod.diag_path, nloc, "E0510", "import `" + name + "` conflicts with existing definition");
+                continue;
+              }
+              mod.vis_classes[name] = dep_m->vis_classes[name];
+            } else if (dep_m->vis_functions.count(name)) {
+              if (clash()) {
+                error_at(mod.diag_path, nloc, "E0510", "import `" + name + "` conflicts with existing definition");
+                continue;
+              }
+              mod.vis_functions[name] = dep_m->vis_functions[name];
+            } else if (dep_m->vis_consts.count(name)) {
+              if (clash()) {
+                error_at(mod.diag_path, nloc, "E0510", "import `" + name + "` conflicts with existing definition");
+                continue;
+              }
+              mod.vis_consts[name] = dep_m->vis_consts[name];
+            } else {
+              error_at(mod.diag_path, nloc, "E0305", "`" + name + "` not found in module `" + im.path + "`");
+            }
+          }
+          continue;
+        }
+        
         if (!is_relative_fm(im.path)) continue;
         fs::path dep = resolve_import(mod.path, im.path);
         std::error_code ec;
