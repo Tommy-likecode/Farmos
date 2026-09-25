@@ -1,0 +1,6 @@
+function main(): int {
+  println("a\u{0}1b");
+  println("a\01b");
+  println(len("a\u{0}1b"));
+  return 0;
+}

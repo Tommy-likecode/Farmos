@@ -1,3 +1,5 @@
-# Byte-exact fixtures (ill-formed UTF-8, BOM, CRLF): no EOL conversion
+# Byte-exact fixtures (ill-formed UTF-8, BOM, CRLF, NUL/DEL/non-ASCII stdout): no EOL conversion
 tests/local/05*.fm -text
 tests/local/05*.expected -text
+tests/local/1[0-2]*.fm -text
+tests/local/1[0-2]*.expected -text

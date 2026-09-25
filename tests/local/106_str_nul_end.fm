@@ -1,0 +1,7 @@
+function main(): int {
+  let s: string = "ab\0";
+  println(s);
+  println(s + "c");
+  println(len(s));
+  return 0;
+}

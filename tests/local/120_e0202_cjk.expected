@@ -1,0 +1,4 @@
+## exactly one E0202 (scalar col 33; byte col would be 35); no E0001
+# kind: compile_error
+# exit: 1
+# error: 2:33: E0202

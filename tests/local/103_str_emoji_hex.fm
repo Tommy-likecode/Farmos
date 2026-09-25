@@ -1,0 +1,4 @@
+function main(): int {
+  println("😀c");
+  return 0;
+}

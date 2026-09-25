@@ -24,9 +24,7 @@ Compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`) evaluate a non-identifier lv
 
 ## Float printing
 
-`print`/`println`/`str` for `float` follow M1 section 6.1 / ECMAScript 2024 `Number::toString`: specials `NaN` / `Infinity` / `-Infinity` / `-0`, and shortest round-trip decimals with scientific notation when the decimal exponent \(k < -6\) or \(k \geq 21\`.
-
-Implemented in `runtime/farm_rt.c` via a compact try-precision-1..17 + `strtod` round-trip loop, then ES-style formatting. With `-ffunction-sections` and `--gc-sections`, hello-world programs that never print floats should not retain the float formatter.
+`print`/`println`/`str` for `float` follow M1 section 6.1 / ECMAScript 2024 `Number::toString`: specials `NaN` / `Infinity` / `-Infinity`, signed zero `0` / `-0` (Farmos rule 3), and for finite non-zero values the shortest round-trip digits from the vendored **Ryu** converter (`runtime/ryu/`, `d2s_buffered_n`), laid out in ES form (scientific when the decimal point position n is < -5 or > 21, i.e. at 1e-7 and 1e21). Details, provenance and the differential test are in "Float printing algorithm" and "Float differential test" below. With `-ffunction-sections` and `--gc-sections`, programs that never print floats do not retain the formatter (hello stays small).
 
 ## E0508 location
 
@@ -91,16 +89,56 @@ After the first `E0505` (undefined name), further diagnostics in that compilatio
 
 ## FARM_CC parsing (AC-M1-04)
 
-- FARM_CC is trimmed; its first command token (double quotes honored) is checked: basename with extension
-  stripped, case-insensitive, equal to `cl` (or `clang-cl`) -> exit 3 before any process is spawned. For an
-  unquoted value containing spaces, each space-delimited prefix naming an existing file is also checked.
+- `src/main.cpp` `split_cc` splits the trimmed FARM_CC into {compiler token, args}:
+  1. leading `"`: the quoted text is the token;
+  2. the whole value names an existing file (`X` or `X.exe`): the whole value is the token;
+  3. else the shortest space-delimited prefix that names an existing file (unquoted paths with spaces);
+  4. else the text up to the first whitespace (bare `cl`, `cl /nologo`, `clang`).
+- `is_msvc_cc`: token basename, extension stripped, case-insensitive, equals `cl` (or `clang-cl`) -> exit 3
+  before any process is spawned. Checking the whole value / existing-file prefixes first means an unquoted
+  `C:\x\cl tools\bin\clang.exe` is not mistaken for `cl` (local_038_*).
+- The executed command always quotes the resolved token (`cc_command_prefix`), so unquoted FARM_CC paths with
+  spaces run the intended executable.
 
 ## Exit codes (spec section 7.2)
 
 - 2: unknown option / command, missing file argument. 3: missing or unreadable input file
-  (`farmc: cannot read input file '...'`), no C compiler, MSVC selected, C compile/link failure.
+  (`farmc: cannot read input file '...'`), `-o` naming an existing directory
+  (`farmc: output path '...' is a directory`; the directory is untouched and no `<dir>.exe` is written),
+  no C compiler, MSVC selected, C compile/link failure.
 - 4: any escaped C++ exception (`farmc: internal compiler error: ...`). Test hook: `FARMC_TEST_ICE=1` makes
-  `farmc build` throw so `local_084_exit4_ice` can exercise the path; it has no other effect.
+  `farmc build` throw, but ONLY in the `farmc_testhooks` target (compiled with `FARMC_ENABLE_TEST_HOOKS`);
+  the shipped `farmc` contains no hook and ignores the variable (`local_085_release_ignores_ice`).
+  `local_084_exit4_ice` runs against `farmc_testhooks`.
+
+## String literal codegen
+
+- `src/emit_c.cpp` `c_escape_bytes` / `c_string_value`: printable ASCII passes through except `\\`, `"` and
+  `?` (trigraph guard); every other byte (controls, NUL, DEL, every non-ASCII UTF-8 byte) is a fixed
+  3-digit octal escape `\ooo`. An octal escape stops after 3 digits, so a following digit or hex letter is
+  never absorbed (the old `\x%02x` form swallowed it). The literal is wrapped as
+  `((FarmString){ "...", (int64_t)<byte count> })`: the length is explicit, so embedded NUL survives;
+  the runtime writes `len` bytes (never `strlen`).
+- Other C literals emitted: `#include "farm_rt.h"` and `farm_str_from_cstr("")` (constant). Identifiers are
+  ASCII-only (spec section 2.4) and diagnostics/trap messages/paths are never embedded in generated C.
+
+## Non-ASCII outside strings and comments
+
+- `validate_utf8` is the only E0001 source. A well-formed non-ASCII scalar in code (e.g. `中`, `é`, NBSP
+  U+00A0, a mid-file U+FEFF) is not a token start: the lexer consumes the whole scalar and reports ONE
+  `E0202 unexpected token `{tok}`` (spec section 8 template) at its scalar column, then suppresses further
+  diagnostics. Comments and string contents may contain any well-formed UTF-8; only a leading BOM is
+  stripped, a BOM inside a string is kept as bytes EF BB BF.
+
+## Temporary files
+
+- Each farmc process creates a private scratch directory `%TEMP%\farmc-<pid>-<counter>-<16 hex random>`
+  with `create_directory` (fails if the name exists, so it is exclusive across processes). The generated
+  `<stem>_farmc_gen.c`, the `cc_run_<n>.cmd` wrappers and the link output live there; the link output is
+  then moved (rename, or copy across volumes) to the requested `-o` path. The directory is removed on
+  success, failure and exception (RAII). `farmc run` uses its own private scratch directory for the
+  temporary executable. No fixed temp names remain (`local_130_parallel_same_stem`).
+- `--keep-c` (without `--emit-c`) writes the C next to the output (`<out>.c`) instead of keeping a temp file.
 
 ## Runner (scripts/run_one_m1.ps1)
 
@@ -109,3 +147,15 @@ After the first `E0505` (undefined name), further diagnostics in that compilatio
   `# stdout:` and `# end` is compared exactly"). Inside a block every other line, including `#` and `##`
   lines, is literal content. Outside blocks, `##` lines are comments and ignored. This reading of the two
   README rules is our interpretation; no spec fixture has a `##` line inside a block.
+
+## Float diff mutation check
+
+- `node scripts/float_mutation.mjs` copies `runtime/` to `build/float_mut/<id>/`, applies an exact textual
+  replacement in the copy's `farm_rt.c` (asserted to match exactly once; the source tree is never
+  modified), and runs the FULL `float_diff.mjs` (1,000,000 random patterns, seed 20260925, 1,104,039 inputs)
+  against it via `--runtime`:
+  - M1 `if (k <= n && n <= 21) {` -> `n <= 20` (integer-form threshold): 3254 mismatches (full diff);
+    the quick variant (`--count 20000`, 26,039 inputs) gives 107 for the same mutant.
+  - M2 `} else if (0 < n && n <= 21) {` -> `n <= 20`: 0, an equivalent mutant (shortest binary64 digits
+    have k <= 17 < 21, so n == 21 always takes the integer branch).
+  - M3 both replacements: 3254.

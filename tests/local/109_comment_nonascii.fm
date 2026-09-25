@@ -1,0 +1,5 @@
+function main(): int {
+  // 中文 é € 😀 nbsp:[ ] bom:[﻿]
+  /* 中 é ﻿ */ println("ok");
+  return 0;
+}

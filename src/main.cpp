@@ -6,6 +6,9 @@
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
+#include <atomic>
+#include <chrono>
+#include <random>
 #ifdef _WIN32
 #include <windows.h>
 #include <process.h>
@@ -272,18 +275,6 @@ static std::string trim_ws(const std::string& s) {
   return s.substr(a, b - a + 1);
 }
 
-// First command token of a FARM_CC value, honoring double quotes: `"C:\x y\cl.bat" /nologo` -> C:\x y\cl.bat
-static std::string first_cmd_token(const std::string& s0) {
-  std::string s = trim_ws(s0);
-  if (s.empty()) return s;
-  if (s[0] == '"') {
-    size_t e = s.find('"', 1);
-    return e == std::string::npos ? s.substr(1) : s.substr(1, e - 1);
-  }
-  size_t e = s.find_first_of(" \t");
-  return e == std::string::npos ? s : s.substr(0, e);
-}
-
 // Basename with extension stripped, case-insensitive, is `cl` (or `clang-cl`, MSVC-style driver).
 static bool token_is_msvc(const std::string& tok) {
   std::string base = lower_ascii(fs::path(tok).filename().string());
@@ -292,22 +283,55 @@ static bool token_is_msvc(const std::string& tok) {
   return stem == "cl" || stem == "clang-cl";
 }
 
+static bool is_file(const std::string& p) {
+  std::error_code ec;
+  return fs::is_regular_file(fs::path(p), ec) || fs::is_regular_file(fs::path(p + ".exe"), ec);
+}
+
+// Split a FARM_CC value into {compiler token, remaining args}. FARM_CC is a command prefix, so it
+// may carry arguments ("cl /nologo") or padding ("cl "). Resolution order:
+//   1. leading double quote: the quoted text is the token;
+//   2. the whole trimmed value names an existing file: the whole value is the token (no args);
+//   3. the shortest space-delimited prefix that names an existing file (unquoted paths with
+//      spaces, e.g. C:\Program Files\LLVM\bin\clang.exe -O2), as Windows command resolution does;
+//   4. otherwise the text up to the first whitespace (bare command name such as `cl` or `clang`).
+struct CcSplit { std::string token, rest; };
+static CcSplit split_cc(const std::string& cc_raw) {
+  std::string t = trim_ws(cc_raw);
+  CcSplit r;
+  if (t.empty()) return r;
+  if (t[0] == '"') {
+    size_t e = t.find('"', 1);
+    if (e == std::string::npos) { r.token = t.substr(1); return r; }
+    r.token = t.substr(1, e - 1);
+    r.rest = trim_ws(t.substr(e + 1));
+    return r;
+  }
+  if (is_file(t)) { r.token = t; return r; }
+  for (size_t pos = t.find(' '); pos != std::string::npos; pos = t.find(' ', pos + 1)) {
+    std::string pre = t.substr(0, pos);
+    if (is_file(pre)) { r.token = pre; r.rest = trim_ws(t.substr(pos + 1)); return r; }
+  }
+  size_t e = t.find_first_of(" \t");
+  r.token = (e == std::string::npos) ? t : t.substr(0, e);
+  r.rest = (e == std::string::npos) ? std::string() : trim_ws(t.substr(e + 1));
+  return r;
+}
+
 // MSVC cl is unsupported as the C backend (spec section 7.1): driver configuration error, exit 3.
-// FARM_CC is used as a command prefix, so it may carry arguments ("cl /nologo") or padding ("cl ").
 static bool is_msvc_cc(const std::string& cc_raw) {
   std::string t = trim_ws(cc_raw);
   if (t.empty()) return false;
-  if (token_is_msvc(first_cmd_token(t))) return true;
-  // Unquoted path containing spaces (e.g. C:\Program Files\...\cl.exe /nologo): check each
-  // space-delimited prefix that names an existing file, as Windows command resolution would.
-  if (t[0] != '"') {
-    for (size_t pos = t.find(' '); pos != std::string::npos; pos = t.find(' ', pos + 1)) {
-      std::string pre = t.substr(0, pos);
-      std::error_code ec;
-      if (token_is_msvc(pre) && (fs::exists(pre, ec) || fs::exists(pre + ".exe", ec))) return true;
-    }
-  }
-  return false;
+  return token_is_msvc(split_cc(t).token);
+}
+
+// Command prefix actually executed: the resolved compiler token is always quoted, so an unquoted
+// FARM_CC path containing spaces runs the intended executable.
+static std::string cc_command_prefix(const std::string& cc_raw) {
+  CcSplit c = split_cc(cc_raw);
+  std::string r = "\"" + c.token + "\"";
+  if (!c.rest.empty()) r += " " + c.rest;
+  return r;
 }
 
 static std::string find_c_compiler() {
@@ -340,12 +364,66 @@ static std::string find_c_compiler() {
   return {};
 }
 
+// Per-invocation scratch directory: <TEMP>/farmc-<pid>-<counter>-<random>. Created with
+// create_directory, which fails if the name already exists, so the directory is exclusively ours
+// even across concurrent farmc processes. EVERY intermediate file (generated .c, .cmd wrappers,
+// link output before the final move, `farmc run` binary) lives inside it, and the whole directory
+// is removed by the destructor on success, failure, or exception (no fixed temp names).
+class ScratchDir {
+ public:
+  ScratchDir() = default;
+  ~ScratchDir() { cleanup(); }
+  ScratchDir(const ScratchDir&) = delete;
+  ScratchDir& operator=(const ScratchDir&) = delete;
+  const fs::path& path() {
+    if (dir_.empty()) create();
+    return dir_;
+  }
+  fs::path file(const std::string& name) { return path() / name; }
+  fs::path unique_file(const std::string& stem, const std::string& ext) {
+    return path() / (stem + "_" + std::to_string(++seq_) + ext);
+  }
+  void cleanup() {
+    if (dir_.empty()) return;
+    std::error_code ec;
+    fs::remove_all(dir_, ec);
+    dir_.clear();
+  }
+ private:
+  void create() {
+    static std::atomic<unsigned> counter{0};
+#ifdef _WIN32
+    unsigned long pid = (unsigned long)GetCurrentProcessId();
+#else
+    unsigned long pid = (unsigned long)getpid();
+#endif
+    std::random_device rd;
+    std::mt19937_64 rng(((uint64_t)rd() << 32) ^ (uint64_t)std::chrono::high_resolution_clock::now().time_since_epoch().count() ^ pid);
+    fs::path base = fs::temp_directory_path();
+    for (int attempt = 0; attempt < 100; ++attempt) {
+      char suf[17];
+      std::snprintf(suf, sizeof(suf), "%016llx", (unsigned long long)rng());
+      fs::path cand = base / ("farmc-" + std::to_string(pid) + "-" + std::to_string(++counter) + "-" + suf);
+      std::error_code ec;
+      if (fs::create_directory(cand, ec) && !ec) { dir_ = cand; return; }
+    }
+    throw std::runtime_error("cannot create a unique temporary directory under " + base.string());
+  }
+  fs::path dir_;
+  unsigned seq_ = 0;
+};
+
+static ScratchDir& scratch() {
+  static ScratchDir s;
+  return s;
+}
+
 static int run_cmd(const std::string& cmd) {
 #ifdef _WIN32
-  // Write to a temporary .cmd to avoid cmd.exe /c quoting pitfalls with system()
-  fs::path bat = fs::temp_directory_path() / "farmc_cc_run.cmd";
+  // Write to a per-build .cmd to avoid cmd.exe /c quoting pitfalls with system()
+  fs::path bat = scratch().unique_file("cc_run", ".cmd");
   {
-    std::ofstream o(bat);
+    std::ofstream o(bat, std::ios::binary);
     o << "@echo off\r\n" << cmd << "\r\n";
   }
   std::string inv = "cmd.exe /C \"" + bat.string() + "\"";
@@ -370,6 +448,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
     std::cerr << "farmc: C compiler must be clang or gcc; MSVC cl is unsupported\n";
     return 3;
   }
+  cc = cc_command_prefix(cc);
   // Size-oriented flags; NO -ffast-math. GNU statement-expressions require clang/gcc.
   std::ostringstream cmd;
   cmd << cc << " -std=c11 -Os -flto -ffunction-sections -fdata-sections "
@@ -436,16 +515,29 @@ static int cmd_build(std::vector<std::string> args) {
     }
   }
   if (infile.empty()) { std::cerr << "farmc build: missing file\n"; return 2; }
-  // Test hook for section 7.2 exit 4 (internal compiler error path); see docs/NOTES.md.
+#ifdef FARMC_ENABLE_TEST_HOOKS
+  // Test hook for section 7.2 exit 4 (internal compiler error path). Compiled ONLY into the
+  // farmc_testhooks target; the shipped farmc has no hook and ignores FARMC_TEST_ICE.
   if (const char* ice = std::getenv("FARMC_TEST_ICE")) {
     if (std::string(ice) == "1") throw std::logic_error("FARMC_TEST_ICE test hook");
   }
+#endif
   {
     // Section 7.2: unreadable/missing input is a driver I/O failure (exit 3), not a compile error.
     std::error_code ec;
     std::ifstream probe(fs::path(infile), std::ios::binary);
     if (!fs::is_regular_file(fs::path(infile), ec) || !probe) {
       std::cerr << "farmc: cannot read input file '" << infile << "'\n";
+      return 3;
+    }
+  }
+
+  if (!outfile.empty()) {
+    // -o naming an existing directory: driver I/O failure (exit 3). Never delete or replace it,
+    // and never write a stray "<dir>.exe" beside it.
+    std::error_code ec;
+    if (fs::is_directory(fs::path(outfile), ec)) {
+      std::cerr << "farmc: output path '" << outfile << "' is a directory\n";
       return 3;
     }
   }
@@ -474,42 +566,43 @@ static int cmd_build(std::vector<std::string> args) {
 
   fs::path tmp_c;
   if (!emit_c_path.empty()) tmp_c = emit_c_path;
-  else {
-    tmp_c = fs::temp_directory_path() / (inpath.stem().string() + "_farmc_gen.c");
-  }
+  else tmp_c = scratch().file(inpath.stem().string() + "_farmc_gen.c");
   {
-    std::ofstream o(tmp_c);
-    if (!o) { std::cerr << "farmc: cannot write " << tmp_c << "\n"; return 3; }
+    std::ofstream o(tmp_c, std::ios::binary);
+    if (!o) { std::cerr << "farmc: cannot write " << tmp_c.string() << "\n"; return 3; }
     o << csrc;
   }
   if (do_emit_c && emit_c_path.empty()) {
     // default emit next to output
     fs::path p = fs::path(outfile).replace_extension(".c");
-    std::ofstream o(p); o << csrc;
+    std::ofstream o(p, std::ios::binary); o << csrc;
+  }
+  if (keep_c && emit_c_path.empty() && !do_emit_c) {
+    fs::path p = fs::path(outfile).replace_extension(".c");
+    std::ofstream o(p, std::ios::binary); o << csrc;
   }
 
   fs::path rt = default_runtime_dir();
-  // Spec section 7.1 SHOULD: if -o has no .exe suffix, still produce a PE usable at exactly
-  // that path. MinGW/clang linkers append .exe to suffix-less -o, so link to "<out>.exe"
-  // and rename to the requested path.
+  // Link into the private scratch dir, then move to the requested path. This handles section 7.1
+  // (SHOULD): an -o without .exe still yields a PE at exactly that path (MinGW linkers append
+  // .exe to suffix-less -o, so the scratch name always ends in .exe), and a failed link never
+  // touches the destination or leaves partial files beside it.
   fs::path out_req(outfile);
-  std::string ext_lc = lower_ascii(out_req.extension().string());
-  bool needs_rename = (ext_lc != ".exe");
-  fs::path link_out = needs_rename ? fs::path(outfile + ".exe") : out_req;
+  fs::path link_out = scratch().file("link_out.exe");
   int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose);
-  if (rc == 0 && needs_rename) {
+  if (rc == 0) {
     std::error_code ec;
-    fs::remove(out_req, ec);
-    ec.clear();
     fs::rename(link_out, out_req, ec);
+    if (ec) {  // e.g. TEMP on another volume: copy, then the scratch dir cleanup removes the source
+      ec.clear();
+      fs::copy_file(link_out, out_req, fs::copy_options::overwrite_existing, ec);
+    }
     if (ec) {
       std::cerr << "farmc: cannot write output " << out_req.string() << ": " << ec.message() << "\n";
       rc = 3;
     }
   }
-  if (!keep_c && emit_c_path.empty() && !do_emit_c) {
-    std::error_code ec; fs::remove(tmp_c, ec);
-  }
+  scratch().cleanup();
   return rc;
 }
 
@@ -523,13 +616,16 @@ static int cmd_run(std::vector<std::string> args) {
     else if (saw_dd) rest.push_back(a);
   }
   if (infile.empty()) { std::cerr << "farmc run: missing file\n"; return 2; }
-  fs::path out = fs::temp_directory_path() / "farmc_run_tmp.exe";
+  // Private per-process run directory (not the build scratch dir, which cmd_build removes).
+  ScratchDir run_dir;
+  fs::path out = run_dir.file(fs::path(infile).stem().string() + ".exe");
   int rc = cmd_build({infile, "-o", out.string()});
   if (rc != 0) return rc;
   std::ostringstream cmd;
   cmd << "\"" << out.string() << "\"";
   for (auto& a : rest) cmd << " \"" << a << "\"";
   rc = run_cmd(cmd.str());
+  scratch().cleanup();
 #ifdef _WIN32
   // system returns exit code directly-ish
   return rc;

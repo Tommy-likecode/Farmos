@@ -1,0 +1,6 @@
+function main(): int {
+  // mid-file BOM inside a string literal below
+  println("[﻿]");
+  println(len("﻿"));
+  return 0;
+}

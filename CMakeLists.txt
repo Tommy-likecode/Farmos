@@ -21,6 +21,18 @@ add_executable(farmc
 )
 target_include_directories(farmc PRIVATE src runtime)
 
+# Test-only build of the same sources with FARMC_ENABLE_TEST_HOOKS (FARMC_TEST_ICE -> exit 4).
+# The shipped farmc is built WITHOUT the define and ignores FARMC_TEST_ICE (local_085).
+add_executable(farmc_testhooks
+  src/main.cpp
+  src/lexer.cpp
+  src/parser.cpp
+  src/sema.cpp
+  src/emit_c.cpp
+)
+target_include_directories(farmc_testhooks PRIVATE src runtime)
+target_compile_definitions(farmc_testhooks PRIVATE FARMC_ENABLE_TEST_HOOKS=1)
+
 # Runtime (farm_rt.* + vendored ryu/) next to farmc for default_runtime_dir discovery.
 add_custom_command(TARGET farmc POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/runtime $<TARGET_FILE_DIR:farmc>/runtime
@@ -84,6 +96,12 @@ farmc_cl_test(034_farm_cc_cl_trailing_space trailing)
 farmc_cl_test(035_farm_cc_cl_quoted_path_args quoted_path_args)
 farmc_cl_test(036_farm_cc_cl_path_args path_args)
 farmc_cl_test(037_farm_cc_cl_upper_cmd upper_cmd)
+# Unquoted real-clang path under a "cl tools" directory must NOT be mistaken for MSVC cl.
+foreach(mode whole args)
+  add_test(NAME local_038_farm_cc_clang_in_cl_dir_${mode}
+    COMMAND ${PS} "${FARMC_SCRIPTS}/test_farm_cc_cl_dir.ps1" -Farmc $<TARGET_FILE:farmc> -Mode ${mode})
+  set_tests_properties(local_038_farm_cc_clang_in_cl_dir_${mode} PROPERTIES LABELS "local")
+endforeach()
 
 # ---- -o without .exe (section 7.1 SHOULD) ----
 add_test(NAME local_032_o_noext COMMAND ${PS} "${FARMC_SCRIPTS}/test_o_noext.ps1" -Farmc $<TARGET_FILE:farmc>)
@@ -91,8 +109,26 @@ set_tests_properties(local_032_o_noext PROPERTIES LABELS "local")
 
 # ---- UTF-8: exactly one E0001 per ill-formed file (section 2.1) ----
 add_test(NAME local_060_e0001_single
-  COMMAND ${PS} "${FARMC_SCRIPTS}/test_utf8_single.ps1" -Farmc $<TARGET_FILE:farmc> -TestsDir "${FARMC_LOCAL_TESTS_DIR}")
+  COMMAND ${PS} "${FARMC_SCRIPTS}/test_single_diag.ps1" -Farmc $<TARGET_FILE:farmc> -TestsDir "${FARMC_LOCAL_TESTS_DIR}"
+    -Filter "05*_utf8_*.expected" -Code E0001 -MinCount 9 -TestName local_060_e0001_single)
 set_tests_properties(local_060_e0001_single PROPERTIES LABELS "local")
+
+# ---- Valid non-ASCII outside strings/comments: exactly one E0202, never E0001 ----
+add_test(NAME local_124_e0202_single
+  COMMAND ${PS} "${FARMC_SCRIPTS}/test_single_diag.ps1" -Farmc $<TARGET_FILE:farmc> -TestsDir "${FARMC_LOCAL_TESTS_DIR}"
+    -Filter "12?_e0202_*.expected" -Code E0202 -MinCount 4 -TestName local_124_e0202_single)
+set_tests_properties(local_124_e0202_single PROPERTIES LABELS "local")
+
+# ---- String literal codegen: raw stdout bytes (non-ASCII, DEL, NUL, C specials) ----
+add_test(NAME local_110_stdout_bytes_exact
+  COMMAND ${PS} "${FARMC_SCRIPTS}/test_stdout_bytes.ps1" -Farmc $<TARGET_FILE:farmc> -TestsDir "${FARMC_LOCAL_TESTS_DIR}"
+    -Filter "10?_*.expected" -MinCount 10)
+set_tests_properties(local_110_stdout_bytes_exact PROPERTIES LABELS "local")
+
+# ---- Concurrent same-stem builds: unique per-process temp names, no leftovers ----
+add_test(NAME local_130_parallel_same_stem
+  COMMAND ${PS} "${FARMC_SCRIPTS}/test_parallel_builds.ps1" -Farmc $<TARGET_FILE:farmc> -Rounds 20 -RunRounds 5)
+set_tests_properties(local_130_parallel_same_stem PROPERTIES LABELS "local")
 
 # ---- farmc exit codes (section 7.2) ----
 function(farmc_exit_test name case)
@@ -103,7 +139,10 @@ farmc_exit_test(080_exit2_unknown_option usage_unknown_option)
 farmc_exit_test(081_exit2_no_file usage_no_file)
 farmc_exit_test(082_exit2_unknown_command usage_unknown_command)
 farmc_exit_test(083_exit3_missing_input missing_input)
-farmc_exit_test(084_exit4_ice ice)
+add_test(NAME local_084_exit4_ice COMMAND ${PS} "${FARMC_SCRIPTS}/test_exit_codes.ps1" -Farmc $<TARGET_FILE:farmc_testhooks> -Case ice)
+set_tests_properties(local_084_exit4_ice PROPERTIES LABELS "local")
+farmc_exit_test(085_release_ignores_ice ice_ignored)
+farmc_exit_test(086_o_existing_dir o_existing_dir)
 
 # ---- Float formatting differential test vs Node String(x) (AC-M1-05, section 6.1) ----
 # Quick variant in the default suite; the full 1,000,000-pattern run is `node scripts/float_diff.mjs`.

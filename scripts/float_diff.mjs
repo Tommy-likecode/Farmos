@@ -1,5 +1,6 @@
 // Differential test: Farmos runtime float formatting vs ECMAScript Number::toString (Node/V8 String(x)).
-// Usage: node scripts/float_diff.mjs [--count N] [--seed S] [--cc clang]
+// Usage: node scripts/float_diff.mjs [--count N] [--seed S] [--cc clang] [--runtime DIR] [--tag NAME]
+// --runtime: directory holding farm_rt.c/farm_rt.h/ryu (default <repo>/runtime); used by float_mutation.mjs.
 // Farmos rule (M1-core section 6.1 rule 3): -0 prints "-0" (ES prints "0"); all other values must equal String(x).
 import { spawnSync } from 'node:child_process';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -12,11 +13,13 @@ const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] :
 const COUNT = Number(opt('--count', '1000000'));
 const SEED = BigInt(opt('--seed', '20260925'));
 const CC = opt('--cc', 'clang');
+const RUNTIME = opt('--runtime', join(root, 'runtime'));
+const TAG = opt('--tag', 'float_harness');
 
 const outDir = join(root, 'build', 'float_diff');
 mkdirSync(outDir, { recursive: true });
-const exe = join(outDir, process.platform === 'win32' ? 'float_harness.exe' : 'float_harness');
-const cc = spawnSync(CC, ['-O2', '-std=c11', '-I', join(root, 'runtime'), join(root, 'tests', 'float', 'float_harness.c'), '-o', exe, '-lm'], { encoding: 'utf8' });
+const exe = join(outDir, process.platform === 'win32' ? TAG + '.exe' : TAG);
+const cc = spawnSync(CC, ['-O2', '-std=c11', '-I', RUNTIME, join(root, 'tests', 'float', 'float_harness.c'), '-o', exe, '-lm'], { encoding: 'utf8' });
 if (cc.status !== 0) { console.error('harness build failed', cc.stdout, cc.stderr); process.exit(2); }
 
 const M64 = (1n << 64n) - 1n;

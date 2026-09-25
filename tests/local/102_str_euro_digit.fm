@@ -1,0 +1,4 @@
+function main(): int {
+  println("€0 price");
+  return 0;
+}

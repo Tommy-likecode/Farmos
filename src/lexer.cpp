@@ -242,14 +242,6 @@ Token Lexer::next() {
   SourceLoc start = loc();
   char c = peek();
 
-  // check invalid UTF-8 lead? simplistic: lone continuation
-  unsigned char uc = (unsigned char)c;
-  if ((uc & 0xC0) == 0x80) {
-    error_at(path_, start, "E0001", "invalid UTF-8 sequence");
-    get();
-    return next();
-  }
-
   if (is_letter(c)) return lex_ident(start);
   if (is_digit(c)) return lex_number(start);
   if (c=='"') return lex_string(start);
@@ -290,10 +282,17 @@ Token Lexer::next() {
     case '.': get(); return make(TokKind::Dot, start);
     case ':': get(); return make(TokKind::Colon, start);
     case ';': get(); return make(TokKind::Semi, start);
-    default:
-      error_at(path_, start, "E0202", std::string("unexpected token `") + c + "`");
-      get();
-      return next();
+    default: {
+      // Not a token start. Source was validated as well-formed UTF-8 before lexing (main.cpp
+      // validate_utf8), so a non-ASCII lead byte starts a complete scalar: consume the whole
+      // scalar and report ONE E0202 naming it (spec section 8 template "unexpected token `{tok}`").
+      // E0001 is emitted only by validate_utf8. Further diagnostics are suppressed (no cascade).
+      std::string tok(1, get());
+      while (!eof() && (((unsigned char)peek()) & 0xC0) == 0x80) tok.push_back(get());
+      error_at(path_, start, "E0202", "unexpected token `" + tok + "`");
+      diag_cascade_stop() = true;
+      return make(TokKind::Eof, start);
+    }
   }
 }
 

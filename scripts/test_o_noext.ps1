@@ -23,6 +23,6 @@ $psi.FileName = $out; $psi.UseShellExecute = $false; $psi.RedirectStandardOutput
 $proc = [System.Diagnostics.Process]::Start($psi)
 $so = $proc.StandardOutput.ReadToEnd(); $proc.WaitForExit()
 $so = $so -replace "`r`n","`n"
-if ($proc.ExitCode -ne 7 -or $so -ne "noext ok`n") { Write-Host "FAIL local_032_o_noext: run exit $($proc.ExitCode) stdout <<<$so>>>"; exit 1 }
+if ($proc.ExitCode -ne 7 -or (-not [string]::Equals($so, "noext ok`n", [StringComparison]::Ordinal))) { Write-Host "FAIL local_032_o_noext: run exit $($proc.ExitCode) stdout <<<$so>>>"; exit 1 }
 Write-Host "PASS local_032_o_noext (PE at $out, exit 7, stdout ok)"
 exit 0

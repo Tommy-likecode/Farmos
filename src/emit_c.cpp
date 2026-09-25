@@ -6,6 +6,31 @@
 
 namespace farm {
 
+// C11 string literal body for arbitrary bytes. Printable ASCII passes through, except `\\`, `"`
+// and `?` (trigraph guard). Every other byte (controls, NUL, DEL, all non-ASCII UTF-8 bytes) is
+// emitted as a fixed 3-digit octal escape `\ooo`: an octal escape ends after at most 3 digits, so
+// a following digit/hex character can never be absorbed (unlike `\x..`), and NUL is `\000`.
+static std::string c_escape_bytes(const std::string& bytes) {
+  std::string esc;
+  esc.reserve(bytes.size() + 8);
+  for (unsigned char c : bytes) {
+    if (c >= 0x20 && c < 0x7F && c != '\\' && c != '"' && c != '?') esc += (char)c;
+    else {
+      char buf[5];
+      std::snprintf(buf, sizeof(buf), "\\%03o", (unsigned)c);
+      esc += buf;
+    }
+  }
+  return esc;
+}
+
+// FarmString value with an explicit byte length (embedded NUL survives; never strlen-based).
+static std::string c_string_value(const std::string& bytes) {
+  return "((FarmString){ \"" + c_escape_bytes(bytes) + "\", (int64_t)" +
+         std::to_string((int64_t)bytes.size()) + " })";
+}
+
+
 struct Emitter {
   Program& prog;
   std::ostringstream out;
@@ -72,20 +97,7 @@ struct Emitter {
         return s;
       }
       case ExprKind::BoolLit: return e->bool_val ? "((int8_t)1)" : "((int8_t)0)";
-      case ExprKind::StringLit: {
-        std::string esc;
-        for (unsigned char c : e->str_val) {
-          if (c=='\\'||c=='"') { esc += '\\'; esc += (char)c; }
-          else if (c=='\n') esc += "\\n";
-          else if (c=='\r') esc += "\\r";
-          else if (c=='\t') esc += "\\t";
-          else if (c=='\0') esc += "\\0";
-          else if (c < 32 || c >= 127) {
-            char buf[8]; std::snprintf(buf, sizeof(buf), "\\x%02x", c); esc += buf;
-          } else esc += (char)c;
-        }
-        return "((FarmString){ \"" + esc + "\", (int64_t)" + std::to_string((int64_t)e->str_val.size()) + " })";
-      }
+      case ExprKind::StringLit: return c_string_value(e->str_val);
       case ExprKind::Ident: return !e->mangled.empty() ? e->mangled : ("v_" + e->name);
       case ExprKind::This: return "this";
       case ExprKind::Unary: {

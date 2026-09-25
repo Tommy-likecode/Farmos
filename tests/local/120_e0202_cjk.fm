@@ -1,0 +1,4 @@
+function main(): int {
+  let s: string = "éé"; let y = 中;
+  return 0;
+}
