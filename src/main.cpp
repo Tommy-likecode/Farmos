@@ -181,6 +181,39 @@ static Module create_farmos_math_module() {
   v3.fields.push_back(FieldDecl{"x", Type::ty_float(), SourceLoc{1, 1}});
   v3.fields.push_back(FieldDecl{"y", Type::ty_float(), SourceLoc{1, 1}});
   v3.fields.push_back(FieldDecl{"z", Type::ty_float(), SourceLoc{1, 1}});
+  
+  // M2: Add methods to Vector3
+  // Note: Can't use final c_sym yet since it's assigned later. Use display name and fix in sema.
+  // add(v: Vector3): Vector3 - mutates this, returns this
+  {
+    MethodDecl md;
+    md.name = "add";
+    // Use raw type with display name; sema will resolve to c_sym
+    auto v_type = Type::ty_struct("Vector3");
+    md.params.push_back(Param{"v", v_type, SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    block->loc = SourceLoc{1, 1};
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // multiplyScalar(s: float): Vector3 - mutates this, returns this
+  {
+    MethodDecl md;
+    md.name = "multiplyScalar";
+    md.params.push_back(Param{"s", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    block->loc = SourceLoc{1, 1};
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
   m.structs.push_back(std::move(v3));
   
   // Vector2 struct

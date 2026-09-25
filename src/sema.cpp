@@ -320,6 +320,21 @@ struct Sema {
               e->mangled = cd->c_sym + "__" + md->name;
               e->type = md->ret;
             }
+          } else if (rt->kind == TypeKind::Struct) {
+            // M2: Struct method calls
+            auto* sd = find_struct_any(rt->name);
+            MethodDecl* md = nullptr;
+            if (sd) for (auto& m : sd->methods) if (m.name == e->lhs->name) { md = &m; break; }
+            if (!md) { error_at(path, e->loc, "E0505", "undefined name `" + e->lhs->name + "`"); e->type=Type::ty_error(); }
+            else {
+              if (e->args.size()!=md->params.size())
+                error_at(path, e->loc, "E0411", "wrong number of arguments");
+              else for (size_t i=0;i<e->args.size();++i)
+                if (!type_eq(e->args[i]->type, md->params[i].type))
+                  error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+              e->mangled = sd->c_sym + "__" + md->name;
+              e->type = md->ret;
+            }
           } else {
             error_at(path, e->loc, "E0403", "cannot call method on `" + rt->str() + "`");
             e->type = Type::ty_error();
@@ -556,6 +571,26 @@ struct Sema {
     scope = nullptr;
   }
 
+  void check_struct_method(StructDecl& s, MethodDecl& m) {
+    cur_fn = m.name; cur_ret = m.ret; cur_class = nullptr; in_ctor = false;
+    Scope sc; scope = &sc;
+    // M2: `this` for struct methods is available but refers to a by-reference binding
+    // For now, skip body checking for synthetic methods (empty body)
+    if (m.body->kind == StmtKind::Block && m.body->stmts.empty()) {
+      // Built-in method, skip checking
+      scope = nullptr;
+      return;
+    }
+    for (auto& p : m.params) sc.declare(p.name, VarInfo{p.type, false, p.loc}, path);
+    bool ret=false;
+    check_stmt(m.body, &ret);
+    if (m.ret->kind != TypeKind::Void && !ret) {
+      SourceLoc el = m.body->end_loc.line ? m.body->end_loc : m.body->loc;
+      error_at(path, el, "E0508", "missing return on some paths in `" + m.name + "`");
+    }
+    scope = nullptr;
+  }
+
   void check_method(ClassDecl& c, MethodDecl& m) {
     cur_fn = m.name; cur_ret = m.ret; cur_class = &c; in_ctor = m.is_ctor;
     Scope sc; scope = &sc;
@@ -622,6 +657,13 @@ struct Sema {
         if (ctors != 1)
           error_at(path, c.loc, "E0414", "class `" + c.name + "` must have exactly one constructor");
       }
+      // M2: Finalize struct method types
+      for (auto& s : m.structs) {
+        for (auto& md : s.methods) {
+          for (auto& p : md.params) p.type = finalize_type(p.type, p.loc, false);
+          md.ret = finalize_type(md.ret, md.loc, true);
+        }
+      }
       for (auto& f : m.functions) {
         for (auto& p : f.params) p.type = finalize_type(p.type, p.loc, false);
         f.ret = finalize_type(f.ret, f.loc, true);
@@ -658,6 +700,9 @@ struct Sema {
       for (auto& f : m.functions) check_function(f);
       for (auto& c : m.classes)
         for (auto& md : c.methods) check_method(c, md);
+      // M2: Check struct methods
+      for (auto& s : m.structs)
+        for (auto& md : s.methods) check_struct_method(s, md);
     }
   }
 };

@@ -251,8 +251,24 @@ struct Emitter {
           }
         }
         if (e->lhs->kind==ExprKind::Field) {
-          auto obj = emit_expr(e->lhs->lhs);
-          std::string call = e->mangled + "(" + obj;
+          // For struct methods, pass &receiver; for class methods, pass receiver (already a pointer)
+          std::string recv;
+          if (e->lhs->lhs->type->kind == TypeKind::Struct) {
+            // Struct method: need address of receiver
+            if (e->lhs->lhs->is_lvalue) {
+              // Receiver is an lvalue, pass its address directly
+              recv = emit_lvalue_ptr(e->lhs->lhs);
+            } else {
+              // Receiver is an rvalue (temporary), store in temp variable
+              std::string tmp = fresh("rcv");
+              out << c_type(e->lhs->lhs->type) << " " << tmp << " = " << emit_expr(e->lhs->lhs) << ";\n";
+              recv = "&" + tmp;
+            }
+          } else {
+            // Class method: receiver is already a pointer
+            recv = emit_expr(e->lhs->lhs);
+          }
+          std::string call = e->mangled + "(" + recv;
           for (auto& a : e->args) { call += ", "; call += emit_expr(a); }
           call += ")";
           return call;
@@ -506,6 +522,14 @@ struct Emitter {
           out << ");\n";
         }
       }
+      // M2: Forward declare struct methods
+      for (auto& s : m.structs) {
+        for (auto& md : s.methods) {
+          out << c_type(md.ret) << " " << s.c_sym << "__" << md.name << "(struct Farm_" << s.c_sym << "* this";
+          for (auto& p : md.params) out << ", " << c_type(p.type) << " v_" << p.name;
+          out << ");\n";
+        }
+      }
     }
     for (auto& m : prog.modules)
       for (auto& c : m.consts)
@@ -539,6 +563,43 @@ struct Emitter {
           out << ") ";
           emit_stmt(md.body);
           out << "\n";
+        }
+      }
+      
+      // M2: Implement struct methods
+      for (auto& s : m.structs) {
+        for (auto& md : s.methods) {
+          out << c_type(md.ret) << " " << s.c_sym << "__" << md.name << "(struct Farm_" << s.c_sym << "* this";
+          for (auto& p : md.params) out << ", " << c_type(p.type) << " v_" << p.name;
+          out << ") ";
+          
+          // Check if this is a farmos:math built-in method with empty body
+          bool is_builtin = (md.body->kind == StmtKind::Block && 
+                             md.body->stmts.empty() &&
+                             s.name.find("Vector") == 0); // Vector2/3/4
+          
+          if (is_builtin) {
+            // Generate built-in implementation
+            out << "{\n";
+            if (s.name == "Vector3" && md.name == "add") {
+              out << "  this->f_x += v_v.f_x;\n";
+              out << "  this->f_y += v_v.f_y;\n";
+              out << "  this->f_z += v_v.f_z;\n";
+              out << "  return *this;\n";
+            } else if (s.name == "Vector3" && md.name == "multiplyScalar") {
+              out << "  this->f_x *= v_s;\n";
+              out << "  this->f_y *= v_s;\n";
+              out << "  this->f_z *= v_s;\n";
+              out << "  return *this;\n";
+            } else {
+              // Default: return *this
+              out << "  return *this;\n";
+            }
+            out << "}\n";
+          } else {
+            emit_stmt(md.body);
+            out << "\n";
+          }
         }
       }
       
