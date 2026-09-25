@@ -568,7 +568,8 @@ struct Emitter {
           // Mutating methods: add, multiplyScalar, cross, normalize, lerp, set
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide",
-             "applyMatrix3", "applyMatrix4", "applyQuaternion"};
+             "applyMatrix3", "applyMatrix4", "applyQuaternion", 
+             "makeTranslation", "makeScale", "makeRotation"};
           std::string ret_type = c_type(md.ret);
           if (md.ret->kind == TypeKind::Struct && 
               md.ret->name == s.c_sym && 
@@ -622,7 +623,8 @@ struct Emitter {
           // If method is mutating (returns this), return pointer for chaining
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide", 
-             "applyMatrix3", "applyMatrix4", "applyQuaternion"};
+             "applyMatrix3", "applyMatrix4", "applyQuaternion", 
+             "makeTranslation", "makeScale", "makeRotation"};
           std::string ret_type = c_type(md.ret);
           bool returns_this_ptr = false;
           if (md.ret->kind == TypeKind::Struct && 
@@ -743,6 +745,22 @@ struct Emitter {
               out << "         n42*(n13*n24*n31 - n14*n23*n31 + n14*n21*n33 - n11*n24*n33 - n13*n21*n34 + n11*n23*n34) +\n";
               out << "         n43*(n14*n22*n31 - n12*n24*n31 - n14*n21*n32 + n11*n24*n32 + n12*n21*n34 - n11*n22*n34) +\n";
               out << "         n44*(n12*n23*n31 - n13*n22*n31 + n13*n21*n32 - n11*n23*n32 - n12*n21*n33 + n11*n22*n33);\n";
+            } else if (s.name == "Matrix4" && md.name == "makeTranslation") {
+              // Set to translation matrix (column-major)
+              out << "  double* m = this->f_elements.data;\n";
+              out << "  m[0] = 1.0; m[4] = 0.0; m[8]  = 0.0; m[12] = v_x;\n";
+              out << "  m[1] = 0.0; m[5] = 1.0; m[9]  = 0.0; m[13] = v_y;\n";
+              out << "  m[2] = 0.0; m[6] = 0.0; m[10] = 1.0; m[14] = v_z;\n";
+              out << "  m[3] = 0.0; m[7] = 0.0; m[11] = 0.0; m[15] = 1.0;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Matrix4" && md.name == "makeScale") {
+              // Set to scale matrix (column-major)
+              out << "  double* m = this->f_elements.data;\n";
+              out << "  m[0] = v_x; m[4] = 0.0;  m[8]  = 0.0;  m[12] = 0.0;\n";
+              out << "  m[1] = 0.0; m[5] = v_y;  m[9]  = 0.0;  m[13] = 0.0;\n";
+              out << "  m[2] = 0.0; m[6] = 0.0;  m[10] = v_z;  m[14] = 0.0;\n";
+              out << "  m[3] = 0.0; m[7] = 0.0;  m[11] = 0.0;  m[15] = 1.0;\n";
+              out << "  return this;\n";
             } else if (s.name == "Matrix3" && md.name == "determinant") {
               // 3x3 matrix determinant (column-major order)
               out << "  double* m = this->f_elements.data;\n";
@@ -751,12 +769,12 @@ struct Emitter {
               out << "  double g=m[2], h=m[5], i=m[8];\n";
               out << "  return a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g);\n";
             } else if (s.name == "Matrix3" && md.name == "makeScale") {
-              // Set to scale matrix and return by value
+              // Set to scale matrix and return this for chaining
               out << "  double* m = this->f_elements.data;\n";
               out << "  m[0] = v_sx; m[3] = 0.0;   m[6] = 0.0;\n";
               out << "  m[1] = 0.0;  m[4] = v_sy;  m[7] = 0.0;\n";
               out << "  m[2] = 0.0;  m[5] = 0.0;   m[8] = 1.0;\n";
-              out << "  return *this;\n";
+              out << "  return this;\n";
             } else {
               // Default implementation based on return type
               if (md.ret->kind == TypeKind::Float) {
