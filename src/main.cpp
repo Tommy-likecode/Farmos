@@ -396,6 +396,84 @@ static Module create_farmos_math_module() {
     v3.methods.push_back(std::move(md));
   }
   
+  // operator+ (via __farm_op_add)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_add";
+    md.params.push_back(Param{"other", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // operator- (via __farm_op_sub)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_sub";
+    md.params.push_back(Param{"other", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // operator* (scalar) (via __farm_op_mul)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_mul";
+    md.params.push_back(Param{"scalar", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // operator/ (scalar) (via __farm_op_div)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_div";
+    md.params.push_back(Param{"scalar", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // operator== (via __farm_op_eq)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_eq";
+    md.params.push_back(Param{"other", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_bool();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // operator!= (via __farm_op_neq)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_neq";
+    md.params.push_back(Param{"other", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_bool();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
   m.structs.push_back(std::move(v3));
   
   // Matrix4

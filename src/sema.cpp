@@ -117,6 +117,26 @@ struct Sema {
       if (lt->kind == TypeKind::String && rt->kind == TypeKind::String) return Type::ty_bool();
       if ((lt->kind == TypeKind::Int || lt->kind == TypeKind::Float || lt->kind == TypeKind::Bool) && type_eq(lt, rt))
         return Type::ty_bool();
+      
+      // M2: Try operator overloading for struct types (comparison operators)
+      if (lt->kind == TypeKind::Struct && type_eq(lt, rt)) {
+        std::string op_name;
+        if (op == TokKind::EqEq) op_name = "__farm_op_eq";
+        else if (op == TokKind::Neq) op_name = "__farm_op_neq";
+        
+        if (!op_name.empty()) {
+          auto* sd = find_struct_any(lt->name);
+          if (sd) {
+            for (auto& md : sd->methods) {
+              if (md.name == op_name && md.params.size() == 1 && type_eq(md.params[0].type, rt)) {
+                e.mangled = sd->c_sym + "__" + op_name;
+                return Type::ty_bool();
+              }
+            }
+          }
+        }
+      }
+      
       if (!type_eq(lt, rt)) error_at(path, e.loc, "E0408", "type mismatch: expected `" + lt->str() + "`, found `" + rt->str() + "`");
       return Type::ty_bool();
     }
@@ -139,6 +159,34 @@ struct Sema {
       }
       if (lt->kind==TypeKind::Int && rt->kind==TypeKind::Int) return Type::ty_int();
       if (lt->kind==TypeKind::Float && rt->kind==TypeKind::Float) return Type::ty_float();
+      
+      // M2: Try operator overloading for struct types
+      if (lt->kind == TypeKind::Struct) {
+        std::string op_name;
+        if (op == TokKind::Plus) op_name = "__farm_op_add";
+        else if (op == TokKind::Minus) op_name = "__farm_op_sub";
+        else if (op == TokKind::Star) op_name = "__farm_op_mul";
+        else if (op == TokKind::Slash) op_name = "__farm_op_div";
+        
+        if (!op_name.empty()) {
+          auto* sd = find_struct_any(lt->name);
+          if (sd) {
+            for (auto& md : sd->methods) {
+              if (md.name == op_name && md.params.size() == 1) {
+                // Found operator overload - check parameter type
+                if (!type_eq(md.params[0].type, rt)) {
+                  error_at(path, e.rhs->loc, "E0408", "type mismatch: expected `" + md.params[0].type->str() + "`, found `" + rt->str() + "`");
+                  return Type::ty_error();
+                }
+                // Rewrite as method call
+                e.mangled = sd->c_sym + "__" + op_name;
+                return md.ret;
+              }
+            }
+          }
+        }
+      }
+      
       error_at(path, e.loc, "E0403", "operator not defined for `" + lt->str() + "`");
       return Type::ty_error();
     }

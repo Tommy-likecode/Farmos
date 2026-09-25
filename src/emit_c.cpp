@@ -108,6 +108,23 @@ struct Emitter {
         return "(+(" + a + "))";
       }
       case ExprKind::Binary: {
+        // M2: Check for operator overload
+        if (!e->mangled.empty()) {
+          // Operator overload - emit as method call
+          std::string lhs_val = emit_expr(e->lhs);
+          std::string rhs_val = emit_expr(e->rhs);
+          if (e->type->kind == TypeKind::Struct) {
+            // Returns struct - need temp variable
+            std::string ty = c_type(e->type);
+            std::string v = fresh("op_result");
+            out << ty << " " << v << " = " << e->mangled << "(&" << lhs_val << ", " << rhs_val << ");\n";
+            return v;
+          } else {
+            // Returns primitive (e.g. bool for ==, !=)
+            return e->mangled + "(&" + lhs_val + ", " + rhs_val + ")";
+          }
+        }
+        
         auto a = emit_expr(e->lhs), b = emit_expr(e->rhs);
         switch (e->op) {
           case TokKind::OrOr: return "((" + a + ")||(" + b + "))";
@@ -891,6 +908,34 @@ struct Emitter {
               out << "  this->f_y = az*bx - ax*bz;\n";
               out << "  this->f_z = ax*by - ay*bx;\n";
               out << "  return this;\n";
+            } else if (s.name == "Vector3" && md.name == "__farm_op_add") {
+              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  result.f_x = this->f_x + v_other.f_x;\n";
+              out << "  result.f_y = this->f_y + v_other.f_y;\n";
+              out << "  result.f_z = this->f_z + v_other.f_z;\n";
+              out << "  return result;\n";
+            } else if (s.name == "Vector3" && md.name == "__farm_op_sub") {
+              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  result.f_x = this->f_x - v_other.f_x;\n";
+              out << "  result.f_y = this->f_y - v_other.f_y;\n";
+              out << "  result.f_z = this->f_z - v_other.f_z;\n";
+              out << "  return result;\n";
+            } else if (s.name == "Vector3" && md.name == "__farm_op_mul") {
+              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  result.f_x = this->f_x * v_scalar;\n";
+              out << "  result.f_y = this->f_y * v_scalar;\n";
+              out << "  result.f_z = this->f_z * v_scalar;\n";
+              out << "  return result;\n";
+            } else if (s.name == "Vector3" && md.name == "__farm_op_div") {
+              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  result.f_x = this->f_x / v_scalar;\n";
+              out << "  result.f_y = this->f_y / v_scalar;\n";
+              out << "  result.f_z = this->f_z / v_scalar;\n";
+              out << "  return result;\n";
+            } else if (s.name == "Vector3" && md.name == "__farm_op_eq") {
+              out << "  return (this->f_x == v_other.f_x && this->f_y == v_other.f_y && this->f_z == v_other.f_z) ? 1 : 0;\n";
+            } else if (s.name == "Vector3" && md.name == "__farm_op_neq") {
+              out << "  return (this->f_x != v_other.f_x || this->f_y != v_other.f_y || this->f_z != v_other.f_z) ? 1 : 0;\n";
             } else if (s.name == "Quaternion" && md.name == "multiply") {
               // this = this * q
               out << "  double qax = this->f_x, qay = this->f_y, qaz = this->f_z, qaw = this->f_w;\n";
