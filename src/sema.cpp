@@ -242,7 +242,8 @@ struct Sema {
               if (e->args.size()!=1) error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `" + n + "`");
               else {
                 auto k = e->args[0]->type->kind;
-                if (k!=TypeKind::Int&&k!=TypeKind::Float&&k!=TypeKind::Bool&&k!=TypeKind::String)
+                // M2: allow struct types for print/println (math types)
+                if (k!=TypeKind::Int&&k!=TypeKind::Float&&k!=TypeKind::Bool&&k!=TypeKind::String&&k!=TypeKind::Struct)
                   error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `" + n + "`");
               }
               e->type = Type::ty_void();
@@ -267,7 +268,8 @@ struct Sema {
               if (e->args.size()!=1) error_at(path, e->loc, "E0513", "arity mismatch");
               else {
                 auto k=e->args[0]->type->kind;
-                if (k!=TypeKind::Int&&k!=TypeKind::Float&&k!=TypeKind::Bool)
+                // M2: allow struct types for str (math types)
+                if (k!=TypeKind::Int&&k!=TypeKind::Float&&k!=TypeKind::Bool&&k!=TypeKind::Struct)
                   error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `str`");
               }
               e->type = Type::ty_string();

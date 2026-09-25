@@ -1,0 +1,5 @@
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  return 0;
+}
