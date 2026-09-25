@@ -137,6 +137,38 @@ struct Sema {
     return Type::ty_error();
   }
 
+  // M2: Helper to check if expr is an int literal (or unary minus int literal) within float range
+  bool is_coercible_int_lit(ExprPtr e, int64_t* out_val = nullptr) {
+    if (!e) return false;
+    int64_t val = 0;
+    if (e->kind == ExprKind::IntLit) {
+      val = e->int_val;
+    } else if (e->kind == ExprKind::Unary && e->op == TokKind::Minus && 
+               e->rhs && e->rhs->kind == ExprKind::IntLit) {
+      val = -e->rhs->int_val;
+    } else {
+      return false;
+    }
+    // Check if |val| <= 2^53
+    const int64_t max_exact = (1LL << 53);
+    if (val < -max_exact || val > max_exact) return false;
+    if (out_val) *out_val = val;
+    return true;
+  }
+  
+  // M2: Coerce int literal to float if possible
+  ExprPtr try_coerce_int_to_float(ExprPtr e) {
+    int64_t val;
+    if (!is_coercible_int_lit(e, &val)) return e;
+    // Convert to FloatLit
+    auto f = std::make_unique<Expr>();
+    f->kind = ExprKind::FloatLit;
+    f->float_val = (double)val;
+    f->type = Type::ty_float();
+    f->loc = e->loc;
+    return f;
+  }
+
   ExprPtr check_expr(ExprPtr e) {
     if (!e) return e;
     switch (e->kind) {
@@ -293,9 +325,16 @@ struct Sema {
             if (e->args.size() != fn->params.size())
               error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(fn->params.size()) + ", found " + std::to_string(e->args.size()));
             else {
-              for (size_t i=0;i<e->args.size();++i)
+              for (size_t i=0;i<e->args.size();++i) {
+                // M2: Try int→float coercion if needed
+                if (!type_eq(e->args[i]->type, fn->params[i].type) &&
+                    fn->params[i].type->kind == TypeKind::Float &&
+                    e->args[i]->type->kind == TypeKind::Int) {
+                  e->args[i] = try_coerce_int_to_float(e->args[i]);
+                }
                 if (!type_eq(e->args[i]->type, fn->params[i].type))
                   error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected `" + fn->params[i].type->str() + "`, found `" + e->args[i]->type->str() + "`");
+              }
             }
             e->mangled = fn->c_sym;
             e->type = fn->ret;
@@ -314,9 +353,18 @@ struct Sema {
             else {
               if (e->args.size()!=md->params.size())
                 error_at(path, e->loc, "E0411", "wrong number of arguments");
-              else for (size_t i=0;i<e->args.size();++i)
-                if (!type_eq(e->args[i]->type, md->params[i].type))
-                  error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+              else {
+                for (size_t i=0;i<e->args.size();++i) {
+                  // M2: Try int→float coercion
+                  if (!type_eq(e->args[i]->type, md->params[i].type) &&
+                      md->params[i].type->kind == TypeKind::Float &&
+                      e->args[i]->type->kind == TypeKind::Int) {
+                    e->args[i] = try_coerce_int_to_float(e->args[i]);
+                  }
+                  if (!type_eq(e->args[i]->type, md->params[i].type))
+                    error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+                }
+              }
               e->mangled = cd->c_sym + "__" + md->name;
               e->type = md->ret;
             }
@@ -329,9 +377,18 @@ struct Sema {
             else {
               if (e->args.size()!=md->params.size())
                 error_at(path, e->loc, "E0411", "wrong number of arguments");
-              else for (size_t i=0;i<e->args.size();++i)
-                if (!type_eq(e->args[i]->type, md->params[i].type))
-                  error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+              else {
+                for (size_t i=0;i<e->args.size();++i) {
+                  // M2: Try int→float coercion
+                  if (!type_eq(e->args[i]->type, md->params[i].type) &&
+                      md->params[i].type->kind == TypeKind::Float &&
+                      e->args[i]->type->kind == TypeKind::Int) {
+                    e->args[i] = try_coerce_int_to_float(e->args[i]);
+                  }
+                  if (!type_eq(e->args[i]->type, md->params[i].type))
+                    error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+                }
+              }
               e->mangled = sd->c_sym + "__" + md->name;
               e->type = md->ret;
             }
@@ -405,9 +462,18 @@ struct Sema {
           // M2: Allow default constructor with zero args, or full constructor matching all fields
           if (e->args.size() != 0 && e->args.size() != sd->fields.size())
             error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(sd->fields.size()) + " or 0, found " + std::to_string(e->args.size()));
-          else for (size_t i=0;i<e->args.size();++i)
-            if (!type_eq(e->args[i]->type, sd->fields[i].type))
-              error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+          else {
+            for (size_t i=0;i<e->args.size();++i) {
+              // M2: Try int→float coercion
+              if (!type_eq(e->args[i]->type, sd->fields[i].type) &&
+                  sd->fields[i].type->kind == TypeKind::Float &&
+                  e->args[i]->type->kind == TypeKind::Int) {
+                e->args[i] = try_coerce_int_to_float(e->args[i]);
+              }
+              if (!type_eq(e->args[i]->type, sd->fields[i].type))
+                error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+            }
+          }
           e->type = Type::ty_struct(sd->c_sym);
           e->mangled = sd->c_sym;
         } else {
