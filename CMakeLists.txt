@@ -48,12 +48,9 @@ set(FARMC_TESTS_DIR "${CMAKE_SOURCE_DIR}/spec/tests/M1")
 file(GLOB M1_EXPECTED "${FARMC_TESTS_DIR}/*.expected")
 foreach(exp ${M1_EXPECTED})
   get_filename_component(name ${exp} NAME_WE)
-  # Skip m1_039_mixed_arith_error: superseded by M2 §4A int literal coercion
-  if(NOT (name STREQUAL "039_mixed_arith_error"))
-    add_test(NAME m1_${name}
-      COMMAND ${PS} "${FARMC_SCRIPTS}/run_one_m1.ps1" -Farmc $<TARGET_FILE:farmc> -TestsDir "${FARMC_TESTS_DIR}" -Name "${name}")
-    set_tests_properties(m1_${name} PROPERTIES LABELS "spec")
-  endif()
+  add_test(NAME m1_${name}
+    COMMAND ${PS} "${FARMC_SCRIPTS}/run_one_m1.ps1" -Farmc $<TARGET_FILE:farmc> -TestsDir "${FARMC_TESTS_DIR}" -Name "${name}")
+  set_tests_properties(m1_${name} PROPERTIES LABELS "spec")
 endforeach()
 
 # Opt-in umbrella: labeled conformance_bundle; default ctest uses -LE conformance_bundle.
