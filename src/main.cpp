@@ -356,6 +356,19 @@ static Module create_farmos_math_module() {
     v3.methods.push_back(std::move(md));
   }
   
+  // applyMatrix4(m: Matrix4): Vector3
+  {
+    MethodDecl md;
+    md.name = "applyMatrix4";
+    md.params.push_back(Param{"m", Type::ty_struct("Matrix4"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
   m.structs.push_back(std::move(v3));
   
   // Matrix4
@@ -409,6 +422,58 @@ static Module create_farmos_math_module() {
       md.params.push_back(Param{"x", Type::ty_float(), SourceLoc{1,1}});
       md.params.push_back(Param{"y", Type::ty_float(), SourceLoc{1,1}});
       md.params.push_back(Param{"z", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    // multiply(m: Matrix4): Matrix4
+    {
+      MethodDecl md;
+      md.name = "multiply";
+      md.params.push_back(Param{"m", Type::ty_struct("Matrix4"), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    // invert(): Matrix4
+    {
+      MethodDecl md;
+      md.name = "invert";
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    // transpose(): Matrix4
+    {
+      MethodDecl md;
+      md.name = "transpose";
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    // set(n11..n44: 16 floats): Matrix4
+    {
+      MethodDecl md;
+      md.name = "set";
+      for (int i = 0; i < 16; i++) {
+        md.params.push_back(Param{"n" + std::to_string(i), Type::ty_float(), SourceLoc{1,1}});
+      }
       md.ret = Type::ty_struct("Matrix4");
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();

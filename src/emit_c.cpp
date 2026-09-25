@@ -569,7 +569,7 @@ struct Emitter {
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide",
              "applyMatrix3", "applyMatrix4", "applyQuaternion", 
-             "makeTranslation", "makeScale", "makeRotation"};
+             "makeTranslation", "makeScale", "makeRotation", "multiply", "invert", "transpose"};
           std::string ret_type = c_type(md.ret);
           if (md.ret->kind == TypeKind::Struct && 
               md.ret->name == s.c_sym && 
@@ -624,7 +624,7 @@ struct Emitter {
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide", 
              "applyMatrix3", "applyMatrix4", "applyQuaternion", 
-             "makeTranslation", "makeScale", "makeRotation"};
+             "makeTranslation", "makeScale", "makeRotation", "multiply", "invert", "transpose"};
           std::string ret_type = c_type(md.ret);
           bool returns_this_ptr = false;
           if (md.ret->kind == TypeKind::Struct && 
@@ -760,6 +760,94 @@ struct Emitter {
               out << "  m[1] = 0.0; m[5] = v_y;  m[9]  = 0.0;  m[13] = 0.0;\n";
               out << "  m[2] = 0.0; m[6] = 0.0;  m[10] = v_z;  m[14] = 0.0;\n";
               out << "  m[3] = 0.0; m[7] = 0.0;  m[11] = 0.0;  m[15] = 1.0;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Matrix4" && md.name == "multiply") {
+              // this = this * m (column-major)
+              out << "  double* a = this->f_elements.data;\n";
+              out << "  double* b = v_m.f_elements.data;\n";
+              out << "  double a11=a[0], a12=a[4], a13=a[8],  a14=a[12];\n";
+              out << "  double a21=a[1], a22=a[5], a23=a[9],  a24=a[13];\n";
+              out << "  double a31=a[2], a32=a[6], a33=a[10], a34=a[14];\n";
+              out << "  double a41=a[3], a42=a[7], a43=a[11], a44=a[15];\n";
+              out << "  double b11=b[0], b12=b[4], b13=b[8],  b14=b[12];\n";
+              out << "  double b21=b[1], b22=b[5], b23=b[9],  b24=b[13];\n";
+              out << "  double b31=b[2], b32=b[6], b33=b[10], b34=b[14];\n";
+              out << "  double b41=b[3], b42=b[7], b43=b[11], b44=b[15];\n";
+              out << "  a[0]  = a11*b11 + a12*b21 + a13*b31 + a14*b41;\n";
+              out << "  a[4]  = a11*b12 + a12*b22 + a13*b32 + a14*b42;\n";
+              out << "  a[8]  = a11*b13 + a12*b23 + a13*b33 + a14*b43;\n";
+              out << "  a[12] = a11*b14 + a12*b24 + a13*b34 + a14*b44;\n";
+              out << "  a[1]  = a21*b11 + a22*b21 + a23*b31 + a24*b41;\n";
+              out << "  a[5]  = a21*b12 + a22*b22 + a23*b32 + a24*b42;\n";
+              out << "  a[9]  = a21*b13 + a22*b23 + a23*b33 + a24*b43;\n";
+              out << "  a[13] = a21*b14 + a22*b24 + a23*b34 + a24*b44;\n";
+              out << "  a[2]  = a31*b11 + a32*b21 + a33*b31 + a34*b41;\n";
+              out << "  a[6]  = a31*b12 + a32*b22 + a33*b32 + a34*b42;\n";
+              out << "  a[10] = a31*b13 + a32*b23 + a33*b33 + a34*b43;\n";
+              out << "  a[14] = a31*b14 + a32*b24 + a33*b34 + a34*b44;\n";
+              out << "  a[3]  = a41*b11 + a42*b21 + a43*b31 + a44*b41;\n";
+              out << "  a[7]  = a41*b12 + a42*b22 + a43*b32 + a44*b42;\n";
+              out << "  a[11] = a41*b13 + a42*b23 + a43*b33 + a44*b43;\n";
+              out << "  a[15] = a41*b14 + a42*b24 + a43*b34 + a44*b44;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Matrix4" && md.name == "transpose") {
+              // Transpose in place
+              out << "  double* m = this->f_elements.data;\n";
+              out << "  double tmp;\n";
+              out << "  tmp = m[1]; m[1] = m[4]; m[4] = tmp;\n";
+              out << "  tmp = m[2]; m[2] = m[8]; m[8] = tmp;\n";
+              out << "  tmp = m[3]; m[3] = m[12]; m[12] = tmp;\n";
+              out << "  tmp = m[6]; m[6] = m[9]; m[9] = tmp;\n";
+              out << "  tmp = m[7]; m[7] = m[13]; m[13] = tmp;\n";
+              out << "  tmp = m[11]; m[11] = m[14]; m[14] = tmp;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Matrix4" && md.name == "invert") {
+              // Invert 4x4 matrix (Gauss-Jordan elimination, simplified)
+              out << "  double* m = this->f_elements.data;\n";
+              out << "  double n11=m[0], n12=m[4], n13=m[8],  n14=m[12];\n";
+              out << "  double n21=m[1], n22=m[5], n23=m[9],  n24=m[13];\n";
+              out << "  double n31=m[2], n32=m[6], n33=m[10], n34=m[14];\n";
+              out << "  double n41=m[3], n42=m[7], n43=m[11], n44=m[15];\n";
+              out << "  double t11 = n23*n34*n42 - n24*n33*n42 + n24*n32*n43 - n22*n34*n43 - n23*n32*n44 + n22*n33*n44;\n";
+              out << "  double t12 = n14*n33*n42 - n13*n34*n42 - n14*n32*n43 + n12*n34*n43 + n13*n32*n44 - n12*n33*n44;\n";
+              out << "  double t13 = n13*n24*n42 - n14*n23*n42 + n14*n22*n43 - n12*n24*n43 - n13*n22*n44 + n12*n23*n44;\n";
+              out << "  double t14 = n14*n23*n32 - n13*n24*n32 - n14*n22*n33 + n12*n24*n33 + n13*n22*n34 - n12*n23*n34;\n";
+              out << "  double det = n11*t11 + n21*t12 + n31*t13 + n41*t14;\n";
+              out << "  if (fabs(det) < 1e-10) { for(int i=0;i<16;i++) m[i]=0.0; return this; }\n";
+              out << "  double invDet = 1.0 / det;\n";
+              out << "  m[0] = t11 * invDet;\n";
+              out << "  m[1] = (n24*n33*n41 - n23*n34*n41 - n24*n31*n43 + n21*n34*n43 + n23*n31*n44 - n21*n33*n44) * invDet;\n";
+              out << "  m[2] = (n22*n34*n41 - n24*n32*n41 + n24*n31*n42 - n21*n34*n42 - n22*n31*n44 + n21*n32*n44) * invDet;\n";
+              out << "  m[3] = (n23*n32*n41 - n22*n33*n41 - n23*n31*n42 + n21*n33*n42 + n22*n31*n43 - n21*n32*n43) * invDet;\n";
+              out << "  m[4] = t12 * invDet;\n";
+              out << "  m[5] = (n13*n34*n41 - n14*n33*n41 + n14*n31*n43 - n11*n34*n43 - n13*n31*n44 + n11*n33*n44) * invDet;\n";
+              out << "  m[6] = (n14*n32*n41 - n12*n34*n41 - n14*n31*n42 + n11*n34*n42 + n12*n31*n44 - n11*n32*n44) * invDet;\n";
+              out << "  m[7] = (n12*n33*n41 - n13*n32*n41 + n13*n31*n42 - n11*n33*n42 - n12*n31*n43 + n11*n32*n43) * invDet;\n";
+              out << "  m[8] = t13 * invDet;\n";
+              out << "  m[9] = (n14*n23*n41 - n13*n24*n41 - n14*n21*n43 + n11*n24*n43 + n13*n21*n44 - n11*n23*n44) * invDet;\n";
+              out << "  m[10] = (n12*n24*n41 - n14*n22*n41 + n14*n21*n42 - n11*n24*n42 - n12*n21*n44 + n11*n22*n44) * invDet;\n";
+              out << "  m[11] = (n13*n22*n41 - n12*n23*n41 - n13*n21*n42 + n11*n23*n42 + n12*n21*n43 - n11*n22*n43) * invDet;\n";
+              out << "  m[12] = t14 * invDet;\n";
+              out << "  m[13] = (n13*n24*n31 - n14*n23*n31 + n14*n21*n33 - n11*n24*n33 - n13*n21*n34 + n11*n23*n34) * invDet;\n";
+              out << "  m[14] = (n14*n22*n31 - n12*n24*n31 - n14*n21*n32 + n11*n24*n32 + n12*n21*n34 - n11*n22*n34) * invDet;\n";
+              out << "  m[15] = (n12*n23*n31 - n13*n22*n31 + n13*n21*n32 - n11*n23*n32 - n12*n21*n33 + n11*n22*n33) * invDet;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Matrix4" && md.name == "set") {
+              // Set all 16 elements
+              out << "  double* m = this->f_elements.data;\n";
+              for (int i = 0; i < 16; i++) {
+                out << "  m[" << i << "] = v_n" << i << ";\n";
+              }
+              out << "  return this;\n";
+            } else if (s.name == "Vector3" && md.name == "applyMatrix4") {
+              // Apply 4x4 matrix to (x, y, z, 1) homogeneous coordinate
+              out << "  double* e = v_m.f_elements.data;\n";
+              out << "  double x = this->f_x, y = this->f_y, z = this->f_z;\n";
+              out << "  double w = e[3]*x + e[7]*y + e[11]*z + e[15];\n";
+              out << "  w = (w != 0.0) ? 1.0 / w : 1.0;\n";
+              out << "  this->f_x = (e[0]*x + e[4]*y + e[8]*z  + e[12]) * w;\n";
+              out << "  this->f_y = (e[1]*x + e[5]*y + e[9]*z  + e[13]) * w;\n";
+              out << "  this->f_z = (e[2]*x + e[6]*y + e[10]*z + e[14]) * w;\n";
               out << "  return this;\n";
             } else if (s.name == "Matrix3" && md.name == "determinant") {
               // 3x3 matrix determinant (column-major order)
