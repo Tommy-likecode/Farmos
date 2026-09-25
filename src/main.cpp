@@ -454,6 +454,57 @@ static Module create_farmos_math_module() {
   v2.loc = SourceLoc{1, 1};
   v2.fields.push_back(FieldDecl{"x", Type::ty_float(), SourceLoc{1, 1}});
   v2.fields.push_back(FieldDecl{"y", Type::ty_float(), SourceLoc{1, 1}});
+  
+  // length(): float
+  {
+    MethodDecl md;
+    md.name = "length";
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v2.methods.push_back(std::move(md));
+  }
+  
+  // normalize(): Vector2
+  {
+    MethodDecl md;
+    md.name = "normalize";
+    md.ret = Type::ty_struct("Vector2");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v2.methods.push_back(std::move(md));
+  }
+  
+  // add(v: Vector2): Vector2
+  {
+    MethodDecl md;
+    md.name = "add";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector2"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector2");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v2.methods.push_back(std::move(md));
+  }
+  
+  // multiplyScalar(s: float): Vector2
+  {
+    MethodDecl md;
+    md.name = "multiplyScalar";
+    md.params.push_back(Param{"s", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector2");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v2.methods.push_back(std::move(md));
+  }
+  
   m.structs.push_back(std::move(v2));
   
   // Vector4 struct
@@ -465,6 +516,33 @@ static Module create_farmos_math_module() {
   v4.fields.push_back(FieldDecl{"y", Type::ty_float(), SourceLoc{1, 1}});
   v4.fields.push_back(FieldDecl{"z", Type::ty_float(), SourceLoc{1, 1}});
   v4.fields.push_back(FieldDecl{"w", Type::ty_float(), SourceLoc{1, 1}});
+  
+  // dot(v: Vector4): float
+  {
+    MethodDecl md;
+    md.name = "dot";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector4"), SourceLoc{1,1}});
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v4.methods.push_back(std::move(md));
+  }
+  
+  // multiplyScalar(s: float): Vector4
+  {
+    MethodDecl md;
+    md.name = "multiplyScalar";
+    md.params.push_back(Param{"s", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector4");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v4.methods.push_back(std::move(md));
+  }
+  
   m.structs.push_back(std::move(v4));
   
   // Add other math types as needed
