@@ -747,6 +747,11 @@ struct Emitter {
               out << "  this->f_x = x;\n";
               out << "  this->f_y = y;\n";
               out << "  return this;\n";
+            } else if (s.name == "Vector2" && md.name == "__farm_op_add") {
+              out << "  struct Farm_m1_Vector2 result;\n";
+              out << "  result.f_x = this->f_x + v_other.f_x;\n";
+              out << "  result.f_y = this->f_y + v_other.f_y;\n";
+              out << "  return result;\n";
             } else if (s.name == "Vector4" && md.name == "dot") {
               out << "  return this->f_x * v_v.f_x + this->f_y * v_v.f_y + this->f_z * v_v.f_z + this->f_w * v_v.f_w;\n";
             } else if (s.name == "Vector4" && md.name == "multiplyScalar") {
