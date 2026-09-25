@@ -327,11 +327,33 @@ struct Emitter {
         if (!sd) return "0";
         out << ty << " " << v << ";\n";
         if (e->args.size() == 0) {
-          // M2: Default constructor - initialize all fields to zero
-          for (auto& f : sd->fields) {
-            std::string zero_val = "0";
-            if (f.type->kind == TypeKind::Float) zero_val = "0.0";
-            out << v << ".f_" << f.name << " = " << zero_val << ";\n";
+          // M2: Default constructor - special handling for math types
+          if (sd->name == "Matrix4") {
+            // Identity matrix: diagonal = 1, rest = 0
+            out << "  for (int i = 0; i < 16; i++) " << v << ".f_elements.data[i] = 0.0;\n";
+            out << "  " << v << ".f_elements.data[0] = 1.0;\n";   // [0,0]
+            out << "  " << v << ".f_elements.data[5] = 1.0;\n";   // [1,1]
+            out << "  " << v << ".f_elements.data[10] = 1.0;\n";  // [2,2]
+            out << "  " << v << ".f_elements.data[15] = 1.0;\n";  // [3,3]
+          } else if (sd->name == "Matrix3") {
+            // Identity matrix: diagonal = 1, rest = 0
+            out << "  for (int i = 0; i < 9; i++) " << v << ".f_elements.data[i] = 0.0;\n";
+            out << "  " << v << ".f_elements.data[0] = 1.0;\n";   // [0,0]
+            out << "  " << v << ".f_elements.data[4] = 1.0;\n";   // [1,1]
+            out << "  " << v << ".f_elements.data[8] = 1.0;\n";   // [2,2]
+          } else if (sd->name == "Quaternion") {
+            // Identity quaternion: (0, 0, 0, 1)
+            out << "  " << v << ".f_x = 0.0;\n";
+            out << "  " << v << ".f_y = 0.0;\n";
+            out << "  " << v << ".f_z = 0.0;\n";
+            out << "  " << v << ".f_w = 1.0;\n";
+          } else {
+            // Default: zero all fields
+            for (auto& f : sd->fields) {
+              std::string zero_val = "0";
+              if (f.type->kind == TypeKind::Float) zero_val = "0.0";
+              out << v << ".f_" << f.name << " = " << zero_val << ";\n";
+            }
           }
         } else {
           // Explicit constructor with all arguments
@@ -493,6 +515,8 @@ struct Emitter {
     out << "#include <stdio.h>\n";
     out << "#include <math.h>\n";
     out << "#include \"farm_rt.h\"\n\n";
+    // Emit fixed array typedefs first (structs may reference them)
+    emit_fixed_typedefs();
     // Emit all structs first (so classes can reference them)
     for (auto& m : prog.modules) {
       for (auto& s : m.structs) {
@@ -509,7 +533,6 @@ struct Emitter {
         out << "};\n";
       }
     }
-    emit_fixed_typedefs();
     
     // M2: Forward declare struct print helpers  
     out << "/* M2 struct print helpers forward declarations */\n";
@@ -677,6 +700,31 @@ struct Emitter {
               out << "  double dy = this->f_y - v_v.f_y;\n";
               out << "  double dz = this->f_z - v_v.f_z;\n";
               out << "  return dx*dx + dy*dy + dz*dz;\n";
+            } else if (s.name == "Matrix4" && md.name == "determinant") {
+              // 4x4 matrix determinant (column-major order)
+              out << "  double* m = this->f_elements.data;\n";
+              out << "  double n11=m[0], n12=m[4], n13=m[8],  n14=m[12];\n";
+              out << "  double n21=m[1], n22=m[5], n23=m[9],  n24=m[13];\n";
+              out << "  double n31=m[2], n32=m[6], n33=m[10], n34=m[14];\n";
+              out << "  double n41=m[3], n42=m[7], n43=m[11], n44=m[15];\n";
+              out << "  return n41*(n14*n23*n32 - n13*n24*n32 - n14*n22*n33 + n12*n24*n33 + n13*n22*n34 - n12*n23*n34) +\n";
+              out << "         n42*(n13*n24*n31 - n14*n23*n31 + n14*n21*n33 - n11*n24*n33 - n13*n21*n34 + n11*n23*n34) +\n";
+              out << "         n43*(n14*n22*n31 - n12*n24*n31 - n14*n21*n32 + n11*n24*n32 + n12*n21*n34 - n11*n22*n34) +\n";
+              out << "         n44*(n12*n23*n31 - n13*n22*n31 + n13*n21*n32 - n11*n23*n32 - n12*n21*n33 + n11*n22*n33);\n";
+            } else if (s.name == "Matrix3" && md.name == "determinant") {
+              // 3x3 matrix determinant (column-major order)
+              out << "  double* m = this->f_elements.data;\n";
+              out << "  double a=m[0], b=m[3], c=m[6];\n";
+              out << "  double d=m[1], e=m[4], f=m[7];\n";
+              out << "  double g=m[2], h=m[5], i=m[8];\n";
+              out << "  return a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g);\n";
+            } else if (s.name == "Matrix3" && md.name == "makeScale") {
+              // Set to scale matrix
+              out << "  double* m = this->f_elements.data;\n";
+              out << "  m[0] = v_sx; m[3] = 0.0;   m[6] = 0.0;\n";
+              out << "  m[1] = 0.0;  m[4] = v_sy;  m[7] = 0.0;\n";
+              out << "  m[2] = 0.0;  m[5] = 0.0;   m[8] = 1.0;\n";
+              out << "  return this;\n";
             } else {
               // Default implementation based on return type
               if (md.ret->kind == TypeKind::Float) {
@@ -688,7 +736,7 @@ struct Emitter {
               } else if (md.ret->kind == TypeKind::Struct && md.ret->name == s.c_sym) {
                 // Check if this is a mutating method
                 static const std::set<std::string> mutating_methods = 
-                  {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide"};
+                  {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide", "makeScale"};
                 if (mutating_methods.count(md.name) > 0) {
                   out << "  return this;\n";
                 } else {
@@ -710,16 +758,21 @@ struct Emitter {
       for (auto& s : m.structs) {
         // print version (no newline)
         out << "void farm_print_" << sanitize(s.name) << "(struct Farm_" << s.c_sym << " v) {\n";
-        out << "  printf(\"" << s.name << "(\");\n";
-        out << "  fflush(stdout);\n"; // Flush before unbuffered writes
-        for (size_t i = 0; i < s.fields.size(); ++i) {
-          if (i > 0) {
-            out << "  printf(\", \");\n";
-            out << "  fflush(stdout);\n";
+        // Check for types with array fields
+        if (s.name == "Matrix4" || s.name == "Matrix3") {
+          out << "  printf(\"" << s.name << "{...}\");\n";
+        } else {
+          out << "  printf(\"" << s.name << "(\");\n";
+          out << "  fflush(stdout);\n"; // Flush before unbuffered writes
+          for (size_t i = 0; i < s.fields.size(); ++i) {
+            if (i > 0) {
+              out << "  printf(\", \");\n";
+              out << "  fflush(stdout);\n";
+            }
+            out << "  farm_print_float(v.f_" << s.fields[i].name << ");\n";
           }
-          out << "  farm_print_float(v.f_" << s.fields[i].name << ");\n";
+          out << "  printf(\")\");\n";
         }
-        out << "  printf(\")\");\n";
         out << "}\n";
         
         // println version (with newline)

@@ -358,6 +358,95 @@ static Module create_farmos_math_module() {
   
   m.structs.push_back(std::move(v3));
   
+  // Matrix4
+  {
+    StructDecl m4;
+    m4.name = "Matrix4";
+    m4.exported = true;
+    m4.loc = SourceLoc{1, 1};
+    // elements: float[16]
+    auto m4_elem_type = Type::ty_float();
+    auto m4_arr_type = std::make_shared<Type>();
+    m4_arr_type->kind = TypeKind::FixedArray;
+    m4_arr_type->elem = m4_elem_type;
+    m4_arr_type->fixed_len = 16;
+    m4.fields.push_back(FieldDecl{"elements", m4_arr_type, SourceLoc{1, 1}});
+    
+    // Default constructor creates identity matrix
+    // No explicit constructor needed - will be handled in emit_c
+    
+    // determinant(): float
+    {
+      MethodDecl md;
+      md.name = "determinant";
+      md.ret = Type::ty_float();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    m.structs.push_back(std::move(m4));
+  }
+  
+  // Matrix3
+  {
+    StructDecl m3;
+    m3.name = "Matrix3";
+    m3.exported = true;
+    m3.loc = SourceLoc{1, 1};
+    // elements: float[9]
+    auto m3_elem_type = Type::ty_float();
+    auto m3_arr_type = std::make_shared<Type>();
+    m3_arr_type->kind = TypeKind::FixedArray;
+    m3_arr_type->elem = m3_elem_type;
+    m3_arr_type->fixed_len = 9;
+    m3.fields.push_back(FieldDecl{"elements", m3_arr_type, SourceLoc{1, 1}});
+    
+    // determinant(): float
+    {
+      MethodDecl md;
+      md.name = "determinant";
+      md.ret = Type::ty_float();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m3.methods.push_back(std::move(md));
+    }
+    
+    // makeScale(sx: float, sy: float): Matrix3
+    {
+      MethodDecl md;
+      md.name = "makeScale";
+      md.params.push_back(Param{"sx", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"sy", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Matrix3");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m3.methods.push_back(std::move(md));
+    }
+    
+    m.structs.push_back(std::move(m3));
+  }
+  
+  // Quaternion
+  {
+    StructDecl q;
+    q.name = "Quaternion";
+    q.exported = true;
+    q.loc = SourceLoc{1, 1};
+    q.fields.push_back(FieldDecl{"x", Type::ty_float(), SourceLoc{1, 1}});
+    q.fields.push_back(FieldDecl{"y", Type::ty_float(), SourceLoc{1, 1}});
+    q.fields.push_back(FieldDecl{"z", Type::ty_float(), SourceLoc{1, 1}});
+    q.fields.push_back(FieldDecl{"w", Type::ty_float(), SourceLoc{1, 1}});
+    
+    m.structs.push_back(std::move(q));
+  }
+  
   // Vector2 struct
   StructDecl v2;
   v2.name = "Vector2";
