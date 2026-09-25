@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cstdio>
 #include <functional>
+#include <set>
 
 namespace farm {
 
@@ -259,11 +260,20 @@ struct Emitter {
               // Receiver is an lvalue, pass its address directly
               recv = emit_lvalue_ptr(e->lhs->lhs);
             } else {
-              // Receiver is an rvalue (temporary), emit it first then store
-              std::string recv_val = emit_expr(e->lhs->lhs);
-              std::string tmp = fresh("rcv");
-              out << c_type(e->lhs->lhs->type) << " " << tmp << " = " << recv_val << ";\n";
-              recv = "&" + tmp;
+              // Receiver is an rvalue (temporary)
+              // Check if it's a method call that returns a pointer (for chaining)
+              if (e->lhs->lhs->kind == ExprKind::Call && 
+                  e->lhs->lhs->lhs && 
+                  e->lhs->lhs->lhs->kind == ExprKind::Field) {
+                // This is a chained method call; the result is already a pointer
+                recv = emit_expr(e->lhs->lhs);
+              } else {
+                // Regular rvalue, emit it first then store
+                std::string recv_val = emit_expr(e->lhs->lhs);
+                std::string tmp = fresh("rcv");
+                out << c_type(e->lhs->lhs->type) << " " << tmp << " = " << recv_val << ";\n";
+                recv = "&" + tmp;
+              }
             }
           } else {
             // Class method: receiver is already a pointer
@@ -531,7 +541,17 @@ struct Emitter {
       // M2: Forward declare struct methods
       for (auto& s : m.structs) {
         for (auto& md : s.methods) {
-          out << c_type(md.ret) << " " << s.c_sym << "__" << md.name << "(struct Farm_" << s.c_sym << "* this";
+          // If method is mutating (returns this), return pointer for chaining
+          // Mutating methods: add, multiplyScalar, cross, normalize, lerp, set
+          static const std::set<std::string> mutating_methods = 
+            {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide"};
+          std::string ret_type = c_type(md.ret);
+          if (md.ret->kind == TypeKind::Struct && 
+              md.ret->name == s.c_sym && 
+              mutating_methods.count(md.name) > 0) {
+            ret_type = "struct Farm_" + s.c_sym + "*";
+          }
+          out << ret_type << " " << s.c_sym << "__" << md.name << "(struct Farm_" << s.c_sym << "* this";
           for (auto& p : md.params) out << ", " << c_type(p.type) << " v_" << p.name;
           out << ");\n";
         }
@@ -575,7 +595,18 @@ struct Emitter {
       // M2: Implement struct methods
       for (auto& s : m.structs) {
         for (auto& md : s.methods) {
-          out << c_type(md.ret) << " " << s.c_sym << "__" << md.name << "(struct Farm_" << s.c_sym << "* this";
+          // If method is mutating (returns this), return pointer for chaining
+          static const std::set<std::string> mutating_methods = 
+            {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide"};
+          std::string ret_type = c_type(md.ret);
+          bool returns_this_ptr = false;
+          if (md.ret->kind == TypeKind::Struct && 
+              md.ret->name == s.c_sym && 
+              mutating_methods.count(md.name) > 0) {
+            ret_type = "struct Farm_" + s.c_sym + "*";
+            returns_this_ptr = true;
+          }
+          out << ret_type << " " << s.c_sym << "__" << md.name << "(struct Farm_" + s.c_sym << "* this";
           for (auto& p : md.params) out << ", " << c_type(p.type) << " v_" << p.name;
           out << ") ";
           
@@ -591,12 +622,12 @@ struct Emitter {
               out << "  this->f_x += v_v.f_x;\n";
               out << "  this->f_y += v_v.f_y;\n";
               out << "  this->f_z += v_v.f_z;\n";
-              out << "  return *this;\n";
+              out << "  return this;\n";
             } else if (s.name == "Vector3" && md.name == "multiplyScalar") {
               out << "  this->f_x *= v_s;\n";
               out << "  this->f_y *= v_s;\n";
               out << "  this->f_z *= v_s;\n";
-              out << "  return *this;\n";
+              out << "  return this;\n";
             } else if (s.name == "Vector3" && md.name == "dot") {
               out << "  return this->f_x * v_v.f_x + this->f_y * v_v.f_y + this->f_z * v_v.f_z;\n";
             } else if (s.name == "Vector3" && md.name == "cross") {
@@ -605,7 +636,7 @@ struct Emitter {
               out << "  this->f_x = ay * bz - az * by;\n";
               out << "  this->f_y = az * bx - ax * bz;\n";
               out << "  this->f_z = ax * by - ay * bx;\n";
-              out << "  return *this;\n";
+              out << "  return this;\n";
             } else if (s.name == "Vector3" && md.name == "length") {
               out << "  return sqrt(this->f_x * this->f_x + this->f_y * this->f_y + this->f_z * this->f_z);\n";
             } else if (s.name == "Vector3" && md.name == "lengthSq") {
@@ -617,7 +648,7 @@ struct Emitter {
               out << "    this->f_y /= len;\n";
               out << "    this->f_z /= len;\n";
               out << "  }\n";
-              out << "  return *this;\n";
+              out << "  return this;\n";
             } else if (s.name == "Vector3" && md.name == "clone") {
               out << "  struct Farm_" << s.c_sym << " result;\n";
               out << "  result.f_x = this->f_x;\n";
@@ -628,14 +659,14 @@ struct Emitter {
               out << "  this->f_x += (v_v.f_x - this->f_x) * v_alpha;\n";
               out << "  this->f_y += (v_v.f_y - this->f_y) * v_alpha;\n";
               out << "  this->f_z += (v_v.f_z - this->f_z) * v_alpha;\n";
-              out << "  return *this;\n";
+              out << "  return this;\n";
             } else if (s.name == "Vector3" && md.name == "equals") {
               out << "  return (this->f_x == v_v.f_x && this->f_y == v_v.f_y && this->f_z == v_v.f_z) ? 1 : 0;\n";
             } else if (s.name == "Vector3" && md.name == "set") {
               out << "  this->f_x = v_x;\n";
               out << "  this->f_y = v_y;\n";
               out << "  this->f_z = v_z;\n";
-              out << "  return *this;\n";
+              out << "  return this;\n";
             } else if (s.name == "Vector3" && md.name == "distanceTo") {
               out << "  double dx = this->f_x - v_v.f_x;\n";
               out << "  double dy = this->f_y - v_v.f_y;\n";
@@ -654,6 +685,15 @@ struct Emitter {
                 out << "  return 0;\n";
               } else if (md.ret->kind == TypeKind::Bool) {
                 out << "  return 0;\n";
+              } else if (md.ret->kind == TypeKind::Struct && md.ret->name == s.c_sym) {
+                // Check if this is a mutating method
+                static const std::set<std::string> mutating_methods = 
+                  {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide"};
+                if (mutating_methods.count(md.name) > 0) {
+                  out << "  return this;\n";
+                } else {
+                  out << "  return *this;\n";
+                }
               } else {
                 out << "  return *this;\n";
               }
