@@ -387,8 +387,9 @@ struct Sema {
           e->type = Type::ty_class(cd->c_sym);
           e->mangled = cd->c_sym;
         } else if (auto* sd = find_struct(e->type_name)) {
-          if (e->args.size()!=sd->fields.size())
-            error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(sd->fields.size()) + ", found " + std::to_string(e->args.size()));
+          // M2: Allow default constructor with zero args, or full constructor matching all fields
+          if (e->args.size() != 0 && e->args.size() != sd->fields.size())
+            error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(sd->fields.size()) + " or 0, found " + std::to_string(e->args.size()));
           else for (size_t i=0;i<e->args.size();++i)
             if (!type_eq(e->args[i]->type, sd->fields[i].type))
               error_at(path, e->args[i]->loc, "E0408", "type mismatch");

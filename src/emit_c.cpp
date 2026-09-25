@@ -305,8 +305,18 @@ struct Emitter {
         for (auto& mm : prog.modules) for (auto& ss : mm.structs) if (ss.c_sym == e->mangled) { sd = &ss; break; }
         if (!sd) return "0";
         out << ty << " " << v << ";\n";
-        for (size_t i=0;i<e->args.size();++i)
-          out << v << ".f_" << sd->fields[i].name << " = " << emit_expr(e->args[i]) << ";\n";
+        if (e->args.size() == 0) {
+          // M2: Default constructor - initialize all fields to zero
+          for (auto& f : sd->fields) {
+            std::string zero_val = "0";
+            if (f.type->kind == TypeKind::Float) zero_val = "0.0";
+            out << v << ".f_" << f.name << " = " << zero_val << ";\n";
+          }
+        } else {
+          // Explicit constructor with all arguments
+          for (size_t i=0;i<e->args.size();++i)
+            out << v << ".f_" << sd->fields[i].name << " = " << emit_expr(e->args[i]) << ";\n";
+        }
         return v;
       }
       default: return "0";
