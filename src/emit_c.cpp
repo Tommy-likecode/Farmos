@@ -357,8 +357,10 @@ struct Emitter {
           }
         } else {
           // Explicit constructor with all arguments
-          for (size_t i=0;i<e->args.size();++i)
-            out << v << ".f_" << sd->fields[i].name << " = " << emit_expr(e->args[i]) << ";\n";
+          for (size_t i=0;i<e->args.size();++i) {
+            std::string arg_val = emit_expr(e->args[i]);
+            out << v << ".f_" << sd->fields[i].name << " = " << arg_val << ";\n";
+          }
         }
         return v;
       }
