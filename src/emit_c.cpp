@@ -176,35 +176,29 @@ struct Emitter {
               case TypeKind::Bool: return pref + "bool(" + a + ")";
               case TypeKind::String: return pref + "string(" + a + ")";
               case TypeKind::Struct: {
-                // M2: generate inline struct printing
+                // M2: For now, emit a helper function call instead of inline
                 std::string struct_name = e->args[0]->type->name;
-                std::string tmp = fresh("s");
-                out << "struct Farm_" << struct_name << " " << tmp << " = " << a << ";\n";
                 
-                // Find the struct definition to get fields and display name
+                // Find the struct definition
                 StructDecl* sd = nullptr;
                 std::string display_name = struct_name;
                 for (auto& m : prog.modules) {
                   for (auto& s : m.structs) {
                     if (s.c_sym == struct_name) { 
                       sd = &s; 
-                      display_name = s.name; // Use the original name for display
+                      display_name = s.name;
                       break; 
                     }
                   }
                   if (sd) break;
                 }
                 
-                out << "printf(\"%s(\", \"" << display_name << "\");\n";
-                if (sd) {
-                  for (size_t i = 0; i < sd->fields.size(); ++i) {
-                    if (i > 0) out << "printf(\", \");\n";
-                    out << "farm_print_float(" << tmp << ".f_" << sd->fields[i].name << ");\n";
-                  }
-                }
-                out << "printf(\")\");\n";
-                if (n=="println") out << "putchar('\\n');\n";
-                return "0";
+                // Generate helper function name
+                std::string helper = "farm_print_" + sanitize(display_name);
+                if (n == "println") helper += "_ln";
+                
+                // Emit call to helper (will be generated separately)
+                return helper + "(" + a + ")";
               }
               default: return "0";
             }
@@ -484,6 +478,17 @@ struct Emitter {
       }
     }
     emit_fixed_typedefs();
+    
+    // M2: Forward declare struct print helpers  
+    out << "/* M2 struct print helpers forward declarations */\n";
+    for (auto& m : prog.modules) {
+      for (auto& s : m.structs) {
+        out << "void farm_print_" << sanitize(s.name) << "(struct Farm_" << s.c_sym << " v);\n";
+        out << "void farm_print_" << sanitize(s.name) << "_ln(struct Farm_" << s.c_sym << " v);\n";
+      }
+    }
+    out << "/* End M2 forward declarations */\n";
+    
     for (auto& m : prog.modules) {
       for (auto& f : m.functions) {
         out << c_type(f.ret) << " " << f.c_sym << "(";
@@ -535,6 +540,29 @@ struct Emitter {
           emit_stmt(md.body);
           out << "\n";
         }
+      }
+      
+      // M2: Implement struct print helpers
+      for (auto& s : m.structs) {
+        // print version (no newline)
+        out << "void farm_print_" << sanitize(s.name) << "(struct Farm_" << s.c_sym << " v) {\n";
+        out << "  printf(\"" << s.name << "(\");\n";
+        out << "  fflush(stdout);\n"; // Flush before unbuffered writes
+        for (size_t i = 0; i < s.fields.size(); ++i) {
+          if (i > 0) {
+            out << "  printf(\", \");\n";
+            out << "  fflush(stdout);\n";
+          }
+          out << "  farm_print_float(v.f_" << s.fields[i].name << ");\n";
+        }
+        out << "  printf(\")\");\n";
+        out << "}\n";
+        
+        // println version (with newline)
+        out << "void farm_print_" << sanitize(s.name) << "_ln(struct Farm_" << s.c_sym << " v) {\n";
+        out << "  farm_print_" << sanitize(s.name) << "(v);\n";
+        out << "  putchar('\\n');\n";
+        out << "}\n";
       }
     }
     std::string main_sym = "fn_m0_main";
