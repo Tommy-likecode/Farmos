@@ -126,6 +126,10 @@ add_test(NAME local_110_stdout_bytes_exact
 set_tests_properties(local_110_stdout_bytes_exact PROPERTIES LABELS "local")
 
 # ---- Concurrent same-stem builds: unique per-process temp names, no leftovers ----
+add_test(NAME local_140_unicode_temp
+  COMMAND ${PS} "${FARMC_SCRIPTS}/test_unicode_temp.ps1" -Farmc $<TARGET_FILE:farmc>)
+set_tests_properties(local_140_unicode_temp PROPERTIES LABELS "local")
+
 add_test(NAME local_130_parallel_same_stem
   COMMAND ${PS} "${FARMC_SCRIPTS}/test_parallel_builds.ps1" -Farmc $<TARGET_FILE:farmc> -Rounds 20 -RunRounds 5)
 set_tests_properties(local_130_parallel_same_stem PROPERTIES LABELS "local")

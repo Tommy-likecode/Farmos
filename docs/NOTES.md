@@ -159,3 +159,16 @@ After the first `E0505` (undefined name), further diagnostics in that compilatio
   - M2 `} else if (0 < n && n <= 21) {` -> `n <= 20`: 0, an equivalent mutant (shortest binary64 digits
     have k <= 17 < 21, so n == 21 always takes the integer branch).
   - M3 both replacements: 3254.
+
+
+## Unicode TEMP / ScratchDir (Windows)
+
+- Root cause at c8398bf: `std::filesystem::temp_directory_path()` (and `path::string()`) on MSVC convert
+  the wide TEMP path through the ANSI/ACP code page. TEMP containing U+00DF (ß), U+1F600 (😀), or
+  U+200D (ZWJ) throws `No mapping for the Unicode character exists in the target multi-byte code page`,
+  which became exit-4 ICE.
+- Fix: resolve TEMP/TMP with `GetEnvironmentVariableW` / `GetTempPathW`; build `fs::path` from `wstring`;
+  emit command lines with UTF-8 (`path_to_utf8` via `WideCharToMultiByte(CP_UTF8)`); invoke the C
+  compiler with `CreateProcessW` (no `cmd.exe` / `.cmd`, which are ACP). Scratch leaf names stay ASCII
+  (`farmc-<pid>-<n>-<rand>`). `DriverError` -> exit 3 (never ICE) if TEMP is truly unusable.
+- Covered by `local_140_unicode_temp`.

@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <random>
+#include <vector>
 #ifdef _WIN32
 #include <windows.h>
 #include <process.h>
@@ -18,6 +19,60 @@
 #endif
 
 namespace farm {
+
+// Driver I/O / configuration failures (section 7.2 exit 3). Distinct from ICE (exit 4).
+struct DriverError : std::runtime_error {
+  using std::runtime_error::runtime_error;
+};
+
+#ifdef _WIN32
+// UTF-8 <-> UTF-16. Never use the ANSI/ACP code page for farmc path I/O: TEMP may contain
+// characters (U+00DF, emoji, ZWJ, ...) that have no ACP mapping and would throw
+// "No mapping for the Unicode character exists in the target multi-byte code page".
+static std::wstring utf8_to_wide(const std::string& u8) {
+  if (u8.empty()) return {};
+  int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, u8.data(), (int)u8.size(), nullptr, 0);
+  if (n <= 0) throw DriverError("invalid UTF-8 in path");
+  std::wstring w((size_t)n, L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, u8.data(), (int)u8.size(), &w[0], n);
+  return w;
+}
+static std::string wide_to_utf8(const std::wstring& w) {
+  if (w.empty()) return {};
+  int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+  if (n <= 0) return {};
+  std::string s((size_t)n, '\0');
+  WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), &s[0], n, nullptr, nullptr);
+  return s;
+}
+// Build a native fs::path from UTF-8 without ACP (wstring ctor on Windows).
+static fs::path path_from_utf8(const std::string& u8) { return fs::path(utf8_to_wide(u8)); }
+// UTF-8 display / command-line form of a path (never path::string(), which is ACP on MSVC).
+static std::string path_to_utf8(const fs::path& p) { return wide_to_utf8(p.wstring()); }
+
+// TEMP/TMP via GetEnvironmentVariableW, else GetTempPathW. Never fs::temp_directory_path()
+// (MSVC converts the wide TEMP through ACP and throws on ß / emoji / ZWJ).
+static fs::path win_temp_directory() {
+  wchar_t buf[32768];
+  for (const wchar_t* name : {L"TEMP", L"TMP"}) {
+    DWORD n = GetEnvironmentVariableW(name, buf, (DWORD)(sizeof(buf) / sizeof(buf[0])));
+    if (n > 0 && n < sizeof(buf) / sizeof(buf[0])) {
+      while (n > 0 && (buf[n - 1] == L'\\' || buf[n - 1] == L'/')) buf[--n] = 0;
+      fs::path p(buf);
+      std::error_code ec;
+      if (fs::is_directory(p, ec)) return p;
+    }
+  }
+  DWORD n = GetTempPathW((DWORD)(sizeof(buf) / sizeof(buf[0])), buf);
+  if (n == 0 || n >= sizeof(buf) / sizeof(buf[0]))
+    throw DriverError("cannot resolve temporary directory (GetTempPathW failed)");
+  while (n > 0 && (buf[n - 1] == L'\\' || buf[n - 1] == L'/')) buf[--n] = 0;
+  return fs::path(buf);
+}
+#else
+static fs::path path_from_utf8(const std::string& u8) { return fs::path(u8); }
+static std::string path_to_utf8(const fs::path& p) { return p.string(); }
+#endif
 
 static std::string read_file(const fs::path& p) {
   std::ifstream in(p, std::ios::binary);
@@ -44,16 +99,21 @@ static fs::path resolve_import(const fs::path& from_file, const std::string& rel
 
 // Display path for diagnostics: prefer cwd-relative with forward slashes (spec section 8.1 / tests README).
 static std::string to_diag_path(const fs::path& p) {
+  auto as_generic_utf8 = [](const fs::path& x) {
+    std::string s = path_to_utf8(x);
+    for (char& c : s) if (c == '\\') c = '/';
+    return s;
+  };
   std::error_code ec;
   fs::path abs = fs::weakly_canonical(p, ec);
   if (ec) abs = fs::absolute(p, ec);
-  if (ec) return p.generic_string();
+  if (ec) return as_generic_utf8(p);
   fs::path rel = fs::relative(abs, fs::current_path(), ec);
   if (!ec && !rel.empty()) {
-    std::string s = rel.generic_string();
+    std::string s = as_generic_utf8(rel);
     if (s != ".." && s.rfind("../", 0) != 0) return s;
   }
-  return abs.generic_string();
+  return as_generic_utf8(abs);
 }
 
 
@@ -109,7 +169,7 @@ struct Loader {
   bool load_module(const fs::path& path, bool is_main) {
     std::error_code ec;
     fs::path can = fs::weakly_canonical(path, ec);
-    std::string key = can.string();
+    std::string key = path_to_utf8(can);
     if (loaded.count(key)) {
       // cycle if in stack
       for (auto& s : stack) if (s==key) {
@@ -119,7 +179,7 @@ struct Loader {
       return true;
     }
     if (!fs::exists(can)) {
-      error_at(path.string(), SourceLoc{1,1}, "E0304", "module `" + path.string() + "` not found");
+      error_at(path_to_utf8(path), SourceLoc{1,1}, "E0304", "module `" + path_to_utf8(path) + "` not found");
       return false;
     }
     std::string src = read_file(can);  // leading UTF-8 BOM accepted and stripped (section 2.1)
@@ -207,7 +267,7 @@ struct Loader {
         if (!is_relative_fm(im.path)) continue;
         fs::path dep = resolve_import(mod.path, im.path);
         std::error_code ec;
-        std::string dep_key = fs::weakly_canonical(dep, ec).string();
+        std::string dep_key = path_to_utf8(fs::weakly_canonical(dep, ec));
         Module* dep_m = nullptr;
         for (auto& x : prog.modules) if (x.path == dep_key) { dep_m = &x; break; }
         if (!dep_m) continue;
@@ -277,7 +337,7 @@ static std::string trim_ws(const std::string& s) {
 
 // Basename with extension stripped, case-insensitive, is `cl` (or `clang-cl`, MSVC-style driver).
 static bool token_is_msvc(const std::string& tok) {
-  std::string base = lower_ascii(fs::path(tok).filename().string());
+  std::string base = lower_ascii(path_to_utf8(fs::path(tok).filename()));
   size_t dot = base.find_last_of('.');
   std::string stem = (dot == std::string::npos) ? base : base.substr(0, dot);
   return stem == "cl" || stem == "clang-cl";
@@ -394,12 +454,13 @@ class ScratchDir {
     static std::atomic<unsigned> counter{0};
 #ifdef _WIN32
     unsigned long pid = (unsigned long)GetCurrentProcessId();
+    fs::path base = win_temp_directory();
 #else
     unsigned long pid = (unsigned long)getpid();
+    fs::path base = fs::temp_directory_path();
 #endif
     std::random_device rd;
     std::mt19937_64 rng(((uint64_t)rd() << 32) ^ (uint64_t)std::chrono::high_resolution_clock::now().time_since_epoch().count() ^ pid);
-    fs::path base = fs::temp_directory_path();
     for (int attempt = 0; attempt < 100; ++attempt) {
       char suf[17];
       std::snprintf(suf, sizeof(suf), "%016llx", (unsigned long long)rng());
@@ -407,7 +468,7 @@ class ScratchDir {
       std::error_code ec;
       if (fs::create_directory(cand, ec) && !ec) { dir_ = cand; return; }
     }
-    throw std::runtime_error("cannot create a unique temporary directory under " + base.string());
+    throw DriverError("cannot create a unique temporary directory under '" + path_to_utf8(base) + "'");
   }
   fs::path dir_;
   unsigned seq_ = 0;
@@ -418,20 +479,28 @@ static ScratchDir& scratch() {
   return s;
 }
 
-static int run_cmd(const std::string& cmd) {
+static int run_cmd(const std::string& cmd_utf8) {
 #ifdef _WIN32
-  // Write to a per-build .cmd to avoid cmd.exe /c quoting pitfalls with system()
-  fs::path bat = scratch().unique_file("cc_run", ".cmd");
-  {
-    std::ofstream o(bat, std::ios::binary);
-    o << "@echo off\r\n" << cmd << "\r\n";
+  // CreateProcessW + UTF-16 command line. No cmd.exe / .cmd: those round-trip through ACP.
+  std::wstring wcmd = utf8_to_wide(cmd_utf8);
+  std::vector<wchar_t> buf(wcmd.begin(), wcmd.end());
+  buf.push_back(L'\0');
+  STARTUPINFOW si;
+  ZeroMemory(&si, sizeof(si));
+  si.cb = sizeof(si);
+  PROCESS_INFORMATION pi;
+  ZeroMemory(&pi, sizeof(pi));
+  if (!CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+    return -1;
   }
-  std::string inv = "cmd.exe /C \"" + bat.string() + "\"";
-  int rc = std::system(inv.c_str());
-  std::error_code ec; fs::remove(bat, ec);
-  return rc;
+  WaitForSingleObject(pi.hProcess, INFINITE);
+  DWORD code = 1;
+  GetExitCodeProcess(pi.hProcess, &code);
+  CloseHandle(pi.hThread);
+  CloseHandle(pi.hProcess);
+  return (int)code;
 #else
-  return std::system(cmd.c_str());
+  return std::system(cmd_utf8.c_str());
 #endif
 }
 
@@ -452,9 +521,9 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   // Size-oriented flags; NO -ffast-math. GNU statement-expressions require clang/gcc.
   std::ostringstream cmd;
   cmd << cc << " -std=c11 -Os -flto -ffunction-sections -fdata-sections "
-      << "-I\"" << rt_h_dir.string() << "\" "
-      << "\"" << c_file.string() << "\" \"" << rt_c.string() << "\" "
-      << "-o \"" << out_exe.string() << "\" "
+      << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
+      << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" "
+      << "-o \"" << path_to_utf8(out_exe) << "\" "
       << "-Wl,--gc-sections -s -lm";
   if (verbose) std::cerr << "farmc: " << cmd.str() << "\n";
   int rc = run_cmd(cmd.str());
@@ -462,9 +531,9 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
     // retry without LTO
     std::ostringstream cmd2;
     cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections "
-         << "-I\"" << rt_h_dir.string() << "\" "
-         << "\"" << c_file.string() << "\" \"" << rt_c.string() << "\" "
-         << "-o \"" << out_exe.string() << "\" "
+         << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
+         << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" "
+         << "-o \"" << path_to_utf8(out_exe) << "\" "
          << "-Wl,--gc-sections -s -lm";
     if (verbose) std::cerr << "farmc: retry " << cmd2.str() << "\n";
     rc = run_cmd(cmd2.str());
@@ -479,12 +548,17 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
 
 static fs::path default_runtime_dir() {
   // farmc.exe next to ../runtime or FARM_RUNTIME
-  if (const char* e = std::getenv("FARM_RUNTIME")) return fs::path(e);
 #ifdef _WIN32
-  char buf[MAX_PATH];
-  DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
-  fs::path exe = (n ? fs::path(buf) : fs::path("farmc.exe"));
+  {
+    wchar_t wbuf[32768];
+    DWORD n = GetEnvironmentVariableW(L"FARM_RUNTIME", wbuf, (DWORD)(sizeof(wbuf) / sizeof(wbuf[0])));
+    if (n > 0 && n < sizeof(wbuf) / sizeof(wbuf[0])) return fs::path(wbuf);
+  }
+  wchar_t buf[MAX_PATH];
+  DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+  fs::path exe = (n ? fs::path(buf) : fs::path(L"farmc.exe"));
 #else
+  if (const char* e = std::getenv("FARM_RUNTIME")) return fs::path(e);
   fs::path exe = fs::read_symlink("/proc/self/exe");
 #endif
   fs::path cand = exe.parent_path() / "runtime";
@@ -558,18 +632,18 @@ static int cmd_build(std::vector<std::string> args) {
   fs::path inpath(infile);
   if (outfile.empty()) {
 #ifdef _WIN32
-    outfile = inpath.stem().string() + ".exe";
+    outfile = path_to_utf8(inpath.stem()) + ".exe";
 #else
-    outfile = inpath.stem().string();
+    outfile = path_to_utf8(inpath.stem());
 #endif
   }
 
   fs::path tmp_c;
   if (!emit_c_path.empty()) tmp_c = emit_c_path;
-  else tmp_c = scratch().file(inpath.stem().string() + "_farmc_gen.c");
+  else tmp_c = scratch().file(path_to_utf8(inpath.stem()) + "_farmc_gen.c");
   {
     std::ofstream o(tmp_c, std::ios::binary);
-    if (!o) { std::cerr << "farmc: cannot write " << tmp_c.string() << "\n"; return 3; }
+    if (!o) { std::cerr << "farmc: cannot write " << path_to_utf8(tmp_c) << "\n"; return 3; }
     o << csrc;
   }
   if (do_emit_c && emit_c_path.empty()) {
@@ -598,7 +672,7 @@ static int cmd_build(std::vector<std::string> args) {
       fs::copy_file(link_out, out_req, fs::copy_options::overwrite_existing, ec);
     }
     if (ec) {
-      std::cerr << "farmc: cannot write output " << out_req.string() << ": " << ec.message() << "\n";
+      std::cerr << "farmc: cannot write output " << path_to_utf8(out_req) << ": " << ec.message() << "\n";
       rc = 3;
     }
   }
@@ -618,11 +692,11 @@ static int cmd_run(std::vector<std::string> args) {
   if (infile.empty()) { std::cerr << "farmc run: missing file\n"; return 2; }
   // Private per-process run directory (not the build scratch dir, which cmd_build removes).
   ScratchDir run_dir;
-  fs::path out = run_dir.file(fs::path(infile).stem().string() + ".exe");
-  int rc = cmd_build({infile, "-o", out.string()});
+  fs::path out = run_dir.file(path_to_utf8(fs::path(infile).stem()) + ".exe");
+  int rc = cmd_build({infile, "-o", path_to_utf8(out)});
   if (rc != 0) return rc;
   std::ostringstream cmd;
-  cmd << "\"" << out.string() << "\"";
+  cmd << "\"" << path_to_utf8(out) << "\"";
   for (auto& a : rest) cmd << " \"" << a << "\"";
   rc = run_cmd(cmd.str());
   scratch().cleanup();
@@ -659,10 +733,13 @@ static int farmc_main(int argc, char** argv) {
   return 2;
 }
 
-// Section 7.2: any escaped exception is an internal compiler error (exit 4).
+// Section 7.2: DriverError -> exit 3; any other escaped exception is ICE (exit 4).
 int main(int argc, char** argv) {
   try {
     return farmc_main(argc, argv);
+  } catch (const farm::DriverError& e) {
+    std::cerr << "farmc: " << e.what() << "\n";
+    return 3;
   } catch (const std::exception& e) {
     std::cerr << "farmc: internal compiler error: " << e.what() << "\n";
     return 4;
