@@ -1,0 +1,10 @@
+import { Quaternion } from "farmos:math";
+
+function main(): int {
+  let a: Quaternion = new Quaternion();
+  let b: Quaternion = new Quaternion();
+  a.multiply(b);
+  println(a);
+  println(a.equals(new Quaternion()));
+  return 0;
+}

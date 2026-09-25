@@ -1,0 +1,6 @@
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  println(new Vector3(7.0, 8.0, 9.0));
+  return 0;
+}

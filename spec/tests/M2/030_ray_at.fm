@@ -1,0 +1,9 @@
+import { Ray, Vector3 } from "farmos:math";
+
+function main(): int {
+  let r: Ray = new Ray(new Vector3(1.0, 2.0, 3.0), new Vector3(0.0, 1.0, 0.0));
+  println(r.at(0.0));
+  println(r.at(2.0));
+  println(r.at(0.5));
+  return 0;
+}

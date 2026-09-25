@@ -1,0 +1,13 @@
+import { Matrix4, Vector3 } from "farmos:math";
+
+function main(): int {
+  let a: Matrix4 = new Matrix4();
+  a.makeTranslation(1.0, 2.0, 3.0);
+  let b: Matrix4 = new Matrix4();
+  b.makeTranslation(4.0, 5.0, 6.0);
+  a.multiply(b);
+  let p: Vector3 = new Vector3(0.0, 0.0, 0.0);
+  p.applyMatrix4(a);
+  println(p);
+  return 0;
+}

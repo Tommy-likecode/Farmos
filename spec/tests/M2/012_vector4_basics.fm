@@ -1,0 +1,10 @@
+import { Vector4 } from "farmos:math";
+
+function main(): int {
+  let v: Vector4 = new Vector4(1.0, 2.0, 3.0, 4.0);
+  println(v);
+  println(v.dot(new Vector4(1.0, 1.0, 1.0, 1.0)));
+  v.multiplyScalar(0.5);
+  println(v);
+  return 0;
+}

@@ -1,0 +1,9 @@
+import { RayHit, Vector3 } from "farmos:math";
+
+function main(): int {
+  let h: RayHit = new RayHit(true, new Vector3(1.0, 2.0, 3.0), 4.0);
+  println(h);
+  let m: RayHit = new RayHit(false, new Vector3(0.0, 0.0, 0.0), 0.0);
+  println(m);
+  return 0;
+}

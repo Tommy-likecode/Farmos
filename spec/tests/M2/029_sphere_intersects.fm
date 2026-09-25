@@ -1,0 +1,10 @@
+import { Sphere, Vector3 } from "farmos:math";
+
+function main(): int {
+  let a: Sphere = new Sphere(new Vector3(0.0, 0.0, 0.0), 2.0);
+  let b: Sphere = new Sphere(new Vector3(3.0, 0.0, 0.0), 2.0);
+  let c: Sphere = new Sphere(new Vector3(10.0, 0.0, 0.0), 1.0);
+  println(a.intersectsSphere(b));
+  println(a.intersectsSphere(c));
+  return 0;
+}

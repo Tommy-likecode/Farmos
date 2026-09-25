@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+# stdout:
+false
+0
+Vector3(0, 0, 0)
+# end

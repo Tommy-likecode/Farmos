@@ -1,0 +1,15 @@
+struct Pair {
+  a: int;
+  b: int;
+}
+
+operator +(x: Pair, y: Pair): Pair {
+  return new Pair(x.a + y.a, x.b + y.b);
+}
+
+function main(): int {
+  let p: Pair = new Pair(1, 2) + new Pair(3, 4);
+  println(p.a);
+  println(p.b);
+  return 0;
+}

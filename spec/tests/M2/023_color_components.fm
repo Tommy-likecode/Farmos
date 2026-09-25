@@ -1,0 +1,9 @@
+import { Color } from "farmos:math";
+
+function main(): int {
+  let c: Color = new Color(0.25, 0.5, 0.75);
+  println(c);
+  c.multiplyScalar(2.0);
+  println(c);
+  return 0;
+}

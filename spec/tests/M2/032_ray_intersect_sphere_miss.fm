@@ -1,0 +1,11 @@
+import { Ray, Sphere, Vector3, RayHit } from "farmos:math";
+
+function main(): int {
+  let r: Ray = new Ray(new Vector3(0.0, 0.0, -5.0), new Vector3(0.0, 1.0, 0.0));
+  let s: Sphere = new Sphere(new Vector3(0.0, 0.0, 0.0), 1.0);
+  let h: RayHit = r.intersectSphere(s);
+  println(h.hit);
+  println(h.distance);
+  println(h.point);
+  return 0;
+}

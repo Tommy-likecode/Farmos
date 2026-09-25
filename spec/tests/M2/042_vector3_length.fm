@@ -1,0 +1,8 @@
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  let v: Vector3 = new Vector3(3.0, 4.0, 0.0);
+  println(v.length());
+  println(v.lengthSq());
+  return 0;
+}

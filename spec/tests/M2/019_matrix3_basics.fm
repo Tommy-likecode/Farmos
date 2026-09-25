@@ -1,0 +1,11 @@
+import { Matrix3, Vector2 } from "farmos:math";
+
+function main(): int {
+  let m: Matrix3 = new Matrix3();
+  println(m.determinant());
+  m.makeScale(2.0, 3.0);
+  let v: Vector2 = new Vector2(4.0, 5.0);
+  v.applyMatrix3(m);
+  println(v);
+  return 0;
+}

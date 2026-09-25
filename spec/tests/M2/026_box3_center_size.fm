@@ -1,0 +1,8 @@
+import { Box3, Vector3 } from "farmos:math";
+
+function main(): int {
+  let b: Box3 = new Box3(new Vector3(0.0, 0.0, 0.0), new Vector3(2.0, 4.0, 6.0));
+  println(b.getCenter());
+  println(b.getSize());
+  return 0;
+}

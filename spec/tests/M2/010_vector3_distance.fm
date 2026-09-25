@@ -1,0 +1,9 @@
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  let a: Vector3 = new Vector3(1.0, 2.0, 3.0);
+  let b: Vector3 = new Vector3(1.0, 6.0, 3.0);
+  println(a.distanceTo(b));
+  println(a.distanceToSquared(b));
+  return 0;
+}

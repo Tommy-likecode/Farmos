@@ -1,0 +1,6 @@
+# kind: run
+# exit: 0
+# stdout:
+Euler(0, 0, 0, "XYZ")
+Euler(0.5, 1, 1.5, "XYZ")
+# end

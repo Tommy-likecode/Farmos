@@ -1,0 +1,6 @@
+# kind: run
+# exit: 0
+# stdout:
+Quaternion(0, 0, 0, 1)
+Vector3(1, 2, 3)
+# end

@@ -1,6 +1,6 @@
 # Farmos M2 — Math Standard Library Specification
 
-**Status:** DRAFT  
+**Status:** FINAL (PM-approved 2026-09-24)  
 **Milestone:** M2 Math stdlib  
 **Depends on:** `spec/M1-core.md` (FINAL)  
 **Normative keywords:** MUST / SHOULD / MAY per RFC 2119.
@@ -35,7 +35,7 @@ Related: `/workspace/farmos/PLAN.md`, `/workspace/farmos/spec/M1-core.md`, `/wor
 | Ray tracing BVH / PBR materials | M4 |
 | Physics | M5 |
 | Generics, closures, inheritance, `null` / `Optional<T>` | post-M1 (unchanged) |
-| Color management / sRGB↔linear display pipeline | post-M2 (see OQ-M2-05) |
+| Color management / sRGB↔linear display pipeline | post-M2 (raw hex in M2; Resolved OQ-M2-05) |
 | SIMD / f32 math types | post-M2 |
 | Full Three.js math surface (Curve, Frustum, Triangle, …) | post-M2 as needed |
 
@@ -49,7 +49,7 @@ Related: `/workspace/farmos/PLAN.md`, `/workspace/farmos/spec/M1-core.md`, `/wor
 
 ## 2. Module exposure
 
-### 2.1 Built-in module path (normative default)
+### 2.1 Built-in module path
 
 Math types MUST be imported from the built-in module path `"farmos:math"`:
 
@@ -62,9 +62,7 @@ import { Vector3, Matrix4, Color } from "farmos:math";
 - Invalid built-in id (unknown after `farmos:`) → `E0304` (module not found), column at the opening `"` of the string.
 - Relative `.fm` imports remain as in M1.
 
-**Justification:** Named built-in modules make unused exports trivially DCE’d per import/use, keep hello-world free of math symbols, and mirror Three.js ESM (`three` package) for M3 ports better than a silent global prelude.
-
-**Alternative (OQ-M2-01):** global prelude injecting all math names. Rejected as default because unused names still pollute the name set and complicate “hello size unchanged” reasoning; prelude MAY be reconsidered if M3 ergonomics demand it.
+**Justification (Resolved OQ-M2-01):** Named built-in modules make unused exports trivially DCE’d per import/use, keep hello-world free of math symbols, and mirror Three.js ESM better than a global prelude. A global prelude MUST NOT be provided in M2.
 
 ### 2.2 Exports
 
@@ -97,7 +95,7 @@ This is required so M3 ports of `mesh.position.set(…)` / `mesh.position.x = �
 
 ### 3.2 Struct methods (language extension)
 
-M1 forbade methods on structs. M2 **MUST** allow them:
+M1 forbade methods on structs. M2 **MUST** allow them on **all** structs, including user-defined types (Resolved OQ-M2-07), not only `farmos:math` types:
 
 ```
 struct_decl   ::= "struct" identifier "{" struct_member* "}"
@@ -130,8 +128,6 @@ let w: Vector3 = v.add(new Vector3(1.0, 0.0, 0.0));
 // v is (3, 2, 0); w is a copy of that value
 ```
 
-**Alternative (OQ-M2-02):** immutable API only (`v = v.add(w)`); mutating methods absent. Rejected as default because it breaks Three.js chaining and `mesh.position.add(…)`.
-
 ### 3.5 Three.js `target` out-parameters
 
 Three.js often uses `getCenter(target)`. With value types and no `null`, M2 MUST:
@@ -139,7 +135,7 @@ Three.js often uses `getCenter(target)`. With value types and no `null`, M2 MUST
 - Prefer **return by value**: `getCenter(): Vector3`, `getSize(): Vector3`, `at(t: float): Vector3`, etc.
 - MUST NOT require a mutable out-parameter for these getters in M2.
 
-**Alternative (OQ-M2-03):** add `ref` parameters. Deferred.
+General user-facing `ref` parameters MUST NOT be added in M2 (Resolved OQ-M2-03).
 
 ### 3.6 Ray misses (no `null`)
 
@@ -156,9 +152,34 @@ struct RayHit {
 - `hit == false` → `point` MUST be `(0,0,0)` and `distance` MUST be `0.0` (deterministic dummy).
 - `hit == true` → `point` is the intersection; `distance` is parametric `t` along the ray (`origin + direction * t`) with `t >= 0` for forward hits.
 
-**Alternative (OQ-M2-04):** return sentinel `t = -1.0` only. Rejected as default for clarity and typed results.
 
 ---
+
+
+### 3.7 Copies vs aliases (Resolved OQ-M2-12)
+
+Three.js `Vector3` is a mutable reference object. In Farmos, math types are values (§3.1):
+
+```
+let p: Vector3 = mesh.position;
+p.x = 1.0;
+// mesh.position is UNCHANGED — p is a copy
+```
+
+This divergence is **normative**. M2 MUST NOT add aliasing references / `ref` locals for math values.
+
+Idiomatic Farmos:
+
+```
+mesh.position.x = 1.0;           // mutate through the field path
+mesh.position.set(1.0, 2.0, 3.0);
+// or write back:
+let p: Vector3 = mesh.position;
+p.x = 1.0;
+mesh.position = p;
+```
+
+The **M3 and M6 porting guides MUST document** this rule and the idioms above (Resolved OQ-M2-12).
 
 ## 4. Conventions (all math types)
 
@@ -178,7 +199,76 @@ struct RayHit {
 
 ---
 
+
+## 4A. Amendment to M1 §4.8 (effective with M2)
+
+**Status:** Normative (Resolved OQ-M2-11, PM 2026-09-24).
+
+This section amends M1 §4.3 / §4.8 / §4.10 for **M2 and later** only. It softens `E0402` / `E0408` for the cases below.
+
+**M1 acceptance claim unchanged:** An **M1-conformant** compiler MUST still reject programs that rely on these coercions (they remain type errors under M1-core.md). An **M2-conformant** compiler MUST accept them per this section. M1 fixtures that expect `E0402`/`E0408` for int literals in float contexts remain valid for M1-only builds; they are not M2 language tests.
+
+### 4A.1 Motivation
+
+Three.js ports routinely write integer-looking numerics where Farmos expects `float`:
+
+```
+new Vector3(1, 2, 3);
+mesh.position.z = 5;
+new Color(1, 0, 0);
+v.multiplyScalar(0);
+```
+
+Under strict M1 rules each `1` / `5` / `0` is an `int` literal → type error. That blocks the M3 AC of near-identical structure.
+
+### 4A.2 Rule
+
+An **integer literal** (decimal or hex per M1 §2.6), optionally prefixed by a single unary `-` (and no other operators), that appears in a **float context** MUST be typed as `float` when its mathematical value \(v\) is **exactly representable** in IEEE 754 binary64 as an integer, i.e. \(|v| \leq 2^{53}\).
+
+Float contexts:
+
+1. Argument to a parameter of type `float`.
+2. RHS of assignment / `let`/`const` initializer whose target type is `float` (including field paths like `v.x`).
+3. Expression in `return` of a function/method with return type `float`.
+4. Operand of a binary arithmetic or comparison operator where the **other** operand has type `float` (**literal operand only**). Example: with `x: float`, `x * 2` and `2 * x` type the literal `2` as `float`; `x + i` with `i: int` remains `E0402`.
+
+If the literal’s value is outside \([-2^{53}, 2^{53}]\) → compile error **`E0608`** at the literal:
+
+| Code | Message template |
+|------|------------------|
+| E0608 | integer literal `{lit}` cannot be used as `float` (not exactly representable) |
+
+**Non-literal** `int` expressions (names, calls, arithmetic yielding `int`) in a float context remain errors: argument/assignment → **`E0408`**; mixed arithmetic with a non-literal `int` → **`E0402`**. Explicit `float(i)` still required.
+
+Hex color constructors taking `int` (`new Color(0xff0000)`, `setHex`) are **unchanged** — those parameters are `int`, not float contexts.
+
+Unary `+` on an integer literal is **not** included (only optional unary `-`).
+
+### 4A.3 Non-goals
+
+- No implicit conversion of `float` → `int`.
+- No implicit conversion of runtime `int` values.
+- No change to integer arithmetic between two `int`s.
+
+### 4A.4 Fixtures
+
+Fixtures `051`–`054` exercise this amendment and are ordinary required M2 fixtures.
+
+---
+
 ## 5. Operator overloading
+
+### 5.0 Keyword and grammar amendments
+
+- `operator` is a new **reserved keyword** in M2 (MUST NOT be used as an identifier; reuse `E0003` if so).
+- Compilation-unit `item` production (M1 §3.1) is amended:
+
+```
+item ::= import_decl | export_item | decl | operator_decl
+decl ::= function_decl | struct_decl | class_decl | const_decl
+```
+
+- `struct_decl` is amended per §3.2 (methods allowed).
 
 ### 5.1 Syntax
 
@@ -461,7 +551,7 @@ struct Matrix4 {
 
 `decompose` MUST mutate the three struct arguments in place (by-ref parameter passing for these three parameters only). Normative rule for M2:
 
-> A function or method parameter of math struct type MAY be declared with prefix `ref` in **stdlib signatures only** in M2 for `Matrix4.decompose`. User-facing `ref` syntax is **not** general language surface in M2 (OQ-M2-03). The signature is spelled in this spec as:
+> A function or method parameter of math struct type MAY be declared with prefix `ref` in **stdlib signatures only** in M2 for `Matrix4.decompose`. User-facing `ref` syntax is **not** general language surface in M2 (Resolved OQ-M2-03). The signature is spelled in this spec as:
 >
 > `decompose(position: Vector3, quaternion: Quaternion, scale: Vector3): Matrix4`
 >
@@ -540,7 +630,7 @@ struct Color {
 - `getHex(): int` → `round(r*255)<<16 | round(g*255)<<8 | round(b*255)` with each channel clamped to `[0,1]` before scaling.
 - `round` means round half away from zero toward nearest int for `.5` ties… **MUST** use `floor(c * 255.0 + 0.5)` for `c` in `[0,1]` after clamp (simple biased round).
 
-**Justification:** M2 has no renderer color pipeline; Three.js r152+ management would disagree with raw buffer math and complicate exact fixtures. M3/M4 MAY revisit (OQ-M2-05).
+**Justification:** M2 has no renderer color pipeline; Three.js r152+ management would disagree with raw buffer math and complicate exact fixtures. M3/M4 MAY revisit (Resolved OQ-M2-05).
 
 | Signature | Mut? |
 |-----------|------|
@@ -700,8 +790,8 @@ Comparison: split stdout into tokens (whitespace-separated). For tokens that par
 | ID | Criterion |
 |----|-----------|
 | AC-M2-01 | Windows x64: build `spec/tests/M1/001_hello.fm` with M2-capable `farmc`, `strip` the PE, size in bytes **equals** the M1 baseline hello size measured the same way on the same machine/toolchain (clang **or** gcc as used by the driver). Method: `farmc build … -o hello.exe` then strip (`llvm-strip`/`strip` equivalent) then `(Get-Item hello.exe).Length`. |
-| AC-M2-02 | Program importing only `Vector3` and calling only `Vector3` APIs MUST NOT link `Matrix4`/`Quaternion`/… object sections (verify via map file or `dumpbin /SYMBOLS` / `nm` equivalent showing those symbols absent). Soft size budget: stripped exe ≤ **M1 hello + 8 KiB** (OQ-M2-06). |
-| AC-M2-03 | ≥ **40** fixtures under `spec/tests/M2/` pass via local `scripts\build_and_test.ps1`. |
+| AC-M2-02 | Program importing only `Vector3` and calling only `Vector3` APIs MUST NOT link `Matrix4`/`Quaternion`/… object sections (verify via map file or `dumpbin /SYMBOLS` / `nm` equivalent showing those symbols absent). Soft size budget: stripped exe ≤ **M1 hello + 8 KiB** (Resolved OQ-M2-06). |
+| AC-M2-03 | ≥ **40** fixtures under `spec/tests/M2/` pass via local `scripts\build_and_test.ps1` (this pack: **54**). |
 | AC-M2-04 | All `kind: run` stdout exact; `run_approx` within epsilon; `compile_error` match line:col:code. |
 | AC-M2-05 | `mesh.position.x = 1` pattern (class field of type `Vector3`) mutates the instance (fixture). |
 | AC-M2-06 | Chaining `v.add(w).multiplyScalar(s)` mutates `v` (fixture). |
@@ -768,44 +858,71 @@ Fixtures live in `spec/tests/M2/`. See `tests/M2/README.md`.
 | 048 | `048_rayhit_print.fm` | run | RayHit println |
 | 049 | `049_box3_empty.fm` | run | isEmpty |
 | 050 | `050_const_vector_field_error.fm` | compile_error | E0504/E0511 |
+| 051 | `051_literal_float_arg.fm` | run | int lit → float arg (§4A) |
+| 052 | `052_literal_float_assign.fm` | run | int lit → float field (§4A) |
+| 053 | `053_literal_float_arith.fm` | run | `x * 2` literal (§4A) |
+| 054 | `054_nonliteral_int_to_float.fm` | compile_error | E0408 non-lit int (§4A) |
+
+**Fixture count:** **54** (matches `spec/tests/M2/*.fm`).
 
 ---
 
 ## 20. Open questions
 
-| ID | Question | Proposed default |
-|----|----------|------------------|
-| OQ-M2-01 | Expose math via `"farmos:math"` import vs global prelude? | **`import { … } from "farmos:math"`** (DCE-friendly; Three.js ESM-like). |
-| OQ-M2-02 | Mutating methods + receiver-return chaining vs immutable-only API? | **Mutating + chaining** (§3); immutable alternative rejected for M3 ports. |
-| OQ-M2-03 | General `ref` parameters for out-params? | **No** in M2; return-by-value getters; sole exception `Matrix4.decompose` in-out (stdlib-only). |
-| OQ-M2-04 | Ray miss representation? | **`RayHit` struct** with `hit: bool`. |
-| OQ-M2-05 | Hex colors: raw vs sRGB→linear (Three.js r152+)? | **Raw** (no color management) for M2; revisit in M3/M4. |
-| OQ-M2-06 | Vector3-only stripped size budget over hello? | **≤ hello + 8 KiB** on Windows x64 (same toolchain/strip). |
-| OQ-M2-07 | Allow methods on **user** structs generally, or only built-in math types? | **User structs MAY have methods** (grammar unified). |
-| OQ-M2-08 | `Matrix4 * Vector3` treat as point (`w=1`) or require Vector4? | **Point (`w=1`)** plus `transformDirection` for directions. |
-| OQ-M2-09 | Euler invalid order: compile-time if string literal vs always runtime? | **Runtime trap 104**; literal checking MAY be added later as warning. |
-| OQ-M2-10 | Should unused named imports be hard errors? | **No** (DCE only); AC-M2-10 soft. |
-
-### Contradictions / tensions with PLAN.md or M1
-
-1. **PLAN “value types for vec/mat”** vs **Three.js mutable chaining**: reconciled by struct value types + by-ref `this` + receiver-return (§3). Not a contradiction if chaining is specified as mutating storage.
-2. **M1 “structs have no methods”**: amended by M2 (§3.2). M1 remains correct for M1 scope.
-3. **M1 module paths MUST end in `.fm`**: amended for `farmos:*` built-in ids only (§2.1).
-4. **M1 hello size AC on Linux** vs **PLAN Windows-only**: M2 ACs measure Windows x64; M1 Linux wording is historical for M1 docs and not used here.
-5. **M1 no `null`** vs Three.js ray `null` returns: resolved via `RayHit` (§3.6).
-6. **decompose out-params** slightly strain pure value semantics: contained stdlib exception + OQ-M2-03.
+None. All M2 open questions are closed (PM 2026-09-24).
 
 ---
 
-## 21. Resolved relative to M1
+## 21. Resolved decisions
+
+| ID | Decision | Approved |
+|----|----------|----------|
+| OQ-M2-01 | Math exposed via `import { … } from "farmos:math"` only; no global math prelude. | PM 2026-09-24 |
+| OQ-M2-02 | Mutating methods with receiver-return chaining (§3.3–§3.4); not immutable-only. | PM 2026-09-24 |
+| OQ-M2-03 | No general `ref` parameters; return-by-value getters; sole stdlib in-out exception `Matrix4.decompose`. | PM 2026-09-24 |
+| OQ-M2-04 | Ray misses use `RayHit { hit, point, distance }`; not sentinel `t`. | PM 2026-09-24 |
+| OQ-M2-05 | Color hex is **raw** (no sRGB↔linear); M3/M4 MAY revisit. | PM 2026-09-24 |
+| OQ-M2-06 | Vector3-only stripped size budget ≤ hello + 8 KiB (Windows x64, same toolchain/strip). | PM 2026-09-24 |
+| OQ-M2-07 | User-defined structs MAY have methods (same grammar as math types). | PM 2026-09-24 |
+| OQ-M2-08 | `Matrix4 * Vector3` treats vector as affine point (`w=1`); directions use `transformDirection`. | PM 2026-09-24 |
+| OQ-M2-09 | Invalid Euler order → runtime trap exit **104** (not a hard compile error for non-literals). | PM 2026-09-24 |
+| OQ-M2-10 | Unused named imports are not hard errors; DCE only (AC-M2-10 soft). | PM 2026-09-24 |
+| OQ-M2-11 | Contextual integer-literal → `float` typing (§4A); amends M1 §4.8 for M2+ only. | PM 2026-09-24 |
+| OQ-M2-12 | Value-copy divergence from Three.js aliasing is accepted; no aliasing refs; **M3/M6 porting guides MUST document** (§3.7). | PM 2026-09-24 |
+
+---
+
+## 22. Amendments to M1 that land with M2
+
+M1-core.md is **not** edited by this milestone. The following language rules are **M2 amendments** (an M2-conformant `farmc` MUST implement them; an M1-only compiler need not):
+
+| # | Amendment | Where specified |
+|---|-----------|-----------------|
+| 1 | **Contextual integer-literal → `float`** (exact representability \|v\|≤2⁵³; else E0608; non-literals still E0408/E0402) | §4A (amends M1 §4.8) |
+| 2 | **Methods on user `struct`s** (by-ref `this`, receiver-return chaining) | §3.2 (amends M1 “structs have no methods”) |
+| 3 | **`farmos:` virtual import paths** (e.g. `"farmos:math"`; need not end in `.fm`) | §2.1 (amends M1 module path rule) |
+| 4 | **`operator` keyword** and user-defined operator overloading | §5 (fulfills M1 OQ-M1-15 deferred work) |
+| 5 | **`print`/`println`/`str` overloads** for math types | §6 |
+| 6 | **Runtime trap 104** (`invalid Euler order`) | §17 |
+| 7 | Diagnostics **E0601–E0608** | §5.6 / §4A / §11.1 |
+
+Informative notes (not M1 text edits): Windows-x64-only size ACs for M2 measurement (PLAN.md); Three.js copy-vs-alias porting requirement for M3/M6 (§3.7).
+
+---
+
+## 23. Resolved relative to M1 deferred items
 
 | M1 item | M2 disposition |
 |---------|----------------|
 | OQ-M1-15 user operator overloading | Specified in §5 |
 | Built-in overloads only in M1 | Extended: math + user operators |
+| Math types / Color / Ray / … | This document |
 
 ---
 
 ## Document history
 
+
 - 2026-09-24: Initial M2 draft (math stdlib + operators + fixtures).
+- 2026-09-24: OQ-M2-11/12 drafted (§4A PENDING, §3.7); fixtures 051–054.
+- 2026-09-24: FINAL — PM approved OQ-M2-01..12; §4A normative; Resolved decisions; M1 amendments list; fixtures 051–054 ungated.
