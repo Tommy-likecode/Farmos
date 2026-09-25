@@ -245,6 +245,14 @@ struct Sema {
           if (!sd) { error_at(path, e->loc, "E0505", "undefined name `" + e->name + "`"); e->type=Type::ty_error(); break; }
           bool found=false;
           for (auto& f : sd->fields) if (f.name==e->name) { e->type=f.type; found=true; break; }
+          // M2: Check methods too (like classes do)
+          if (!found) {
+            for (auto& md : sd->methods) if (md.name==e->name) {
+              e->mangled = sd->c_sym + "__" + e->name;
+              e->type = Type::ty_error(); // Will be fixed in Call checking
+              found = true; break;
+            }
+          }
           if (!found) { error_at(path, e->loc, "E0505", "undefined name `" + e->name + "`"); e->type=Type::ty_error(); }
           e->is_lvalue = true;
           e->is_const_binding = e->lhs->is_const_binding;
