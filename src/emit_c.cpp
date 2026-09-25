@@ -700,6 +700,28 @@ struct Emitter {
               out << "  double dy = this->f_y - v_v.f_y;\n";
               out << "  double dz = this->f_z - v_v.f_z;\n";
               out << "  return dx*dx + dy*dy + dz*dz;\n";
+            } else if (s.name == "Vector2" && md.name == "length") {
+              out << "  return sqrt(this->f_x * this->f_x + this->f_y * this->f_y);\n";
+            } else if (s.name == "Vector2" && md.name == "normalize") {
+              out << "  double len = sqrt(this->f_x * this->f_x + this->f_y * this->f_y);\n";
+              out << "  if (len > 0.0) { this->f_x /= len; this->f_y /= len; }\n";
+              out << "  return this;\n";
+            } else if (s.name == "Vector2" && md.name == "add") {
+              out << "  this->f_x += v_v.f_x;\n";
+              out << "  this->f_y += v_v.f_y;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Vector2" && md.name == "multiplyScalar") {
+              out << "  this->f_x *= v_s;\n";
+              out << "  this->f_y *= v_s;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Vector4" && md.name == "dot") {
+              out << "  return this->f_x * v_v.f_x + this->f_y * v_v.f_y + this->f_z * v_v.f_z + this->f_w * v_v.f_w;\n";
+            } else if (s.name == "Vector4" && md.name == "multiplyScalar") {
+              out << "  this->f_x *= v_s;\n";
+              out << "  this->f_y *= v_s;\n";
+              out << "  this->f_z *= v_s;\n";
+              out << "  this->f_w *= v_s;\n";
+              out << "  return this;\n";
             } else if (s.name == "Matrix4" && md.name == "determinant") {
               // 4x4 matrix determinant (column-major order)
               out << "  double* m = this->f_elements.data;\n";
