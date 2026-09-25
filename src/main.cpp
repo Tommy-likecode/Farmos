@@ -369,6 +369,19 @@ static Module create_farmos_math_module() {
     v3.methods.push_back(std::move(md));
   }
   
+  // applyQuaternion(q: Quaternion): Vector3
+  {
+    MethodDecl md;
+    md.name = "applyQuaternion";
+    md.params.push_back(Param{"q", Type::ty_struct("Quaternion"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
   m.structs.push_back(std::move(v3));
   
   // Matrix4
@@ -539,6 +552,19 @@ static Module create_farmos_math_module() {
     q.fields.push_back(FieldDecl{"z", Type::ty_float(), SourceLoc{1, 1}});
     q.fields.push_back(FieldDecl{"w", Type::ty_float(), SourceLoc{1, 1}});
     
+    // multiply(q: Quaternion): Quaternion
+    {
+      MethodDecl md;
+      md.name = "multiply";
+      md.params.push_back(Param{"q", Type::ty_struct("Quaternion"), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Quaternion");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      q.methods.push_back(std::move(md));
+    }
+    
     m.structs.push_back(std::move(q));
   }
   
@@ -653,8 +679,75 @@ static Module create_farmos_math_module() {
   
   m.structs.push_back(std::move(v4));
   
-  // Add other math types as needed
-  // For now, start with just vectors to get first tests passing
+  // Color
+  {
+    StructDecl c;
+    c.name = "Color";
+    c.exported = true;
+    c.loc = SourceLoc{1, 1};
+    c.fields.push_back(FieldDecl{"r", Type::ty_float(), SourceLoc{1, 1}});
+    c.fields.push_back(FieldDecl{"g", Type::ty_float(), SourceLoc{1, 1}});
+    c.fields.push_back(FieldDecl{"b", Type::ty_float(), SourceLoc{1, 1}});
+    m.structs.push_back(std::move(c));
+  }
+  
+  // Euler
+  {
+    StructDecl e;
+    e.name = "Euler";
+    e.exported = true;
+    e.loc = SourceLoc{1, 1};
+    e.fields.push_back(FieldDecl{"x", Type::ty_float(), SourceLoc{1, 1}});
+    e.fields.push_back(FieldDecl{"y", Type::ty_float(), SourceLoc{1, 1}});
+    e.fields.push_back(FieldDecl{"z", Type::ty_float(), SourceLoc{1, 1}});
+    e.fields.push_back(FieldDecl{"order", Type::ty_string(), SourceLoc{1, 1}});
+    m.structs.push_back(std::move(e));
+  }
+  
+  // Ray
+  {
+    StructDecl r;
+    r.name = "Ray";
+    r.exported = true;
+    r.loc = SourceLoc{1, 1};
+    r.fields.push_back(FieldDecl{"origin", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    r.fields.push_back(FieldDecl{"direction", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    m.structs.push_back(std::move(r));
+  }
+  
+  // Sphere
+  {
+    StructDecl s;
+    s.name = "Sphere";
+    s.exported = true;
+    s.loc = SourceLoc{1, 1};
+    s.fields.push_back(FieldDecl{"center", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    s.fields.push_back(FieldDecl{"radius", Type::ty_float(), SourceLoc{1, 1}});
+    m.structs.push_back(std::move(s));
+  }
+  
+  // Box3
+  {
+    StructDecl b;
+    b.name = "Box3";
+    b.exported = true;
+    b.loc = SourceLoc{1, 1};
+    b.fields.push_back(FieldDecl{"min", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    b.fields.push_back(FieldDecl{"max", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    m.structs.push_back(std::move(b));
+  }
+  
+  // RayHit
+  {
+    StructDecl rh;
+    rh.name = "RayHit";
+    rh.exported = true;
+    rh.loc = SourceLoc{1, 1};
+    rh.fields.push_back(FieldDecl{"hit", Type::ty_bool(), SourceLoc{1, 1}});
+    rh.fields.push_back(FieldDecl{"point", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    rh.fields.push_back(FieldDecl{"distance", Type::ty_float(), SourceLoc{1, 1}});
+    m.structs.push_back(std::move(rh));
+  }
   
   return m;
 }

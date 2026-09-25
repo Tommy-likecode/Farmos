@@ -640,7 +640,7 @@ struct Emitter {
           // Check if this is a farmos:math built-in method with empty body
           bool is_builtin = (md.body->kind == StmtKind::Block && 
                              md.body->stmts.empty() &&
-                             (s.name.find("Vector") == 0 || s.name.find("Matrix") == 0)); // Vector2/3/4, Matrix3/4
+                             (s.name.find("Vector") == 0 || s.name.find("Matrix") == 0 || s.name == "Quaternion")); // Vector2/3/4, Matrix3/4, Quaternion
           
           if (is_builtin) {
             // Generate built-in implementation
@@ -849,6 +849,27 @@ struct Emitter {
               out << "  this->f_y = (e[1]*x + e[5]*y + e[9]*z  + e[13]) * w;\n";
               out << "  this->f_z = (e[2]*x + e[6]*y + e[10]*z + e[14]) * w;\n";
               out << "  return this;\n";
+            } else if (s.name == "Vector3" && md.name == "applyQuaternion") {
+              // Rotate vector by quaternion
+              out << "  double qx = v_q.f_x, qy = v_q.f_y, qz = v_q.f_z, qw = v_q.f_w;\n";
+              out << "  double x = this->f_x, y = this->f_y, z = this->f_z;\n";
+              out << "  double ix =  qw*x + qy*z - qz*y;\n";
+              out << "  double iy =  qw*y + qz*x - qx*z;\n";
+              out << "  double iz =  qw*z + qx*y - qy*x;\n";
+              out << "  double iw = -qx*x - qy*y - qz*z;\n";
+              out << "  this->f_x = ix*qw + iw*-qx + iy*-qz - iz*-qy;\n";
+              out << "  this->f_y = iy*qw + iw*-qy + iz*-qx - ix*-qz;\n";
+              out << "  this->f_z = iz*qw + iw*-qz + ix*-qy - iy*-qx;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Quaternion" && md.name == "multiply") {
+              // this = this * q
+              out << "  double qax = this->f_x, qay = this->f_y, qaz = this->f_z, qaw = this->f_w;\n";
+              out << "  double qbx = v_q.f_x, qby = v_q.f_y, qbz = v_q.f_z, qbw = v_q.f_w;\n";
+              out << "  this->f_x = qax*qbw + qaw*qbx + qay*qbz - qaz*qby;\n";
+              out << "  this->f_y = qay*qbw + qaw*qby + qaz*qbx - qax*qbz;\n";
+              out << "  this->f_z = qaz*qbw + qaw*qbz + qax*qby - qay*qbx;\n";
+              out << "  this->f_w = qaw*qbw - qax*qbx - qay*qby - qaz*qbz;\n";
+              out << "  return this;\n";
             } else if (s.name == "Matrix3" && md.name == "determinant") {
               // 3x3 matrix determinant (column-major order)
               out << "  double* m = this->f_elements.data;\n";
@@ -907,7 +928,24 @@ struct Emitter {
               out << "  printf(\", \");\n";
               out << "  fflush(stdout);\n";
             }
-            out << "  farm_print_float(v.f_" << s.fields[i].name << ");\n";
+            auto& field = s.fields[i];
+            if (field.type->kind == TypeKind::Float) {
+              out << "  farm_print_float(v.f_" << field.name << ");\n";
+            } else if (field.type->kind == TypeKind::String) {
+              out << "  farm_print_string(v.f_" << field.name << ");\n";
+            } else if (field.type->kind == TypeKind::Bool) {
+              out << "  farm_print_bool(v.f_" << field.name << ");\n";
+            } else if (field.type->kind == TypeKind::Struct) {
+              // For struct fields, find the base type name without module prefix
+              std::string type_name = field.type->name;
+              size_t pos = type_name.find_last_of('_');
+              if (pos != std::string::npos && type_name.substr(0, pos).find("m") == 0) {
+                type_name = type_name.substr(pos + 1);
+              }
+              out << "  farm_print_" << type_name << "(v.f_" << field.name << ");\n";
+            } else {
+              out << "  farm_print_float(v.f_" << field.name << ");\n"; // Default
+            }
           }
           out << "  printf(\")\");\n";
           out << "  fflush(stdout);\n"; // Flush closing paren before function returns
