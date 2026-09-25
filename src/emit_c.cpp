@@ -641,6 +641,11 @@ struct Emitter {
               out << "  double dy = this->f_y - v_v.f_y;\n";
               out << "  double dz = this->f_z - v_v.f_z;\n";
               out << "  return sqrt(dx*dx + dy*dy + dz*dz);\n";
+            } else if (s.name == "Vector3" && md.name == "distanceToSquared") {
+              out << "  double dx = this->f_x - v_v.f_x;\n";
+              out << "  double dy = this->f_y - v_v.f_y;\n";
+              out << "  double dz = this->f_z - v_v.f_z;\n";
+              out << "  return dx*dx + dy*dy + dz*dz;\n";
             } else {
               // Default implementation based on return type
               if (md.ret->kind == TypeKind::Float) {
