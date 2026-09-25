@@ -569,7 +569,7 @@ struct Emitter {
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide",
              "applyMatrix3", "applyMatrix4", "applyQuaternion", 
-             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle"};
+             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle", "crossVectors"};
           std::string ret_type = c_type(md.ret);
           if (md.ret->kind == TypeKind::Struct && 
               md.ret->name == s.c_sym && 
@@ -624,7 +624,7 @@ struct Emitter {
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide", 
              "applyMatrix3", "applyMatrix4", "applyQuaternion", 
-             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle"};
+             "makeTranslation", "makeScale", "makeRotation", "makeRotationY", "multiply", "invert", "transpose", "setHex", "setFromAxisAngle", "crossVectors"};
           std::string ret_type = c_type(md.ret);
           bool returns_this_ptr = false;
           if (md.ret->kind == TypeKind::Struct && 
@@ -871,6 +871,14 @@ struct Emitter {
               out << "  this->f_x = ix*qw + iw*-qx + iy*-qz - iz*-qy;\n";
               out << "  this->f_y = iy*qw + iw*-qy + iz*-qx - ix*-qz;\n";
               out << "  this->f_z = iz*qw + iw*-qz + ix*-qy - iy*-qx;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Vector3" && md.name == "crossVectors") {
+              // this = a × b
+              out << "  double ax = v_a.f_x, ay = v_a.f_y, az = v_a.f_z;\n";
+              out << "  double bx = v_b.f_x, by = v_b.f_y, bz = v_b.f_z;\n";
+              out << "  this->f_x = ay*bz - az*by;\n";
+              out << "  this->f_y = az*bx - ax*bz;\n";
+              out << "  this->f_z = ax*by - ay*bx;\n";
               out << "  return this;\n";
             } else if (s.name == "Quaternion" && md.name == "multiply") {
               // this = this * q
