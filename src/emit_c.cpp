@@ -119,9 +119,22 @@ struct Emitter {
       case ExprKind::Binary: {
         // M2: Check for operator overload
         if (!e->mangled.empty()) {
-          // Operator overload - emit as method call
           std::string lhs_val = emit_expr(e->lhs);
           std::string rhs_val = emit_expr(e->rhs);
+          
+          // M2: Free operator functions (test 036) - pass all params by value
+          if (e->is_operator_call) {
+            if (e->type->kind == TypeKind::Struct) {
+              // Returns struct - need temp variable
+              std::string ty = c_type(e->type);
+              std::string v = fresh("op_result");
+              out << ty << " " << v << " = " << e->mangled << "(" << lhs_val << ", " << rhs_val << ");\n";
+              return v;
+            } else {
+              // Returns primitive (e.g. bool for ==, !=)
+              return e->mangled + "(" + lhs_val + ", " + rhs_val + ")";
+            }
+          }
           
           // M2: Reverse operators (scalar * vector) - swap and pass scalar by value
           if (e->is_reverse_op) {
@@ -136,7 +149,7 @@ struct Emitter {
             }
           }
           
-          // Normal operators
+          // Normal method operators
           if (e->type->kind == TypeKind::Struct) {
             // Returns struct - need temp variable
             std::string ty = c_type(e->type);
@@ -678,6 +691,16 @@ struct Emitter {
         }
         out << ");\n";
       }
+      // M2: Forward declare operators (test 036)
+      for (auto& op : m.operators) {
+        out << c_type(op.ret) << " " << op.c_sym << "(";
+        for (size_t i=0;i<op.params.size();++i) {
+          if (i) out << ", ";
+          // Pass all parameters by value for operators
+          out << c_type(op.params[i].type) << " v_" << op.params[i].name;
+        }
+        out << ");\n";
+      }
       for (auto& c : m.classes) {
         for (auto& md : c.methods) {
           std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
@@ -729,6 +752,18 @@ struct Emitter {
         }
         out << ") ";
         emit_stmt(f.body);
+        out << "\n";
+      }
+      // M2: Define operators (test 036)
+      for (auto& op : m.operators) {
+        out << c_type(op.ret) << " " << op.c_sym << "(";
+        for (size_t i=0;i<op.params.size();++i) {
+          if (i) out << ", ";
+          // Pass all parameters by value for operators
+          out << c_type(op.params[i].type) << " v_" << op.params[i].name;
+        }
+        out << ") ";
+        emit_stmt(op.body);
         out << "\n";
       }
       for (auto& c : m.classes) {

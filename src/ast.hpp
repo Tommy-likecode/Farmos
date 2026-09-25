@@ -83,6 +83,7 @@ struct Expr {
   bool is_lvalue = false;
   bool is_const_binding = false;
   bool is_reverse_op = false;  // M2: For left-associative operators (scalar * vector)
+  bool is_operator_call = false;  // M2: For free operator functions (test 036)
 };
 
 enum class StmtKind {

@@ -137,6 +137,19 @@ struct Sema {
         }
       }
       
+      // M2: Try free operator functions (test 036)
+      if ((lt->kind == TypeKind::Struct || rt->kind == TypeKind::Struct) && 
+          (op == TokKind::EqEq || op == TokKind::Neq)) {
+        for (auto& od : cur_mod->operators) {
+          if (od.op == op && od.params.size() == 2 &&
+              type_eq(od.params[0].type, lt) && type_eq(od.params[1].type, rt)) {
+            e.mangled = od.c_sym;
+            e.is_operator_call = true;
+            return od.ret;
+          }
+        }
+      }
+      
       if (!type_eq(lt, rt)) error_at(path, e.loc, "E0408", "type mismatch: expected `" + lt->str() + "`, found `" + rt->str() + "`");
       return Type::ty_bool();
     }
@@ -183,6 +196,18 @@ struct Sema {
                 return md.ret;
               }
             }
+          }
+        }
+      }
+      
+      // M2: Try free operator functions (test 036)
+      if (lt->kind == TypeKind::Struct || rt->kind == TypeKind::Struct) {
+        for (auto& od : cur_mod->operators) {
+          if (od.op == op && od.params.size() == 2 &&
+              type_eq(od.params[0].type, lt) && type_eq(od.params[1].type, rt)) {
+            e.mangled = od.c_sym;
+            e.is_operator_call = true;
+            return od.ret;
           }
         }
       }
@@ -785,6 +810,67 @@ struct Sema {
     }
     scope = nullptr;
   }
+  
+  void check_operator(OperatorDecl& op) {
+    // M2: Validate operator overloads
+    // Test 037: E0601 - Cannot overload operators for primitive types only
+    // Test 038: E0604 - Binary operators must have exactly 2 parameters
+    // Test 040: E0603 - Comparison operators must return bool
+    
+    // Check that at least one parameter is a user-defined struct (not primitive)
+    bool has_user_struct = false;
+    for (auto& p : op.params) {
+      if (p.type->kind == TypeKind::Struct) {
+        // After finalization, type->name is the c_sym, so use find_struct_any
+        auto* sd = find_struct_any(p.type->name);
+        if (sd) has_user_struct = true;
+      }
+    }
+    
+    if (!has_user_struct) {
+      error_at(path, op.loc, "E0601", "operator overload must have at least one user-defined struct parameter");
+      return;
+    }
+    
+    // Check return type for comparison operators (must return bool)
+    if (op.op == TokKind::EqEq || op.op == TokKind::Neq) {
+      if (op.ret->kind != TypeKind::Bool) {
+        error_at(path, op.loc, "E0603", "comparison operator must return bool");
+        return;
+      }
+    }
+    
+    // Check arity (must have exactly 2 parameters)
+    if (op.params.size() != 2) {
+      error_at(path, op.loc, "E0604", "operator overload must have exactly 2 parameters");
+      return;
+    }
+    
+    // Generate C symbol
+    std::string op_name;
+    if (op.op == TokKind::Plus) op_name = "op_add";
+    else if (op.op == TokKind::Minus) op_name = "op_sub";
+    else if (op.op == TokKind::Star) op_name = "op_mul";
+    else if (op.op == TokKind::Slash) op_name = "op_div";
+    else if (op.op == TokKind::EqEq) op_name = "op_eq";
+    else if (op.op == TokKind::Neq) op_name = "op_neq";
+    else op_name = "op_unknown";
+    
+    op.c_sym = "fn_m" + std::to_string(cur_mod->id) + "_" + op_name;
+    
+    // Check body
+    cur_fn = "operator"; cur_ret = op.ret; cur_class = nullptr; in_ctor = false;
+    Scope sc; scope = &sc;
+    for (auto& p : op.params) {
+      sc.declare(p.name, VarInfo{p.type, false, p.loc}, path);
+    }
+    bool ret = false;
+    check_stmt(op.body, &ret);
+    if (!ret && op.ret->kind != TypeKind::Void) {
+      error_at(path, op.loc, "E0508", "missing return in operator");
+    }
+    scope = nullptr;
+  }
 
   void check_method(ClassDecl& c, MethodDecl& m) {
     cur_fn = m.name; cur_ret = m.ret; cur_class = &c; in_ctor = m.is_ctor;
@@ -859,6 +945,11 @@ struct Sema {
           md.ret = finalize_type(md.ret, md.loc, true);
         }
       }
+      // M2: Finalize operator types (test 036)
+      for (auto& op : m.operators) {
+        for (auto& p : op.params) p.type = finalize_type(p.type, p.loc, false);
+        op.ret = finalize_type(op.ret, op.loc, true);
+      }
       for (auto& f : m.functions) {
         for (auto& p : f.params) p.type = finalize_type(p.type, p.loc, false);
         f.ret = finalize_type(f.ret, f.loc, true);
@@ -892,6 +983,8 @@ struct Sema {
     }
     for (auto& m : prog.modules) {
       cur_mod = &m; path = m.diag_path.empty() ? m.path : m.diag_path;
+      // M2: Check operators
+      for (auto& op : m.operators) check_operator(op);
       for (auto& f : m.functions) check_function(f);
       for (auto& c : m.classes)
         for (auto& md : c.methods) check_method(c, md);
