@@ -102,6 +102,15 @@ struct Emitter {
       case ExprKind::Ident: return !e->mangled.empty() ? e->mangled : ("v_" + e->name);
       case ExprKind::This: return "this";
       case ExprKind::Unary: {
+        // M2: Check for unary operator overload
+        if (!e->mangled.empty()) {
+          std::string rhs_val = emit_expr(e->rhs);
+          std::string ty = c_type(e->type);
+          std::string v = fresh("unary_result");
+          out << ty << " " << v << " = " << e->mangled << "(&" << rhs_val << ");\n";
+          return v;
+        }
+        
         auto a = emit_expr(e->rhs);
         if (e->op==TokKind::Bang) return "((int8_t)!(" + a + "))";
         if (e->op==TokKind::Minus) return "(-(" + a + "))";
@@ -975,6 +984,12 @@ struct Emitter {
               out << "  return (this->f_x == v_other.f_x && this->f_y == v_other.f_y && this->f_z == v_other.f_z) ? 1 : 0;\n";
             } else if (s.name == "Vector3" && md.name == "__farm_op_neq") {
               out << "  return (this->f_x != v_other.f_x || this->f_y != v_other.f_y || this->f_z != v_other.f_z) ? 1 : 0;\n";
+            } else if (s.name == "Vector3" && md.name == "__farm_op_neg") {
+              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  result.f_x = -this->f_x;\n";
+              out << "  result.f_y = -this->f_y;\n";
+              out << "  result.f_z = -this->f_z;\n";
+              out << "  return result;\n";
             } else if (s.name == "Quaternion" && md.name == "multiply") {
               // this = this * q
               out << "  double qax = this->f_x, qay = this->f_y, qaz = this->f_z, qaw = this->f_w;\n";

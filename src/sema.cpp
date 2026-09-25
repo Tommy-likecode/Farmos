@@ -260,8 +260,23 @@ struct Sema {
             error_at(path, e->loc, "E0403", "operator `!` not defined for `" + e->rhs->type->str() + "`");
           e->type = Type::ty_bool();
         } else {
-          if (e->rhs->type->kind != TypeKind::Int && e->rhs->type->kind != TypeKind::Float)
+          if (e->rhs->type->kind != TypeKind::Int && e->rhs->type->kind != TypeKind::Float) {
+            // M2: Try unary operator overload for structs
+            if (e->op == TokKind::Minus && e->rhs->type->kind == TypeKind::Struct) {
+              auto* sd = find_struct_any(e->rhs->type->name);
+              if (sd) {
+                for (auto& md : sd->methods) {
+                  if (md.name == "__farm_op_neg" && md.params.empty()) {
+                    e->mangled = sd->c_sym + "__" + md.name;
+                    e->type = md.ret;
+                    break;
+                  }
+                }
+                if (e->type) break;
+              }
+            }
             error_at(path, e->loc, "E0403", "unary +/- not defined for `" + e->rhs->type->str() + "`");
+          }
           e->type = e->rhs->type;
         }
         break;
