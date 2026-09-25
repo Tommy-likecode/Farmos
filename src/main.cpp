@@ -200,7 +200,7 @@ static Module create_farmos_math_module() {
     v3.methods.push_back(std::move(md));
   }
   
-  // multiplyScalar(s: float): Vector3 - mutates this, returns this
+  // multiplyScalar(s: float): Vector3
   {
     MethodDecl md;
     md.name = "multiplyScalar";
@@ -210,6 +210,56 @@ static Module create_farmos_math_module() {
     auto block = std::make_unique<Stmt>();
     block->kind = StmtKind::Block;
     block->loc = SourceLoc{1, 1};
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // dot(v: Vector3): float
+  {
+    MethodDecl md;
+    md.name = "dot";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // cross(v: Vector3): Vector3
+  {
+    MethodDecl md;
+    md.name = "cross";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // length(): float
+  {
+    MethodDecl md;
+    md.name = "length";
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // lengthSq(): float
+  {
+    MethodDecl md;
+    md.name = "lengthSq";
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
     md.body = std::move(block);
     v3.methods.push_back(std::move(md));
   }
