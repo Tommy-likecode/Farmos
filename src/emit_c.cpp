@@ -569,7 +569,7 @@ struct Emitter {
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide",
              "applyMatrix3", "applyMatrix4", "applyQuaternion", 
-             "makeTranslation", "makeScale", "makeRotation", "multiply", "invert", "transpose"};
+             "makeTranslation", "makeScale", "makeRotation", "multiply", "invert", "transpose", "setHex"};
           std::string ret_type = c_type(md.ret);
           if (md.ret->kind == TypeKind::Struct && 
               md.ret->name == s.c_sym && 
@@ -624,7 +624,7 @@ struct Emitter {
           static const std::set<std::string> mutating_methods = 
             {"add", "multiplyScalar", "cross", "normalize", "lerp", "set", "sub", "divide", 
              "applyMatrix3", "applyMatrix4", "applyQuaternion", 
-             "makeTranslation", "makeScale", "makeRotation", "multiply", "invert", "transpose"};
+             "makeTranslation", "makeScale", "makeRotation", "multiply", "invert", "transpose", "setHex"};
           std::string ret_type = c_type(md.ret);
           bool returns_this_ptr = false;
           if (md.ret->kind == TypeKind::Struct && 
@@ -640,7 +640,8 @@ struct Emitter {
           // Check if this is a farmos:math built-in method with empty body
           bool is_builtin = (md.body->kind == StmtKind::Block && 
                              md.body->stmts.empty() &&
-                             (s.name.find("Vector") == 0 || s.name.find("Matrix") == 0 || s.name == "Quaternion")); // Vector2/3/4, Matrix3/4, Quaternion
+                             (s.name.find("Vector") == 0 || s.name.find("Matrix") == 0 || 
+                              s.name == "Quaternion" || s.name == "Color" || s.name == "Ray" || s.name == "Sphere")); // Math types
           
           if (is_builtin) {
             // Generate built-in implementation
@@ -870,6 +871,53 @@ struct Emitter {
               out << "  this->f_z = qaz*qbw + qaw*qbz + qax*qby - qay*qbx;\n";
               out << "  this->f_w = qaw*qbw - qax*qbx - qay*qby - qaz*qbz;\n";
               out << "  return this;\n";
+            } else if (s.name == "Quaternion" && md.name == "equals") {
+              out << "  return (this->f_x == v_q.f_x && this->f_y == v_q.f_y && this->f_z == v_q.f_z && this->f_w == v_q.f_w) ? 1 : 0;\n";
+            } else if (s.name == "Color" && md.name == "setHex") {
+              out << "  this->f_r = ((v_hex >> 16) & 255) / 255.0;\n";
+              out << "  this->f_g = ((v_hex >> 8) & 255) / 255.0;\n";
+              out << "  this->f_b = (v_hex & 255) / 255.0;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Color" && md.name == "multiplyScalar") {
+              out << "  this->f_r *= v_s;\n";
+              out << "  this->f_g *= v_s;\n";
+              out << "  this->f_b *= v_s;\n";
+              out << "  return this;\n";
+            } else if (s.name == "Ray" && md.name == "at") {
+              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  result.f_x = this->f_origin.f_x + this->f_direction.f_x * v_t;\n";
+              out << "  result.f_y = this->f_origin.f_y + this->f_direction.f_y * v_t;\n";
+              out << "  result.f_z = this->f_origin.f_z + this->f_direction.f_z * v_t;\n";
+              out << "  return result;\n";
+            } else if (s.name == "Ray" && md.name == "intersectSphere") {
+              out << "  struct Farm_m1_RayHit result;\n";
+              out << "  double dx = this->f_origin.f_x - v_s.f_center.f_x;\n";
+              out << "  double dy = this->f_origin.f_y - v_s.f_center.f_y;\n";
+              out << "  double dz = this->f_origin.f_z - v_s.f_center.f_z;\n";
+              out << "  double a = this->f_direction.f_x*this->f_direction.f_x + this->f_direction.f_y*this->f_direction.f_y + this->f_direction.f_z*this->f_direction.f_z;\n";
+              out << "  double b = 2.0 * (dx*this->f_direction.f_x + dy*this->f_direction.f_y + dz*this->f_direction.f_z);\n";
+              out << "  double c = dx*dx + dy*dy + dz*dz - v_s.f_radius*v_s.f_radius;\n";
+              out << "  double disc = b*b - 4.0*a*c;\n";
+              out << "  if (disc < 0.0) { result.f_hit = 0; result.f_point.f_x = result.f_point.f_y = result.f_point.f_z = 0.0; result.f_distance = 0.0; return result; }\n";
+              out << "  double t = (-b - sqrt(disc)) / (2.0*a);\n";
+              out << "  if (t < 0.0) { result.f_hit = 0; result.f_point.f_x = result.f_point.f_y = result.f_point.f_z = 0.0; result.f_distance = 0.0; return result; }\n";
+              out << "  result.f_hit = 1;\n";
+              out << "  result.f_point.f_x = this->f_origin.f_x + this->f_direction.f_x * t;\n";
+              out << "  result.f_point.f_y = this->f_origin.f_y + this->f_direction.f_y * t;\n";
+              out << "  result.f_point.f_z = this->f_origin.f_z + this->f_direction.f_z * t;\n";
+              out << "  result.f_distance = t;\n";
+              out << "  return result;\n";
+            } else if (s.name == "Sphere" && md.name == "containsPoint") {
+              out << "  double dx = v_p.f_x - this->f_center.f_x;\n";
+              out << "  double dy = v_p.f_y - this->f_center.f_y;\n";
+              out << "  double dz = v_p.f_z - this->f_center.f_z;\n";
+              out << "  return (dx*dx + dy*dy + dz*dz <= this->f_radius*this->f_radius) ? 1 : 0;\n";
+            } else if (s.name == "Sphere" && md.name == "intersectsSphere") {
+              out << "  double dx = this->f_center.f_x - v_s.f_center.f_x;\n";
+              out << "  double dy = this->f_center.f_y - v_s.f_center.f_y;\n";
+              out << "  double dz = this->f_center.f_z - v_s.f_center.f_z;\n";
+              out << "  double dist = sqrt(dx*dx + dy*dy + dz*dz);\n";
+              out << "  return (dist <= (this->f_radius + v_s.f_radius)) ? 1 : 0;\n";
             } else if (s.name == "Matrix3" && md.name == "determinant") {
               // 3x3 matrix determinant (column-major order)
               out << "  double* m = this->f_elements.data;\n";

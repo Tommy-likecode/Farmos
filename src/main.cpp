@@ -565,6 +565,19 @@ static Module create_farmos_math_module() {
       q.methods.push_back(std::move(md));
     }
     
+    // equals(q: Quaternion): bool
+    {
+      MethodDecl md;
+      md.name = "equals";
+      md.params.push_back(Param{"q", Type::ty_struct("Quaternion"), SourceLoc{1,1}});
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      q.methods.push_back(std::move(md));
+    }
+    
     m.structs.push_back(std::move(q));
   }
   
@@ -688,6 +701,33 @@ static Module create_farmos_math_module() {
     c.fields.push_back(FieldDecl{"r", Type::ty_float(), SourceLoc{1, 1}});
     c.fields.push_back(FieldDecl{"g", Type::ty_float(), SourceLoc{1, 1}});
     c.fields.push_back(FieldDecl{"b", Type::ty_float(), SourceLoc{1, 1}});
+    
+    // setHex(hex: int): Color
+    {
+      MethodDecl md;
+      md.name = "setHex";
+      md.params.push_back(Param{"hex", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Color");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      c.methods.push_back(std::move(md));
+    }
+    
+    // multiplyScalar(s: float): Color
+    {
+      MethodDecl md;
+      md.name = "multiplyScalar";
+      md.params.push_back(Param{"s", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Color");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      c.methods.push_back(std::move(md));
+    }
+    
     m.structs.push_back(std::move(c));
   }
   
@@ -712,6 +752,33 @@ static Module create_farmos_math_module() {
     r.loc = SourceLoc{1, 1};
     r.fields.push_back(FieldDecl{"origin", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
     r.fields.push_back(FieldDecl{"direction", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    
+    // at(t: float): Vector3
+    {
+      MethodDecl md;
+      md.name = "at";
+      md.params.push_back(Param{"t", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Vector3");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      r.methods.push_back(std::move(md));
+    }
+    
+    // intersectSphere(s: Sphere): RayHit
+    {
+      MethodDecl md;
+      md.name = "intersectSphere";
+      md.params.push_back(Param{"s", Type::ty_struct("Sphere"), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("RayHit");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      r.methods.push_back(std::move(md));
+    }
+    
     m.structs.push_back(std::move(r));
   }
   
@@ -723,6 +790,33 @@ static Module create_farmos_math_module() {
     s.loc = SourceLoc{1, 1};
     s.fields.push_back(FieldDecl{"center", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
     s.fields.push_back(FieldDecl{"radius", Type::ty_float(), SourceLoc{1, 1}});
+    
+    // containsPoint(p: Vector3): bool
+    {
+      MethodDecl md;
+      md.name = "containsPoint";
+      md.params.push_back(Param{"p", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      s.methods.push_back(std::move(md));
+    }
+    
+    // intersectsSphere(s: Sphere): bool
+    {
+      MethodDecl md;
+      md.name = "intersectsSphere";
+      md.params.push_back(Param{"s", Type::ty_struct("Sphere"), SourceLoc{1,1}});
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      s.methods.push_back(std::move(md));
+    }
+    
     m.structs.push_back(std::move(s));
   }
   
