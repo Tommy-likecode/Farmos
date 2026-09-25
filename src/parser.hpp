@@ -46,8 +46,10 @@ private:
   void parse_struct(Module& m, bool exported);
   void parse_class(Module& m, bool exported);
   void parse_const_decl(Module& m, bool exported);
+  void parse_operator(Module& m, bool exported);
 
   std::vector<Param> parse_param_list();
+  MethodDecl parse_method();
 };
 
 } // namespace farm

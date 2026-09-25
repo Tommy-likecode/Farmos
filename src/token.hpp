@@ -9,7 +9,7 @@ enum class TokKind {
   // keywords
   KwBool, KwBreak, KwClass, KwConst, KwConstructor, KwContinue, KwElse, KwExport,
   KwFalse, KwFloat, KwFor, KwFunction, KwIf, KwImport, KwInt, KwLet, KwNew,
-  KwReturn, KwString, KwStruct, KwThis, KwTrue, KwVoid, KwWhile,
+  KwOperator, KwReturn, KwString, KwStruct, KwThis, KwTrue, KwVoid, KwWhile,
   // future reserved treated as Ident then rejected? We emit E0003 in lexer/parser when used as ident
   // operators
   Plus, Minus, Star, Slash, Percent,

@@ -284,6 +284,7 @@ void Parser::parse_export_or_decl(Module& m, bool exported) {
   else if (check(TokKind::KwStruct)) parse_struct(m, exported);
   else if (check(TokKind::KwClass)) parse_class(m, exported);
   else if (check(TokKind::KwConst)) parse_const_decl(m, exported);
+  else if (check(TokKind::KwOperator)) parse_operator(m, exported);
   else {
     error_at(lex_.path(), cur_.loc, "E0202", "unexpected token at module level");
     advance();
@@ -325,13 +326,23 @@ void Parser::parse_struct(Module& m, bool exported) {
   else { s.name = cur_.text; advance(); }
   expect(TokKind::LBrace, "E0202", "expected `{`");
   while (!check(TokKind::RBrace) && !check(TokKind::Eof)) {
-    FieldDecl fd; fd.loc = cur_.loc;
-    if (!check(TokKind::Ident)) { error_at(lex_.path(), cur_.loc, "E0202", "expected field"); break; }
-    fd.name = cur_.text; advance();
-    expect(TokKind::Colon, "E0202", "expected `:`");
-    fd.type = parse_type();
-    expect_semi();
-    s.fields.push_back(fd);
+    if (!check(TokKind::Ident)) { error_at(lex_.path(), cur_.loc, "E0202", "expected field or method"); break; }
+    // field or method: look ahead — Ident : type ;  OR Ident (
+    std::string name = cur_.text; SourceLoc loc = cur_.loc; advance();
+    if (match(TokKind::Colon)) {
+      FieldDecl fd; fd.name = name; fd.loc = loc; fd.type = parse_type(); expect_semi();
+      s.fields.push_back(fd);
+    } else if (match(TokKind::LParen)) {
+      MethodDecl md; md.name = name; md.loc = loc;
+      md.params = parse_param_list();
+      expect(TokKind::RParen, "E0202", "expected `)`");
+      if (match(TokKind::Colon)) md.ret = parse_type();
+      else md.ret = Type::ty_void();
+      md.body = parse_block();
+      s.methods.push_back(std::move(md));
+    } else {
+      error_at(lex_.path(), cur_.loc, "E0202", "expected field or method");
+    }
   }
   expect(TokKind::RBrace, "E0202", "expected `}`");
   m.structs.push_back(std::move(s));
@@ -389,6 +400,25 @@ void Parser::parse_const_decl(Module& m, bool exported) {
   c.init = parse_expr();
   expect_semi();
   m.consts.push_back(std::move(c));
+}
+
+void Parser::parse_operator(Module& m, bool exported) {
+  OperatorDecl op; op.exported = exported; op.loc = cur_.loc;
+  advance(); // operator
+  // Expect one of the overloadable operators: + - * / % == !=
+  if (match_any({TokKind::Plus, TokKind::Minus, TokKind::Star, TokKind::Slash, TokKind::Percent, TokKind::EqEq, TokKind::Neq})) {
+    op.op = prev_.kind;
+  } else {
+    error_at(lex_.path(), cur_.loc, "E0202", "expected operator token");
+    op.op = TokKind::Plus; // dummy
+  }
+  expect(TokKind::LParen, "E0202", "expected `(`");
+  op.params = parse_param_list();
+  expect(TokKind::RParen, "E0202", "expected `)`");
+  expect(TokKind::Colon, "E0202", "expected `:`");
+  op.ret = parse_type();
+  op.body = parse_block();
+  m.operators.push_back(std::move(op));
 }
 
 StmtPtr Parser::parse_block() {

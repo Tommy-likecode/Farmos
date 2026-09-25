@@ -126,11 +126,13 @@ struct MethodDecl {
   StmtPtr body;
   SourceLoc loc;
   bool is_ctor = false;
+  std::string c_sym;
 };
 
 struct StructDecl {
   std::string name;
   std::vector<FieldDecl> fields;
+  std::vector<MethodDecl> methods;
   SourceLoc loc;
   bool exported = false;
   std::string c_sym;
@@ -170,6 +172,17 @@ struct ConstDecl {
   int module_id = 0;
 };
 
+struct OperatorDecl {
+  TokKind op; // Plus, Minus, Star, Slash, Percent, EqEq, Neq
+  std::vector<Param> params;
+  TypePtr ret;
+  StmtPtr body;
+  SourceLoc loc;
+  bool exported = false;
+  std::string c_sym;
+  int module_id = 0;
+};
+
 struct ImportDecl {
   std::vector<std::string> names;
   std::vector<SourceLoc> name_locs;
@@ -187,6 +200,7 @@ struct Module {
   std::vector<ClassDecl> classes;
   std::vector<FunctionDecl> functions;
   std::vector<ConstDecl> consts;
+  std::vector<OperatorDecl> operators;
   bool is_main = false;
   std::unordered_map<std::string, StructDecl*> vis_structs;
   std::unordered_map<std::string, ClassDecl*> vis_classes;
