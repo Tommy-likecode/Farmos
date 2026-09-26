@@ -1,0 +1,10 @@
+import { Box3, Vector3 } from "farmos:math";
+
+function main(): int {
+  let a: Box3 = new Box3(new Vector3(0.0, 0.0, 0.0), new Vector3(2.0, 2.0, 2.0));
+  let b: Box3 = new Box3(new Vector3(1.0, 1.0, 1.0), new Vector3(3.0, 3.0, 3.0));
+  let c: Box3 = new Box3(new Vector3(5.0, 5.0, 5.0), new Vector3(6.0, 6.0, 6.0));
+  println(a.intersectsBox(b));
+  println(a.intersectsBox(c));
+  return 0;
+}

@@ -1,0 +1,12 @@
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  let a: Vector3 = new Vector3(1.0, 2.0, 3.0);
+  let b: Vector3 = new Vector3(4.0, 5.0, 6.0);
+  println(a + b);
+  println(b - a);
+  println(a * 2.0);
+  println(2.0 * a);
+  println(b / 2.0);
+  return 0;
+}

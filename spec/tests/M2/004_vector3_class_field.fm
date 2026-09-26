@@ -1,0 +1,17 @@
+import { Vector3 } from "farmos:math";
+
+class Mesh {
+  position: Vector3;
+  constructor() {
+    this.position = new Vector3(0.0, 0.0, 0.0);
+  }
+}
+
+function main(): int {
+  let mesh: Mesh = new Mesh();
+  mesh.position.x = 1.0;
+  mesh.position.y = 2.0;
+  mesh.position.add(new Vector3(0.0, 0.0, 3.0));
+  println(mesh.position);
+  return 0;
+}

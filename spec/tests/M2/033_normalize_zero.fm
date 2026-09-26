@@ -1,0 +1,9 @@
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  let v: Vector3 = new Vector3(0.0, 0.0, 0.0);
+  v.normalize();
+  println(v);
+  println(v.length());
+  return 0;
+}

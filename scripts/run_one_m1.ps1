@@ -140,7 +140,7 @@ if (Same $exp.kind 'compile_error') {
   exit 0
 }
 
-if (-not ((Same $exp.kind 'run') -or (Same $exp.kind 'runtime_trap'))) { Write-Host "FAIL ${Name}: unknown kind '$($exp.kind)'"; exit 1 }
+if (-not ((Same $exp.kind 'run') -or (Same $exp.kind 'run_approx') -or (Same $exp.kind 'runtime_trap'))) { Write-Host "FAIL ${Name}: unknown kind '$($exp.kind)'"; exit 1 }
 
 # README harness contract: build must succeed (exit 0) for run/runtime_trap.
 $p = Invoke-FarmcBuild
@@ -169,6 +169,53 @@ if (Same $exp.kind 'run') {
   # README: stderr MUST be empty for run.
   if ($stderrGot.Length -ne 0) {
     Write-Host "FAIL ${Name}: unexpected stderr (run fixtures require empty stderr)"
+    Write-Host "GOT_STDERR:<<<$stderrGot>>>"
+    exit 1
+  }
+}
+
+if (Same $exp.kind 'run_approx') {
+  # Approximate float comparison with epsilon tolerance
+  if (-not $exp.hasStdout) { Write-Host "FAIL ${Name}: run_approx fixture missing # stdout: block"; exit 1 }
+  $wantOut = Norm-Newlines $exp.stdout
+  $gotLines = $stdoutGot -split "`n"
+  $wantLines = $wantOut -split "`n"
+  
+  if ($gotLines.Count -ne $wantLines.Count) {
+    Write-Host "FAIL ${Name}: line count mismatch (got $($gotLines.Count), want $($wantLines.Count))"
+    Write-Host "GOT:<<<$stdoutGot>>>"; Write-Host "WANT:<<<$wantOut>>>"
+    exit 1
+  }
+  
+  $epsilon = 1e-10
+  for ($i = 0; $i -lt $gotLines.Count; $i++) {
+    $gotLine = $gotLines[$i].Trim()
+    $wantLine = $wantLines[$i].Trim()
+    
+    if ([string]::IsNullOrEmpty($gotLine) -and [string]::IsNullOrEmpty($wantLine)) { continue }
+    
+    # Try to parse as floats for approximate comparison
+    try {
+      $gotNum = [double]::Parse($gotLine, [System.Globalization.CultureInfo]::InvariantCulture)
+      $wantNum = [double]::Parse($wantLine, [System.Globalization.CultureInfo]::InvariantCulture)
+      $diff = [Math]::Abs($gotNum - $wantNum)
+      if ($diff -gt $epsilon) {
+        Write-Host "FAIL ${Name}: float mismatch at line $($i+1): got $gotNum, want $wantNum (diff $diff > epsilon $epsilon)"
+        exit 1
+      }
+    } catch {
+      # Not a float, compare as strings
+      if (-not (Same $gotLine $wantLine)) {
+        Write-Host "FAIL ${Name}: stdout mismatch at line $($i+1)"
+        Write-Host "GOT:<<<$gotLine>>>"; Write-Host "WANT:<<<$wantLine>>>"
+        exit 1
+      }
+    }
+  }
+  
+  # README: stderr MUST be empty for run_approx.
+  if ($stderrGot.Length -ne 0) {
+    Write-Host "FAIL ${Name}: unexpected stderr (run_approx fixtures require empty stderr)"
     Write-Host "GOT_STDERR:<<<$stderrGot>>>"
     exit 1
   }

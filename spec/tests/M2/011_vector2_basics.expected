@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+# stdout:
+5
+Vector2(0.6, 0.8)
+Vector2(4, 6)
+# end

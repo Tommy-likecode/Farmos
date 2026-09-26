@@ -1,0 +1,6 @@
+function main(): int {
+  println(1.0);
+  println(2.0);
+  println(3.0);
+  return 0;
+}

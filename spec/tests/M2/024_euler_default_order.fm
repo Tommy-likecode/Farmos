@@ -1,0 +1,9 @@
+import { Euler } from "farmos:math";
+
+function main(): int {
+  let e: Euler = new Euler();
+  println(e);
+  let f: Euler = new Euler(0.5, 1.0, 1.5);
+  println(f);
+  return 0;
+}

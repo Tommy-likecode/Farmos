@@ -1,0 +1,10 @@
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  let v: Vector3 = new Vector3(1.0, 2.0, 3.0);
+  v += new Vector3(10.0, 20.0, 30.0);
+  println(v);
+  v *= 0.5;
+  println(v);
+  return 0;
+}

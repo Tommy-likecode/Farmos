@@ -1,0 +1,11 @@
+import { Quaternion, Vector3 } from "farmos:math";
+
+function main(): int {
+  let q: Quaternion = new Quaternion();
+  q.setFromAxisAngle(new Vector3(0.0, 1.0, 0.0), 0.0);
+  println(q.x);
+  println(q.y);
+  println(q.z);
+  println(q.w);
+  return 0;
+}

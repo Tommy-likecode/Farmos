@@ -1,0 +1,4 @@
+# kind: compile_error
+# exit: 1
+## non-literal int rejected (E0408)
+# error: 6:20: E0408

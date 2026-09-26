@@ -1,0 +1,7 @@
+operator +(x: int, y: int): int {
+  return x + y;
+}
+
+function main(): int {
+  return 0;
+}

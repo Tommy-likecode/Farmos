@@ -1,0 +1,10 @@
+# kind: run_approx
+# exit: 0
+# epsilon: 1e-15
+## angle 0 => identity regardless of libm
+# stdout:
+0
+0
+0
+1
+# end

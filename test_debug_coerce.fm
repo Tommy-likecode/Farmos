@@ -1,0 +1,5 @@
+function main(): int {
+  let x: float = 1;
+  let y: float = 1.0;
+  return 0;
+}

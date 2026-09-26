@@ -1,0 +1,8 @@
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  let i: int = 1;
+  let v: Vector3 = new Vector3(0.0, 0.0, 0.0);
+  v.multiplyScalar(i);
+  return 0;
+}

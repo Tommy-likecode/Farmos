@@ -117,10 +117,53 @@ struct Sema {
       if (lt->kind == TypeKind::String && rt->kind == TypeKind::String) return Type::ty_bool();
       if ((lt->kind == TypeKind::Int || lt->kind == TypeKind::Float || lt->kind == TypeKind::Bool) && type_eq(lt, rt))
         return Type::ty_bool();
+      
+      // M2: Try operator overloading for struct types (comparison operators)
+      if (lt->kind == TypeKind::Struct && type_eq(lt, rt)) {
+        std::string op_name;
+        if (op == TokKind::EqEq) op_name = "__farm_op_eq";
+        else if (op == TokKind::Neq) op_name = "__farm_op_neq";
+        
+        if (!op_name.empty()) {
+          auto* sd = find_struct_any(lt->name);
+          if (sd) {
+            for (auto& md : sd->methods) {
+              if (md.name == op_name && md.params.size() == 1 && type_eq(md.params[0].type, rt)) {
+                e.mangled = sd->c_sym + "__" + op_name;
+                return Type::ty_bool();
+              }
+            }
+          }
+        }
+      }
+      
+      // M2: Try free operator functions (test 036)
+      if ((lt->kind == TypeKind::Struct || rt->kind == TypeKind::Struct) && 
+          (op == TokKind::EqEq || op == TokKind::Neq)) {
+        for (auto& od : cur_mod->operators) {
+          if (od.op == op && od.params.size() == 2 &&
+              type_eq(od.params[0].type, lt) && type_eq(od.params[1].type, rt)) {
+            e.mangled = od.c_sym;
+            e.is_operator_call = true;
+            return od.ret;
+          }
+        }
+      }
+      
       if (!type_eq(lt, rt)) error_at(path, e.loc, "E0408", "type mismatch: expected `" + lt->str() + "`, found `" + rt->str() + "`");
       return Type::ty_bool();
     }
     if ((op==TokKind::Plus||op==TokKind::Minus||op==TokKind::Star||op==TokKind::Slash||op==TokKind::Percent)) {
+      // M2 §4A (OQ-M2-11): int literal coercion in binary arithmetic
+      // Coerce int LITERALS to float when the other operand has type float
+      // (including when the other operand is itself a float literal: 1 + 2.0 MUST succeed)
+      if (lt->kind == TypeKind::Float && rt->kind == TypeKind::Int) {
+        e.rhs = try_coerce_int_to_float(e.rhs);
+        rt = e.rhs->type;
+      } else if (rt->kind == TypeKind::Float && lt->kind == TypeKind::Int) {
+        e.lhs = try_coerce_int_to_float(e.lhs);
+        lt = e.lhs->type;
+      }
       if ((lt->kind==TypeKind::Int && rt->kind==TypeKind::Float) || (lt->kind==TypeKind::Float && rt->kind==TypeKind::Int)) {
         error_at(path, e.loc, "E0402", "mixed `int`/`float` arithmetic without explicit conversion");
         return Type::ty_error();
@@ -131,10 +174,107 @@ struct Sema {
       }
       if (lt->kind==TypeKind::Int && rt->kind==TypeKind::Int) return Type::ty_int();
       if (lt->kind==TypeKind::Float && rt->kind==TypeKind::Float) return Type::ty_float();
+      
+      // M2: Try operator overloading for struct types (left operand is struct)
+      if (lt->kind == TypeKind::Struct) {
+        std::string op_name;
+        if (op == TokKind::Plus) op_name = "__farm_op_add";
+        else if (op == TokKind::Minus) op_name = "__farm_op_sub";
+        else if (op == TokKind::Star) op_name = "__farm_op_mul";
+        else if (op == TokKind::Slash) op_name = "__farm_op_div";
+        
+        if (!op_name.empty()) {
+          auto* sd = find_struct_any(lt->name);
+          if (sd) {
+            for (auto& md : sd->methods) {
+              if (md.name == op_name && md.params.size() == 1) {
+                // Found operator overload - check parameter type
+                if (!type_eq(md.params[0].type, rt)) {
+                  error_at(path, e.rhs->loc, "E0408", "type mismatch: expected `" + md.params[0].type->str() + "`, found `" + rt->str() + "`");
+                  return Type::ty_error();
+                }
+                // Rewrite as method call
+                e.mangled = sd->c_sym + "__" + op_name;
+                return md.ret;
+              }
+            }
+          }
+        }
+      }
+      
+      // M2: Try free operator functions (test 036)
+      if (lt->kind == TypeKind::Struct || rt->kind == TypeKind::Struct) {
+        for (auto& od : cur_mod->operators) {
+          if (od.op == op && od.params.size() == 2 &&
+              type_eq(od.params[0].type, lt) && type_eq(od.params[1].type, rt)) {
+            e.mangled = od.c_sym;
+            e.is_operator_call = true;
+            return od.ret;
+          }
+        }
+      }
+      
+      // M2: Try left-associative operator (scalar * vector, etc.) - right operand is struct
+      if (rt->kind == TypeKind::Struct && (op == TokKind::Star || op == TokKind::Slash)) {
+        std::string op_name;
+        if (op == TokKind::Star) op_name = "__farm_op_rmul";  // reverse multiply
+        else if (op == TokKind::Slash) op_name = "__farm_op_rdiv";
+        
+        if (!op_name.empty()) {
+          auto* sd = find_struct_any(rt->name);
+          if (sd) {
+            for (auto& md : sd->methods) {
+              if (md.name == op_name && md.params.size() == 1) {
+                // Found reverse operator - check parameter type matches left
+                if (!type_eq(md.params[0].type, lt)) {
+                  error_at(path, e.lhs->loc, "E0408", "type mismatch");
+                  return Type::ty_error();
+                }
+                e.mangled = sd->c_sym + "__" + op_name;
+                e.is_reverse_op = true;  // Mark for codegen
+                return md.ret;
+              }
+            }
+          }
+        }
+      }
+      
       error_at(path, e.loc, "E0403", "operator not defined for `" + lt->str() + "`");
       return Type::ty_error();
     }
     return Type::ty_error();
+  }
+
+  // M2: Helper to check if expr is an int literal (or unary minus int literal) within float range
+  bool is_coercible_int_lit(ExprPtr e, int64_t* out_val = nullptr) {
+    if (!e) return false;
+    int64_t val = 0;
+    if (e->kind == ExprKind::IntLit) {
+      val = e->int_val;
+    } else if (e->kind == ExprKind::Unary && e->op == TokKind::Minus && 
+               e->rhs && e->rhs->kind == ExprKind::IntLit) {
+      val = -e->rhs->int_val;
+    } else {
+      return false;
+    }
+    // Check if |val| <= 2^53
+    const int64_t max_exact = (1LL << 53);
+    if (val < -max_exact || val > max_exact) return false;
+    if (out_val) *out_val = val;
+    return true;
+  }
+  
+  // M2: Coerce int literal to float if possible
+  ExprPtr try_coerce_int_to_float(ExprPtr e) {
+    int64_t val;
+    if (!is_coercible_int_lit(e, &val)) return e;
+    // Convert to FloatLit
+    auto f = std::make_shared<Expr>();
+    f->kind = ExprKind::FloatLit;
+    f->float_val = (double)val;
+    f->type = Type::ty_float();
+    f->loc = e->loc;
+    return f;
   }
 
   ExprPtr check_expr(ExprPtr e) {
@@ -172,8 +312,23 @@ struct Sema {
             error_at(path, e->loc, "E0403", "operator `!` not defined for `" + e->rhs->type->str() + "`");
           e->type = Type::ty_bool();
         } else {
-          if (e->rhs->type->kind != TypeKind::Int && e->rhs->type->kind != TypeKind::Float)
+          if (e->rhs->type->kind != TypeKind::Int && e->rhs->type->kind != TypeKind::Float) {
+            // M2: Try unary operator overload for structs
+            if (e->op == TokKind::Minus && e->rhs->type->kind == TypeKind::Struct) {
+              auto* sd = find_struct_any(e->rhs->type->name);
+              if (sd) {
+                for (auto& md : sd->methods) {
+                  if (md.name == "__farm_op_neg" && md.params.empty()) {
+                    e->mangled = sd->c_sym + "__" + md.name;
+                    e->type = md.ret;
+                    break;
+                  }
+                }
+                if (e->type) break;
+              }
+            }
             error_at(path, e->loc, "E0403", "unary +/- not defined for `" + e->rhs->type->str() + "`");
+          }
           e->type = e->rhs->type;
         }
         break;
@@ -205,6 +360,14 @@ struct Sema {
           if (!sd) { error_at(path, e->loc, "E0505", "undefined name `" + e->name + "`"); e->type=Type::ty_error(); break; }
           bool found=false;
           for (auto& f : sd->fields) if (f.name==e->name) { e->type=f.type; found=true; break; }
+          // M2: Check methods too (like classes do)
+          if (!found) {
+            for (auto& md : sd->methods) if (md.name==e->name) {
+              e->mangled = sd->c_sym + "__" + e->name;
+              e->type = Type::ty_error(); // Will be fixed in Call checking
+              found = true; break;
+            }
+          }
           if (!found) { error_at(path, e->loc, "E0505", "undefined name `" + e->name + "`"); e->type=Type::ty_error(); }
           e->is_lvalue = true;
           e->is_const_binding = e->lhs->is_const_binding;
@@ -242,7 +405,8 @@ struct Sema {
               if (e->args.size()!=1) error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `" + n + "`");
               else {
                 auto k = e->args[0]->type->kind;
-                if (k!=TypeKind::Int&&k!=TypeKind::Float&&k!=TypeKind::Bool&&k!=TypeKind::String)
+                // M2: allow struct types for print/println (math types)
+                if (k!=TypeKind::Int&&k!=TypeKind::Float&&k!=TypeKind::Bool&&k!=TypeKind::String&&k!=TypeKind::Struct)
                   error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `" + n + "`");
               }
               e->type = Type::ty_void();
@@ -267,7 +431,8 @@ struct Sema {
               if (e->args.size()!=1) error_at(path, e->loc, "E0513", "arity mismatch");
               else {
                 auto k=e->args[0]->type->kind;
-                if (k!=TypeKind::Int&&k!=TypeKind::Float&&k!=TypeKind::Bool)
+                // M2: allow struct types for str (math types)
+                if (k!=TypeKind::Int&&k!=TypeKind::Float&&k!=TypeKind::Bool&&k!=TypeKind::Struct)
                   error_at(path, e->loc, "E0513", "arity or type mismatch for built-in `str`");
               }
               e->type = Type::ty_string();
@@ -291,9 +456,16 @@ struct Sema {
             if (e->args.size() != fn->params.size())
               error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(fn->params.size()) + ", found " + std::to_string(e->args.size()));
             else {
-              for (size_t i=0;i<e->args.size();++i)
+              for (size_t i=0;i<e->args.size();++i) {
+                // M2: Try int→float coercion if needed
+                if (!type_eq(e->args[i]->type, fn->params[i].type) &&
+                    fn->params[i].type->kind == TypeKind::Float &&
+                    e->args[i]->type->kind == TypeKind::Int) {
+                  e->args[i] = try_coerce_int_to_float(e->args[i]);
+                }
                 if (!type_eq(e->args[i]->type, fn->params[i].type))
                   error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected `" + fn->params[i].type->str() + "`, found `" + e->args[i]->type->str() + "`");
+              }
             }
             e->mangled = fn->c_sym;
             e->type = fn->ret;
@@ -312,10 +484,43 @@ struct Sema {
             else {
               if (e->args.size()!=md->params.size())
                 error_at(path, e->loc, "E0411", "wrong number of arguments");
-              else for (size_t i=0;i<e->args.size();++i)
-                if (!type_eq(e->args[i]->type, md->params[i].type))
-                  error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+              else {
+                for (size_t i=0;i<e->args.size();++i) {
+                  // M2: Try int→float coercion
+                  if (!type_eq(e->args[i]->type, md->params[i].type) &&
+                      md->params[i].type->kind == TypeKind::Float &&
+                      e->args[i]->type->kind == TypeKind::Int) {
+                    e->args[i] = try_coerce_int_to_float(e->args[i]);
+                  }
+                  if (!type_eq(e->args[i]->type, md->params[i].type))
+                    error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+                }
+              }
               e->mangled = cd->c_sym + "__" + md->name;
+              e->type = md->ret;
+            }
+          } else if (rt->kind == TypeKind::Struct) {
+            // M2: Struct method calls
+            auto* sd = find_struct_any(rt->name);
+            MethodDecl* md = nullptr;
+            if (sd) for (auto& m : sd->methods) if (m.name == e->lhs->name) { md = &m; break; }
+            if (!md) { error_at(path, e->loc, "E0505", "undefined name `" + e->lhs->name + "`"); e->type=Type::ty_error(); }
+            else {
+              if (e->args.size()!=md->params.size())
+                error_at(path, e->loc, "E0411", "wrong number of arguments");
+              else {
+                for (size_t i=0;i<e->args.size();++i) {
+                  // M2: Try int→float coercion
+                  if (!type_eq(e->args[i]->type, md->params[i].type) &&
+                      md->params[i].type->kind == TypeKind::Float &&
+                      e->args[i]->type->kind == TypeKind::Int) {
+                    e->args[i] = try_coerce_int_to_float(e->args[i]);
+                  }
+                  if (!type_eq(e->args[i]->type, md->params[i].type))
+                    error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+                }
+              }
+              e->mangled = sd->c_sym + "__" + md->name;
               e->type = md->ret;
             }
           } else {
@@ -385,11 +590,38 @@ struct Sema {
           e->type = Type::ty_class(cd->c_sym);
           e->mangled = cd->c_sym;
         } else if (auto* sd = find_struct(e->type_name)) {
-          if (e->args.size()!=sd->fields.size())
-            error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(sd->fields.size()) + ", found " + std::to_string(e->args.size()));
-          else for (size_t i=0;i<e->args.size();++i)
-            if (!type_eq(e->args[i]->type, sd->fields[i].type))
-              error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+          // M2: Allow custom constructors for specific types
+          bool valid_ctor = false;
+          if (e->args.size() == 0 || e->args.size() == sd->fields.size()) {
+            valid_ctor = true;
+            for (size_t i=0;i<e->args.size();++i) {
+              // M2: Try int→float coercion
+              if (!type_eq(e->args[i]->type, sd->fields[i].type) &&
+                  sd->fields[i].type->kind == TypeKind::Float &&
+                  e->args[i]->type->kind == TypeKind::Int) {
+                e->args[i] = try_coerce_int_to_float(e->args[i]);
+              }
+              if (!type_eq(e->args[i]->type, sd->fields[i].type))
+                error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+            }
+          } else if (sd->name == "Color" && e->args.size() == 1 && e->args[0]->type->kind == TypeKind::Int) {
+            // Color(hex: int) constructor
+            valid_ctor = true;
+          } else if (sd->name == "Euler" && e->args.size() == 3) {
+            // Euler(x, y, z) constructor with default order
+            valid_ctor = true;
+            for (size_t i=0; i<3; ++i) {
+              if (e->args[i]->type->kind == TypeKind::Int) {
+                e->args[i] = try_coerce_int_to_float(e->args[i]);
+              }
+              if (e->args[i]->type->kind != TypeKind::Float)
+                error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected float");
+            }
+          }
+          
+          if (!valid_ctor)
+            error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(sd->fields.size()) + " or 0, found " + std::to_string(e->args.size()));
+          
           e->type = Type::ty_struct(sd->c_sym);
           e->mangled = sd->c_sym;
         } else {
@@ -437,6 +669,10 @@ struct Sema {
         TypePtr ty;
         if (s->has_type_ann) {
           ty = finalize_type(s->decl_type, s->loc, false);
+          // Try int→float coercion
+          if (ty->kind == TypeKind::Float) {
+            s->init = try_coerce_int_to_float(s->init);
+          }
           if (s->init->kind==ExprKind::ArrayLit && s->init->args.empty() && ty->kind==TypeKind::DynArray) {
             s->init->type = ty;
           } else if (s->init->kind==ExprKind::ArrayLit && ty->kind==TypeKind::DynArray) {
@@ -475,6 +711,10 @@ struct Sema {
           if (!type_eq(rt, s->lhs->type) && rt->kind!=TypeKind::Error)
             error_at(path, s->loc, "E0408", "type mismatch");
         } else {
+          // Try int→float coercion if assigning to float
+          if (s->lhs->type->kind == TypeKind::Float) {
+            s->rhs = try_coerce_int_to_float(s->rhs);
+          }
           check_assignable(s->lhs, s->rhs, s->loc);
         }
         if (returns) *returns = false;
@@ -553,6 +793,87 @@ struct Sema {
     scope = nullptr;
   }
 
+  void check_struct_method(StructDecl& s, MethodDecl& m) {
+    cur_fn = m.name; cur_ret = m.ret; cur_class = nullptr; in_ctor = false;
+    Scope sc; scope = &sc;
+    // M2: `this` for struct methods is available but refers to a by-reference binding
+    // For now, skip body checking for synthetic methods (empty body)
+    if (m.body->kind == StmtKind::Block && m.body->stmts.empty()) {
+      // Built-in method, skip checking
+      scope = nullptr;
+      return;
+    }
+    for (auto& p : m.params) sc.declare(p.name, VarInfo{p.type, false, p.loc}, path);
+    bool ret=false;
+    check_stmt(m.body, &ret);
+    if (m.ret->kind != TypeKind::Void && !ret) {
+      SourceLoc el = m.body->end_loc.line ? m.body->end_loc : m.body->loc;
+      error_at(path, el, "E0508", "missing return on some paths in `" + m.name + "`");
+    }
+    scope = nullptr;
+  }
+  
+  void check_operator(OperatorDecl& op) {
+    // M2: Validate operator overloads
+    // Test 037: E0601 - Cannot overload operators for primitive types only
+    // Test 038: E0604 - Binary operators must have exactly 2 parameters
+    // Test 040: E0603 - Comparison operators must return bool
+    
+    // Check that at least one parameter is a user-defined struct (not primitive)
+    bool has_user_struct = false;
+    for (auto& p : op.params) {
+      if (p.type->kind == TypeKind::Struct) {
+        // After finalization, type->name is the c_sym, so use find_struct_any
+        auto* sd = find_struct_any(p.type->name);
+        if (sd) has_user_struct = true;
+      }
+    }
+    
+    if (!has_user_struct) {
+      error_at(path, op.loc, "E0601", "operator overload must have at least one user-defined struct parameter");
+      return;
+    }
+    
+    // Check return type for comparison operators (must return bool)
+    if (op.op == TokKind::EqEq || op.op == TokKind::Neq) {
+      if (op.ret->kind != TypeKind::Bool) {
+        error_at(path, op.loc, "E0603", "comparison operator must return bool");
+        return;
+      }
+    }
+    
+    // Check arity (must have exactly 2 parameters)
+    if (op.params.size() != 2) {
+      error_at(path, op.loc, "E0604", "operator overload must have exactly 2 parameters");
+      return;
+    }
+    
+    // Generate C symbol
+    std::string op_name;
+    if (op.op == TokKind::Plus) op_name = "op_add";
+    else if (op.op == TokKind::Minus) op_name = "op_sub";
+    else if (op.op == TokKind::Star) op_name = "op_mul";
+    else if (op.op == TokKind::Slash) op_name = "op_div";
+    else if (op.op == TokKind::EqEq) op_name = "op_eq";
+    else if (op.op == TokKind::Neq) op_name = "op_neq";
+    else op_name = "op_unknown";
+    
+    op.c_sym = "fn_m" + std::to_string(cur_mod->id) + "_" + op_name;
+    
+    // Check body
+    cur_fn = "operator"; cur_ret = op.ret; cur_class = nullptr; in_ctor = false;
+    Scope sc; scope = &sc;
+    for (auto& p : op.params) {
+      sc.declare(p.name, VarInfo{p.type, false, p.loc}, path);
+    }
+    bool ret = false;
+    check_stmt(op.body, &ret);
+    if (!ret && op.ret->kind != TypeKind::Void) {
+      error_at(path, op.loc, "E0508", "missing return in operator");
+    }
+    scope = nullptr;
+  }
+
   void check_method(ClassDecl& c, MethodDecl& m) {
     cur_fn = m.name; cur_ret = m.ret; cur_class = &c; in_ctor = m.is_ctor;
     Scope sc; scope = &sc;
@@ -619,6 +940,18 @@ struct Sema {
         if (ctors != 1)
           error_at(path, c.loc, "E0414", "class `" + c.name + "` must have exactly one constructor");
       }
+      // M2: Finalize struct method types
+      for (auto& s : m.structs) {
+        for (auto& md : s.methods) {
+          for (auto& p : md.params) p.type = finalize_type(p.type, p.loc, false);
+          md.ret = finalize_type(md.ret, md.loc, true);
+        }
+      }
+      // M2: Finalize operator types (test 036)
+      for (auto& op : m.operators) {
+        for (auto& p : op.params) p.type = finalize_type(p.type, p.loc, false);
+        op.ret = finalize_type(op.ret, op.loc, true);
+      }
       for (auto& f : m.functions) {
         for (auto& p : f.params) p.type = finalize_type(p.type, p.loc, false);
         f.ret = finalize_type(f.ret, f.loc, true);
@@ -652,9 +985,14 @@ struct Sema {
     }
     for (auto& m : prog.modules) {
       cur_mod = &m; path = m.diag_path.empty() ? m.path : m.diag_path;
+      // M2: Check operators
+      for (auto& op : m.operators) check_operator(op);
       for (auto& f : m.functions) check_function(f);
       for (auto& c : m.classes)
         for (auto& md : c.methods) check_method(c, md);
+      // M2: Check struct methods
+      for (auto& s : m.structs)
+        for (auto& md : s.methods) check_struct_method(s, md);
     }
   }
 };

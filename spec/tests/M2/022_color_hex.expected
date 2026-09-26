@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+# stdout:
+Color(1, 0, 0)
+16711680
+65280
+255
+# end

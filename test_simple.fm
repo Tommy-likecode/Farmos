@@ -1,0 +1,6 @@
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  let v: Vector3 = Vector3 { x: 1.0, y: 2.0, z: 3.0 };
+  return 0;
+}

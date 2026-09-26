@@ -1,0 +1,19 @@
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  let x: float = 1.5;
+  // literal operand in mixed float arith (variable * literal)
+  let y: float = x * 2;
+  let z: float = 4 * x;
+  println(y);
+  println(z);
+  // §4A: literal OP literal cases (eggtooth hand cases)
+  let a: float = 1 + 2.0;
+  let b: float = 2.0 + 1;
+  println(a);
+  println(b);
+  let v: Vector3 = new Vector3(1.0, 0.0, 0.0);
+  v.multiplyScalar(3);
+  println(v);
+  return 0;
+}

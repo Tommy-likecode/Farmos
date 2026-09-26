@@ -161,6 +161,949 @@ static SourceLoc byte_loc(const std::string& s, size_t off) {
   return l;
 }
 
+// Check if import path is a farmos: builtin module
+static bool is_farmos_builtin(const std::string& path) {
+  return path.rfind("farmos:", 0) == 0;
+}
+
+// Create synthetic farmos:math module
+static Module create_farmos_math_module() {
+  Module m;
+  m.path = "farmos:math";
+  m.diag_path = "farmos:math";
+  m.is_main = false;
+  
+  // Vector3 struct
+  StructDecl v3;
+  v3.name = "Vector3";
+  v3.exported = true;
+  v3.loc = SourceLoc{1, 1};
+  v3.fields.push_back(FieldDecl{"x", Type::ty_float(), SourceLoc{1, 1}});
+  v3.fields.push_back(FieldDecl{"y", Type::ty_float(), SourceLoc{1, 1}});
+  v3.fields.push_back(FieldDecl{"z", Type::ty_float(), SourceLoc{1, 1}});
+  
+  // M2: Add methods to Vector3
+  // Note: Can't use final c_sym yet since it's assigned later. Use display name and fix in sema.
+  // add(v: Vector3): Vector3 - mutates this, returns this
+  {
+    MethodDecl md;
+    md.name = "add";
+    // Use raw type with display name; sema will resolve to c_sym
+    auto v_type = Type::ty_struct("Vector3");
+    md.params.push_back(Param{"v", v_type, SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    block->loc = SourceLoc{1, 1};
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // multiplyScalar(s: float): Vector3
+  {
+    MethodDecl md;
+    md.name = "multiplyScalar";
+    md.params.push_back(Param{"s", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    block->loc = SourceLoc{1, 1};
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // dot(v: Vector3): float
+  {
+    MethodDecl md;
+    md.name = "dot";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // cross(v: Vector3): Vector3
+  {
+    MethodDecl md;
+    md.name = "cross";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // length(): float
+  {
+    MethodDecl md;
+    md.name = "length";
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // lengthSq(): float
+  {
+    MethodDecl md;
+    md.name = "lengthSq";
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // normalize(): Vector3
+  {
+    MethodDecl md;
+    md.name = "normalize";
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // clone(): Vector3
+  {
+    MethodDecl md;
+    md.name = "clone";
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // lerp(v: Vector3, alpha: float): Vector3
+  {
+    MethodDecl md;
+    md.name = "lerp";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.params.push_back(Param{"alpha", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // equals(v: Vector3): bool
+  {
+    MethodDecl md;
+    md.name = "equals";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_bool();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // set(x, y, z: float): Vector3
+  {
+    MethodDecl md;
+    md.name = "set";
+    md.params.push_back(Param{"x", Type::ty_float(), SourceLoc{1,1}});
+    md.params.push_back(Param{"y", Type::ty_float(), SourceLoc{1,1}});
+    md.params.push_back(Param{"z", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // distanceTo(v: Vector3): float
+  {
+    MethodDecl md;
+    md.name = "distanceTo";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // distanceToSquared(v: Vector3): float
+  {
+    MethodDecl md;
+    md.name = "distanceToSquared";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // applyMatrix4(m: Matrix4): Vector3
+  {
+    MethodDecl md;
+    md.name = "applyMatrix4";
+    md.params.push_back(Param{"m", Type::ty_struct("Matrix4"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // applyQuaternion(q: Quaternion): Vector3
+  {
+    MethodDecl md;
+    md.name = "applyQuaternion";
+    md.params.push_back(Param{"q", Type::ty_struct("Quaternion"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // crossVectors(a: Vector3, b: Vector3): Vector3
+  {
+    MethodDecl md;
+    md.name = "crossVectors";
+    md.params.push_back(Param{"a", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.params.push_back(Param{"b", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // operator+ (via __farm_op_add)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_add";
+    md.params.push_back(Param{"other", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // operator- (via __farm_op_sub)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_sub";
+    md.params.push_back(Param{"other", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // operator* (scalar) (via __farm_op_mul)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_mul";
+    md.params.push_back(Param{"scalar", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // operator/ (scalar) (via __farm_op_div)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_div";
+    md.params.push_back(Param{"scalar", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // operator== (via __farm_op_eq)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_eq";
+    md.params.push_back(Param{"other", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_bool();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // operator!= (via __farm_op_neq)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_neq";
+    md.params.push_back(Param{"other", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+    md.ret = Type::ty_bool();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // unary operator- (via __farm_op_neg)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_neg";
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  // reverse operator* (scalar * vector) (via __farm_op_rmul)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_rmul";
+    md.params.push_back(Param{"scalar", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector3");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v3.methods.push_back(std::move(md));
+  }
+  
+  m.structs.push_back(std::move(v3));
+  
+  // Matrix4
+  {
+    StructDecl m4;
+    m4.name = "Matrix4";
+    m4.exported = true;
+    m4.loc = SourceLoc{1, 1};
+    // elements: float[16]
+    auto m4_elem_type = Type::ty_float();
+    auto m4_arr_type = std::make_shared<Type>();
+    m4_arr_type->kind = TypeKind::FixedArray;
+    m4_arr_type->elem = m4_elem_type;
+    m4_arr_type->fixed_len = 16;
+    m4.fields.push_back(FieldDecl{"elements", m4_arr_type, SourceLoc{1, 1}});
+    
+    // Default constructor creates identity matrix
+    // No explicit constructor needed - will be handled in emit_c
+    
+    // determinant(): float
+    {
+      MethodDecl md;
+      md.name = "determinant";
+      md.ret = Type::ty_float();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    // makeTranslation(x, y, z: float): Matrix4
+    {
+      MethodDecl md;
+      md.name = "makeTranslation";
+      md.params.push_back(Param{"x", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"y", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"z", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    // makeScale(x, y, z: float): Matrix4
+    {
+      MethodDecl md;
+      md.name = "makeScale";
+      md.params.push_back(Param{"x", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"y", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"z", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    // multiply(m: Matrix4): Matrix4
+    {
+      MethodDecl md;
+      md.name = "multiply";
+      md.params.push_back(Param{"m", Type::ty_struct("Matrix4"), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    // invert(): Matrix4
+    {
+      MethodDecl md;
+      md.name = "invert";
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    // transpose(): Matrix4
+    {
+      MethodDecl md;
+      md.name = "transpose";
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    // set(n11..n44: 16 floats): Matrix4
+    {
+      MethodDecl md;
+      md.name = "set";
+      for (int i = 0; i < 16; i++) {
+        md.params.push_back(Param{"n" + std::to_string(i), Type::ty_float(), SourceLoc{1,1}});
+      }
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    // makeRotationY(theta: float): Matrix4
+    {
+      MethodDecl md;
+      md.name = "makeRotationY";
+      md.params.push_back(Param{"theta", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    // makeRotationX(theta: float): Matrix4
+    {
+      MethodDecl md;
+      md.name = "makeRotationX";
+      md.params.push_back(Param{"theta", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Matrix4");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m4.methods.push_back(std::move(md));
+    }
+    
+    m.structs.push_back(std::move(m4));
+  }
+  
+  // Matrix3
+  {
+    StructDecl m3;
+    m3.name = "Matrix3";
+    m3.exported = true;
+    m3.loc = SourceLoc{1, 1};
+    // elements: float[9]
+    auto m3_elem_type = Type::ty_float();
+    auto m3_arr_type = std::make_shared<Type>();
+    m3_arr_type->kind = TypeKind::FixedArray;
+    m3_arr_type->elem = m3_elem_type;
+    m3_arr_type->fixed_len = 9;
+    m3.fields.push_back(FieldDecl{"elements", m3_arr_type, SourceLoc{1, 1}});
+    
+    // determinant(): float
+    {
+      MethodDecl md;
+      md.name = "determinant";
+      md.ret = Type::ty_float();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m3.methods.push_back(std::move(md));
+    }
+    
+    // makeScale(sx: float, sy: float): Matrix3
+    {
+      MethodDecl md;
+      md.name = "makeScale";
+      md.params.push_back(Param{"sx", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"sy", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Matrix3");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      m3.methods.push_back(std::move(md));
+    }
+    
+    m.structs.push_back(std::move(m3));
+  }
+  
+  // Quaternion
+  {
+    StructDecl q;
+    q.name = "Quaternion";
+    q.exported = true;
+    q.loc = SourceLoc{1, 1};
+    q.fields.push_back(FieldDecl{"x", Type::ty_float(), SourceLoc{1, 1}});
+    q.fields.push_back(FieldDecl{"y", Type::ty_float(), SourceLoc{1, 1}});
+    q.fields.push_back(FieldDecl{"z", Type::ty_float(), SourceLoc{1, 1}});
+    q.fields.push_back(FieldDecl{"w", Type::ty_float(), SourceLoc{1, 1}});
+    
+    // multiply(q: Quaternion): Quaternion
+    {
+      MethodDecl md;
+      md.name = "multiply";
+      md.params.push_back(Param{"q", Type::ty_struct("Quaternion"), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Quaternion");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      q.methods.push_back(std::move(md));
+    }
+    
+    // equals(q: Quaternion): bool
+    {
+      MethodDecl md;
+      md.name = "equals";
+      md.params.push_back(Param{"q", Type::ty_struct("Quaternion"), SourceLoc{1,1}});
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      q.methods.push_back(std::move(md));
+    }
+    
+    // setFromAxisAngle(axis: Vector3, angle: float): Quaternion
+    {
+      MethodDecl md;
+      md.name = "setFromAxisAngle";
+      md.params.push_back(Param{"axis", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+      md.params.push_back(Param{"angle", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Quaternion");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      q.methods.push_back(std::move(md));
+    }
+    
+    m.structs.push_back(std::move(q));
+  }
+  
+  // Vector2 struct
+  StructDecl v2;
+  v2.name = "Vector2";
+  v2.exported = true;
+  v2.loc = SourceLoc{1, 1};
+  v2.fields.push_back(FieldDecl{"x", Type::ty_float(), SourceLoc{1, 1}});
+  v2.fields.push_back(FieldDecl{"y", Type::ty_float(), SourceLoc{1, 1}});
+  
+  // length(): float
+  {
+    MethodDecl md;
+    md.name = "length";
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v2.methods.push_back(std::move(md));
+  }
+  
+  // normalize(): Vector2
+  {
+    MethodDecl md;
+    md.name = "normalize";
+    md.ret = Type::ty_struct("Vector2");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v2.methods.push_back(std::move(md));
+  }
+  
+  // add(v: Vector2): Vector2
+  {
+    MethodDecl md;
+    md.name = "add";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector2"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector2");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v2.methods.push_back(std::move(md));
+  }
+  
+  // multiplyScalar(s: float): Vector2
+  {
+    MethodDecl md;
+    md.name = "multiplyScalar";
+    md.params.push_back(Param{"s", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector2");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v2.methods.push_back(std::move(md));
+  }
+  
+  // applyMatrix3(m: Matrix3): Vector2
+  {
+    MethodDecl md;
+    md.name = "applyMatrix3";
+    md.params.push_back(Param{"m", Type::ty_struct("Matrix3"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector2");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v2.methods.push_back(std::move(md));
+  }
+  
+  // operator+ (via __farm_op_add)
+  {
+    MethodDecl md;
+    md.name = "__farm_op_add";
+    md.params.push_back(Param{"other", Type::ty_struct("Vector2"), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector2");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v2.methods.push_back(std::move(md));
+  }
+  
+  m.structs.push_back(std::move(v2));
+  
+  // Vector4 struct
+  StructDecl v4;
+  v4.name = "Vector4";
+  v4.exported = true;
+  v4.loc = SourceLoc{1, 1};
+  v4.fields.push_back(FieldDecl{"x", Type::ty_float(), SourceLoc{1, 1}});
+  v4.fields.push_back(FieldDecl{"y", Type::ty_float(), SourceLoc{1, 1}});
+  v4.fields.push_back(FieldDecl{"z", Type::ty_float(), SourceLoc{1, 1}});
+  v4.fields.push_back(FieldDecl{"w", Type::ty_float(), SourceLoc{1, 1}});
+  
+  // dot(v: Vector4): float
+  {
+    MethodDecl md;
+    md.name = "dot";
+    md.params.push_back(Param{"v", Type::ty_struct("Vector4"), SourceLoc{1,1}});
+    md.ret = Type::ty_float();
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v4.methods.push_back(std::move(md));
+  }
+  
+  // multiplyScalar(s: float): Vector4
+  {
+    MethodDecl md;
+    md.name = "multiplyScalar";
+    md.params.push_back(Param{"s", Type::ty_float(), SourceLoc{1,1}});
+    md.ret = Type::ty_struct("Vector4");
+    md.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    md.body = std::move(block);
+    v4.methods.push_back(std::move(md));
+  }
+  
+  m.structs.push_back(std::move(v4));
+  
+  // Color
+  {
+    StructDecl c;
+    c.name = "Color";
+    c.exported = true;
+    c.loc = SourceLoc{1, 1};
+    c.fields.push_back(FieldDecl{"r", Type::ty_float(), SourceLoc{1, 1}});
+    c.fields.push_back(FieldDecl{"g", Type::ty_float(), SourceLoc{1, 1}});
+    c.fields.push_back(FieldDecl{"b", Type::ty_float(), SourceLoc{1, 1}});
+    
+    // setHex(hex: int): Color
+    {
+      MethodDecl md;
+      md.name = "setHex";
+      md.params.push_back(Param{"hex", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Color");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      c.methods.push_back(std::move(md));
+    }
+    
+    // multiplyScalar(s: float): Color
+    {
+      MethodDecl md;
+      md.name = "multiplyScalar";
+      md.params.push_back(Param{"s", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Color");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      c.methods.push_back(std::move(md));
+    }
+    
+    // getHex(): int
+    {
+      MethodDecl md;
+      md.name = "getHex";
+      md.ret = Type::ty_int();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      c.methods.push_back(std::move(md));
+    }
+    
+    m.structs.push_back(std::move(c));
+  }
+  
+  // Euler
+  {
+    StructDecl e;
+    e.name = "Euler";
+    e.exported = true;
+    e.loc = SourceLoc{1, 1};
+    e.fields.push_back(FieldDecl{"x", Type::ty_float(), SourceLoc{1, 1}});
+    e.fields.push_back(FieldDecl{"y", Type::ty_float(), SourceLoc{1, 1}});
+    e.fields.push_back(FieldDecl{"z", Type::ty_float(), SourceLoc{1, 1}});
+    e.fields.push_back(FieldDecl{"order", Type::ty_string(), SourceLoc{1, 1}});
+    m.structs.push_back(std::move(e));
+  }
+  
+  // Ray
+  {
+    StructDecl r;
+    r.name = "Ray";
+    r.exported = true;
+    r.loc = SourceLoc{1, 1};
+    r.fields.push_back(FieldDecl{"origin", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    r.fields.push_back(FieldDecl{"direction", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    
+    // at(t: float): Vector3
+    {
+      MethodDecl md;
+      md.name = "at";
+      md.params.push_back(Param{"t", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Vector3");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      r.methods.push_back(std::move(md));
+    }
+    
+    // intersectSphere(s: Sphere): RayHit
+    {
+      MethodDecl md;
+      md.name = "intersectSphere";
+      md.params.push_back(Param{"s", Type::ty_struct("Sphere"), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("RayHit");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      r.methods.push_back(std::move(md));
+    }
+    
+    m.structs.push_back(std::move(r));
+  }
+  
+  // Sphere
+  {
+    StructDecl s;
+    s.name = "Sphere";
+    s.exported = true;
+    s.loc = SourceLoc{1, 1};
+    s.fields.push_back(FieldDecl{"center", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    s.fields.push_back(FieldDecl{"radius", Type::ty_float(), SourceLoc{1, 1}});
+    
+    // containsPoint(p: Vector3): bool
+    {
+      MethodDecl md;
+      md.name = "containsPoint";
+      md.params.push_back(Param{"p", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      s.methods.push_back(std::move(md));
+    }
+    
+    // intersectsSphere(s: Sphere): bool
+    {
+      MethodDecl md;
+      md.name = "intersectsSphere";
+      md.params.push_back(Param{"s", Type::ty_struct("Sphere"), SourceLoc{1,1}});
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      s.methods.push_back(std::move(md));
+    }
+    
+    m.structs.push_back(std::move(s));
+  }
+  
+  // Box3
+  {
+    StructDecl b;
+    b.name = "Box3";
+    b.exported = true;
+    b.loc = SourceLoc{1, 1};
+    b.fields.push_back(FieldDecl{"min", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    b.fields.push_back(FieldDecl{"max", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    
+    // isEmpty(): bool
+    {
+      MethodDecl md;
+      md.name = "isEmpty";
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      b.methods.push_back(std::move(md));
+    }
+    
+    // expandByPoint(p: Vector3): Box3
+    {
+      MethodDecl md;
+      md.name = "expandByPoint";
+      md.params.push_back(Param{"p", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Box3");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      b.methods.push_back(std::move(md));
+    }
+    
+    // containsPoint(p: Vector3): bool
+    {
+      MethodDecl md;
+      md.name = "containsPoint";
+      md.params.push_back(Param{"p", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      b.methods.push_back(std::move(md));
+    }
+    
+    // getCenter(): Vector3
+    {
+      MethodDecl md;
+      md.name = "getCenter";
+      md.ret = Type::ty_struct("Vector3");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      b.methods.push_back(std::move(md));
+    }
+    
+    // getSize(): Vector3
+    {
+      MethodDecl md;
+      md.name = "getSize";
+      md.ret = Type::ty_struct("Vector3");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      b.methods.push_back(std::move(md));
+    }
+    
+    // intersectsBox(box: Box3): bool
+    {
+      MethodDecl md;
+      md.name = "intersectsBox";
+      md.params.push_back(Param{"box", Type::ty_struct("Box3"), SourceLoc{1,1}});
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      b.methods.push_back(std::move(md));
+    }
+    
+    m.structs.push_back(std::move(b));
+  }
+  
+  // RayHit
+  {
+    StructDecl rh;
+    rh.name = "RayHit";
+    rh.exported = true;
+    rh.loc = SourceLoc{1, 1};
+    rh.fields.push_back(FieldDecl{"hit", Type::ty_bool(), SourceLoc{1, 1}});
+    rh.fields.push_back(FieldDecl{"point", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    rh.fields.push_back(FieldDecl{"distance", Type::ty_float(), SourceLoc{1, 1}});
+    m.structs.push_back(std::move(rh));
+  }
+  
+  return m;
+}
+
 struct Loader {
   Program prog;
   std::unordered_map<std::string, int> loaded; // canonical path -> index
@@ -208,6 +1151,25 @@ struct Loader {
       size_t nimp = prog.modules[idx].imports.size();
       for (size_t ii = 0; ii < nimp; ++ii) {
         ImportDecl im = prog.modules[idx].imports[ii];  // copy; do not hold refs across load
+        
+        // Handle farmos: builtin modules
+        if (is_farmos_builtin(im.path)) {
+          if (im.path == "farmos:math") {
+            // Ensure farmos:math is loaded once
+            if (!loaded.count("farmos:math")) {
+              Module math_mod = create_farmos_math_module();
+              int mid = (int)prog.modules.size();
+              prog.modules.push_back(std::move(math_mod));
+              loaded["farmos:math"] = mid;
+            }
+            continue;
+          } else {
+            error_at(prog.modules[idx].diag_path, im.loc, "E0304",
+                     "unknown builtin module `" + im.path + "`");
+            continue;
+          }
+        }
+        
         if (!is_relative_fm(im.path)) {
           error_at(prog.modules[idx].diag_path, im.loc, "E0301",
                    "invalid module path `" + im.path + "`");
@@ -264,6 +1226,57 @@ struct Loader {
     for (auto& mod : prog.modules) {
       std::unordered_set<std::string> imported;
       for (auto& im : mod.imports) {
+        // Handle farmos: builtin modules
+        if (is_farmos_builtin(im.path)) {
+          Module* dep_m = nullptr;
+          for (auto& x : prog.modules) if (x.path == im.path) { dep_m = &x; break; }
+          if (!dep_m) continue;
+          
+          for (size_t ni = 0; ni < im.names.size(); ++ni) {
+            const std::string& name = im.names[ni];
+            SourceLoc nloc = (ni < im.name_locs.size()) ? im.name_locs[ni] : im.loc;
+            if (imported.count(name)) {
+              error_at(mod.path, nloc, "E0303", "duplicate import of `" + name + "`");
+              continue;
+            }
+            imported.insert(name);
+            
+            auto clash = [&]() {
+              return mod.vis_functions.count(name) || mod.vis_consts.count(name) ||
+                     mod.vis_structs.count(name) || mod.vis_classes.count(name);
+            };
+            
+            if (dep_m->vis_structs.count(name)) {
+              if (clash()) {
+                error_at(mod.diag_path, nloc, "E0510", "import `" + name + "` conflicts with existing definition");
+                continue;
+              }
+              mod.vis_structs[name] = dep_m->vis_structs[name];
+            } else if (dep_m->vis_classes.count(name)) {
+              if (clash()) {
+                error_at(mod.diag_path, nloc, "E0510", "import `" + name + "` conflicts with existing definition");
+                continue;
+              }
+              mod.vis_classes[name] = dep_m->vis_classes[name];
+            } else if (dep_m->vis_functions.count(name)) {
+              if (clash()) {
+                error_at(mod.diag_path, nloc, "E0510", "import `" + name + "` conflicts with existing definition");
+                continue;
+              }
+              mod.vis_functions[name] = dep_m->vis_functions[name];
+            } else if (dep_m->vis_consts.count(name)) {
+              if (clash()) {
+                error_at(mod.diag_path, nloc, "E0510", "import `" + name + "` conflicts with existing definition");
+                continue;
+              }
+              mod.vis_consts[name] = dep_m->vis_consts[name];
+            } else {
+              error_at(mod.diag_path, nloc, "E0305", "`" + name + "` not found in module `" + im.path + "`");
+            }
+          }
+          continue;
+        }
+        
         if (!is_relative_fm(im.path)) continue;
         fs::path dep = resolve_import(mod.path, im.path);
         std::error_code ec;

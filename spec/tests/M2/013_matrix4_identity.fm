@@ -1,0 +1,12 @@
+import { Matrix4 } from "farmos:math";
+
+function main(): int {
+  let m: Matrix4 = new Matrix4();
+  println(m.determinant());
+  println(m.elements[0]);
+  println(m.elements[5]);
+  println(m.elements[10]);
+  println(m.elements[15]);
+  println(m.elements[1]);
+  return 0;
+}

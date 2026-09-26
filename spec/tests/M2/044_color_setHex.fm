@@ -1,0 +1,9 @@
+import { Color } from "farmos:math";
+
+function main(): int {
+  let c: Color = new Color();
+  c.setHex(0x808080);
+  println(c.r);
+  println(c.getHex());
+  return 0;
+}

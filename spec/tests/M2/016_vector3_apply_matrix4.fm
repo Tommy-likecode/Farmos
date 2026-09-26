@@ -1,0 +1,10 @@
+import { Matrix4, Vector3 } from "farmos:math";
+
+function main(): int {
+  let m: Matrix4 = new Matrix4();
+  m.makeTranslation(10.0, 20.0, 30.0);
+  let v: Vector3 = new Vector3(1.0, 2.0, 3.0);
+  v.applyMatrix4(m);
+  println(v);
+  return 0;
+}

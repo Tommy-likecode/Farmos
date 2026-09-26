@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## nearest forward hit at z=-1, t=4 from origin z=-5
+# stdout:
+true
+4
+Vector3(0, 0, -1)
+# end

@@ -1,0 +1,18 @@
+import { Matrix4 } from "farmos:math";
+
+function main(): int {
+  let m: Matrix4 = new Matrix4();
+  m.set(
+    1.0, 2.0, 3.0, 4.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 1.0, 0.0,
+    0.0, 0.0, 0.0, 1.0
+  );
+  m.transpose();
+  // column0 is former row0: elements[0], [4], [8], [12]
+  println(m.elements[0]);
+  println(m.elements[4]);
+  println(m.elements[8]);
+  println(m.elements[12]);
+  return 0;
+}

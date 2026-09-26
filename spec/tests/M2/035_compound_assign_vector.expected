@@ -1,0 +1,6 @@
+# kind: run
+# exit: 0
+# stdout:
+Vector3(11, 22, 33)
+Vector3(5.5, 11, 16.5)
+# end

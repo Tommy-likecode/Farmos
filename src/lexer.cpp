@@ -56,9 +56,10 @@ TokKind Lexer::keyword(const std::string& s) {
     {"else",TokKind::KwElse},{"export",TokKind::KwExport},{"false",TokKind::KwFalse},
     {"float",TokKind::KwFloat},{"for",TokKind::KwFor},{"function",TokKind::KwFunction},
     {"if",TokKind::KwIf},{"import",TokKind::KwImport},{"int",TokKind::KwInt},
-    {"let",TokKind::KwLet},{"new",TokKind::KwNew},{"return",TokKind::KwReturn},
-    {"string",TokKind::KwString},{"struct",TokKind::KwStruct},{"this",TokKind::KwThis},
-    {"true",TokKind::KwTrue},{"void",TokKind::KwVoid},{"while",TokKind::KwWhile},
+    {"let",TokKind::KwLet},{"new",TokKind::KwNew},{"operator",TokKind::KwOperator},
+    {"return",TokKind::KwReturn},{"string",TokKind::KwString},{"struct",TokKind::KwStruct},
+    {"this",TokKind::KwThis},{"true",TokKind::KwTrue},{"void",TokKind::KwVoid},
+    {"while",TokKind::KwWhile},
   };
   auto it = kw.find(s); return it==kw.end() ? TokKind::Ident : it->second;
 }
