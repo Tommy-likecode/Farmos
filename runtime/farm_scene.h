@@ -76,7 +76,21 @@ struct farm_Scene {
 
 // PerspectiveCamera
 struct farm_PerspectiveCamera {
-  farm_Object3D base;
+  // Inherited from Object3D
+  farm_Object3DType type;
+  farm_Vector3 f_position;
+  farm_Euler f_rotation;
+  farm_Quaternion f_quaternion;
+  farm_Vector3 f_scale;
+  farm_Matrix4 f_matrix;
+  farm_Matrix4 f_matrixWorld;
+  bool matrixAutoUpdate;
+  bool f_visible;
+  farm_Object3D* parent;
+  farm_ChildList children;
+  bool rotation_dirty;
+  bool quaternion_dirty;
+  // Camera-specific
   double fov;
   double aspect;
   double near;
@@ -118,7 +132,21 @@ struct farm_MeshStandardMaterial {
 
 // Mesh
 struct farm_Mesh {
-  farm_Object3D base;
+  // Inherited from Object3D
+  farm_Object3DType type;
+  farm_Vector3 f_position;
+  farm_Euler f_rotation;
+  farm_Quaternion f_quaternion;
+  farm_Vector3 f_scale;
+  farm_Matrix4 f_matrix;
+  farm_Matrix4 f_matrixWorld;
+  bool matrixAutoUpdate;
+  bool f_visible;
+  farm_Object3D* parent;
+  farm_ChildList children;
+  bool rotation_dirty;
+  bool quaternion_dirty;
+  // Mesh-specific
   void* geometry;       // Points to one of the geometry types
   void* material;       // Points to one of the material types
   uint8_t geometry_type; // 0=Box, 1=Sphere, 2=Plane
@@ -126,20 +154,63 @@ struct farm_Mesh {
 };
 
 // Lights
+// Lights
 struct farm_AmbientLight {
-  farm_Object3D base;
+  // Inherited from Object3D
+  farm_Object3DType type;
+  farm_Vector3 f_position;
+  farm_Euler f_rotation;
+  farm_Quaternion f_quaternion;
+  farm_Vector3 f_scale;
+  farm_Matrix4 f_matrix;
+  farm_Matrix4 f_matrixWorld;
+  bool matrixAutoUpdate;
+  bool f_visible;
+  farm_Object3D* parent;
+  farm_ChildList children;
+  bool rotation_dirty;
+  bool quaternion_dirty;
+  // Light-specific
   farm_Color color;
   double intensity;
 };
 
 struct farm_DirectionalLight {
-  farm_Object3D base;
+  // Inherited from Object3D
+  farm_Object3DType type;
+  farm_Vector3 f_position;
+  farm_Euler f_rotation;
+  farm_Quaternion f_quaternion;
+  farm_Vector3 f_scale;
+  farm_Matrix4 f_matrix;
+  farm_Matrix4 f_matrixWorld;
+  bool matrixAutoUpdate;
+  bool f_visible;
+  farm_Object3D* parent;
+  farm_ChildList children;
+  bool rotation_dirty;
+  bool quaternion_dirty;
+  // Light-specific
   farm_Color color;
   double intensity;
 };
 
 struct farm_PointLight {
-  farm_Object3D base;
+  // Inherited from Object3D
+  farm_Object3DType type;
+  farm_Vector3 f_position;
+  farm_Euler f_rotation;
+  farm_Quaternion f_quaternion;
+  farm_Vector3 f_scale;
+  farm_Matrix4 f_matrix;
+  farm_Matrix4 f_matrixWorld;
+  bool matrixAutoUpdate;
+  bool f_visible;
+  farm_Object3D* parent;
+  farm_ChildList children;
+  bool rotation_dirty;
+  bool quaternion_dirty;
+  // Light-specific
   farm_Color color;
   double intensity;
   double distance;
@@ -263,3 +334,4 @@ void farm_Renderer_dispose(farm_Renderer* self);
 #ifdef __cplusplus
 }
 #endif
+

@@ -21,42 +21,42 @@ farm_Box3 farm_Box3_empty() {
 
 // Vector3 length
 double farm_Vector3_length(farm_Vector3 v) {
-  return sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+  return sqrt(v.f_x*v.f_x + v.f_y*v.f_y + v.f_z*v.f_z);
 }
 
 // Vector3 normalize
 farm_Vector3 farm_Vector3_normalize(farm_Vector3 v) {
   double len = farm_Vector3_length(v);
   if (len == 0.0) return v;  // zero unchanged per spec
-  return (farm_Vector3){v.x/len, v.y/len, v.z/len};
+  return (farm_Vector3){v.f_x/len, v.f_y/len, v.f_z/len};
 }
 
 // Vector3 add
 farm_Vector3 farm_Vector3_add(farm_Vector3 a, farm_Vector3 b) {
-  return (farm_Vector3){a.x+b.x, a.y+b.y, a.z+b.z};
+  return (farm_Vector3){a.f_x+b.f_x, a.f_y+b.f_y, a.f_z+b.f_z};
 }
 
 // Vector3 sub
 farm_Vector3 farm_Vector3_sub(farm_Vector3 a, farm_Vector3 b) {
-  return (farm_Vector3){a.x-b.x, a.y-b.y, a.z-b.z};
+  return (farm_Vector3){a.f_x-b.f_x, a.f_y-b.f_y, a.f_z-b.f_z};
 }
 
 // Vector3 multiply scalar
 farm_Vector3 farm_Vector3_multiplyScalar(farm_Vector3 v, double s) {
-  return (farm_Vector3){v.x*s, v.y*s, v.z*s};
+  return (farm_Vector3){v.f_x*s, v.f_y*s, v.f_z*s};
 }
 
 // Vector3 dot
 double farm_Vector3_dot(farm_Vector3 a, farm_Vector3 b) {
-  return a.x*b.x + a.y*b.y + a.z*b.z;
+  return a.f_x*b.f_x + a.f_y*b.f_y + a.f_z*b.f_z;
 }
 
 // Vector3 cross
 farm_Vector3 farm_Vector3_cross(farm_Vector3 a, farm_Vector3 b) {
   return (farm_Vector3){
-    a.y*b.z - a.z*b.y,
-    a.z*b.x - a.x*b.z,
-    a.x*b.y - a.y*b.x
+    a.f_y*b.f_z - a.f_z*b.f_y,
+    a.f_z*b.f_x - a.f_x*b.f_z,
+    a.f_x*b.f_y - a.f_y*b.f_x
   };
 }
 
@@ -64,10 +64,10 @@ farm_Vector3 farm_Vector3_cross(farm_Vector3 a, farm_Vector3 b) {
 farm_Vector4 farm_Vector4_applyMatrix4(farm_Vector4 v, farm_Matrix4 m) {
   double* e = m.elements;
   return (farm_Vector4){
-    e[0]*v.x + e[4]*v.y + e[8]*v.z + e[12]*v.w,
-    e[1]*v.x + e[5]*v.y + e[9]*v.z + e[13]*v.w,
-    e[2]*v.x + e[6]*v.y + e[10]*v.z + e[14]*v.w,
-    e[3]*v.x + e[7]*v.y + e[11]*v.z + e[15]*v.w
+    e[0]*v.f_x + e[4]*v.f_y + e[8]*v.f_z + e[12]*v.w,
+    e[1]*v.f_x + e[5]*v.f_y + e[9]*v.f_z + e[13]*v.w,
+    e[2]*v.f_x + e[6]*v.f_y + e[10]*v.f_z + e[14]*v.w,
+    e[3]*v.f_x + e[7]*v.f_y + e[11]*v.f_z + e[15]*v.w
   };
 }
 
@@ -94,13 +94,13 @@ farm_Matrix4 farm_Matrix4_compose(farm_Vector3 position, farm_Quaternion quatern
   farm_Matrix4 m;
   double* e = m.elements;
   
-  double x = quaternion.x, y = quaternion.y, z = quaternion.z, w = quaternion.w;
+  double x = quaternion.f_x, y = quaternion.f_y, z = quaternion.f_z, w = quaternion.w;
   double x2 = x + x, y2 = y + y, z2 = z + z;
   double xx = x * x2, xy = x * y2, xz = x * z2;
   double yy = y * y2, yz = y * z2, zz = z * z2;
   double wx = w * x2, wy = w * y2, wz = w * z2;
   
-  double sx = scale.x, sy = scale.y, sz = scale.z;
+  double sx = scale.f_x, sy = scale.f_y, sz = scale.f_z;
   
   e[0] = (1 - (yy + zz)) * sx;
   e[1] = (xy + wz) * sx;
@@ -117,9 +117,9 @@ farm_Matrix4 farm_Matrix4_compose(farm_Vector3 position, farm_Quaternion quatern
   e[10] = (1 - (xx + yy)) * sz;
   e[11] = 0;
   
-  e[12] = position.x;
-  e[13] = position.y;
-  e[14] = position.z;
+  e[12] = position.f_x;
+  e[13] = position.f_y;
+  e[14] = position.f_z;
   e[15] = 1;
   
   return m;
@@ -196,7 +196,7 @@ farm_Matrix4 farm_Matrix4_makePerspective(double left, double right, double top,
 
 // Quaternion setFromEuler
 farm_Quaternion farm_Quaternion_setFromEuler(farm_Euler e) {
-  double x = e.x, y = e.y, z = e.z;
+  double x = e.f_x, y = e.f_y, z = e.f_z;
   double c1 = cos(x / 2.0);
   double c2 = cos(y / 2.0);
   double c3 = cos(z / 2.0);
@@ -208,40 +208,40 @@ farm_Quaternion farm_Quaternion_setFromEuler(farm_Euler e) {
   
   // Assuming "XYZ" order (most common)
   if (strcmp(e.order, "XYZ") == 0 || e.order[0] == 0) {
-    q.x = s1 * c2 * c3 + c1 * s2 * s3;
-    q.y = c1 * s2 * c3 - s1 * c2 * s3;
-    q.z = c1 * c2 * s3 + s1 * s2 * c3;
+    q.f_x = s1 * c2 * c3 + c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 - s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 + s1 * s2 * c3;
     q.w = c1 * c2 * c3 - s1 * s2 * s3;
   } else if (strcmp(e.order, "YXZ") == 0) {
-    q.x = s1 * c2 * c3 + c1 * s2 * s3;
-    q.y = c1 * s2 * c3 - s1 * c2 * s3;
-    q.z = c1 * c2 * s3 - s1 * s2 * c3;
+    q.f_x = s1 * c2 * c3 + c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 - s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 - s1 * s2 * c3;
     q.w = c1 * c2 * c3 + s1 * s2 * s3;
   } else if (strcmp(e.order, "ZXY") == 0) {
-    q.x = s1 * c2 * c3 - c1 * s2 * s3;
-    q.y = c1 * s2 * c3 + s1 * c2 * s3;
-    q.z = c1 * c2 * s3 + s1 * s2 * c3;
+    q.f_x = s1 * c2 * c3 - c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 + s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 + s1 * s2 * c3;
     q.w = c1 * c2 * c3 - s1 * s2 * s3;
   } else if (strcmp(e.order, "ZYX") == 0) {
-    q.x = s1 * c2 * c3 - c1 * s2 * s3;
-    q.y = c1 * s2 * c3 + s1 * c2 * s3;
-    q.z = c1 * c2 * s3 - s1 * s2 * c3;
+    q.f_x = s1 * c2 * c3 - c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 + s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 - s1 * s2 * c3;
     q.w = c1 * c2 * c3 + s1 * s2 * s3;
   } else if (strcmp(e.order, "YZX") == 0) {
-    q.x = s1 * c2 * c3 + c1 * s2 * s3;
-    q.y = c1 * s2 * c3 + s1 * c2 * s3;
-    q.z = c1 * c2 * s3 - s1 * s2 * c3;
+    q.f_x = s1 * c2 * c3 + c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 + s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 - s1 * s2 * c3;
     q.w = c1 * c2 * c3 - s1 * s2 * s3;
   } else if (strcmp(e.order, "XZY") == 0) {
-    q.x = s1 * c2 * c3 - c1 * s2 * s3;
-    q.y = c1 * s2 * c3 - s1 * c2 * s3;
-    q.z = c1 * c2 * s3 + s1 * s2 * c3;
+    q.f_x = s1 * c2 * c3 - c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 - s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 + s1 * s2 * c3;
     q.w = c1 * c2 * c3 + s1 * s2 * s3;
   } else {
     // Default to XYZ
-    q.x = s1 * c2 * c3 + c1 * s2 * s3;
-    q.y = c1 * s2 * c3 - s1 * c2 * s3;
-    q.z = c1 * c2 * s3 + s1 * s2 * c3;
+    q.f_x = s1 * c2 * c3 + c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 - s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 + s1 * s2 * c3;
     q.w = c1 * c2 * c3 - s1 * s2 * s3;
   }
   
@@ -262,27 +262,27 @@ farm_Quaternion farm_Quaternion_setFromRotationMatrix(farm_Matrix4 m) {
   if (trace > 0) {
     double s = 0.5 / sqrt(trace + 1.0);
     q.w = 0.25 / s;
-    q.x = (m32 - m23) * s;
-    q.y = (m13 - m31) * s;
-    q.z = (m21 - m12) * s;
+    q.f_x = (m32 - m23) * s;
+    q.f_y = (m13 - m31) * s;
+    q.f_z = (m21 - m12) * s;
   } else if (m11 > m22 && m11 > m33) {
     double s = 2.0 * sqrt(1.0 + m11 - m22 - m33);
     q.w = (m32 - m23) / s;
-    q.x = 0.25 * s;
-    q.y = (m12 + m21) / s;
-    q.z = (m13 + m31) / s;
+    q.f_x = 0.25 * s;
+    q.f_y = (m12 + m21) / s;
+    q.f_z = (m13 + m31) / s;
   } else if (m22 > m33) {
     double s = 2.0 * sqrt(1.0 + m22 - m11 - m33);
     q.w = (m13 - m31) / s;
-    q.x = (m12 + m21) / s;
-    q.y = 0.25 * s;
-    q.z = (m23 + m32) / s;
+    q.f_x = (m12 + m21) / s;
+    q.f_y = 0.25 * s;
+    q.f_z = (m23 + m32) / s;
   } else {
     double s = 2.0 * sqrt(1.0 + m33 - m11 - m22);
     q.w = (m21 - m12) / s;
-    q.x = (m13 + m31) / s;
-    q.y = (m23 + m32) / s;
-    q.z = 0.25 * s;
+    q.f_x = (m13 + m31) / s;
+    q.f_y = (m23 + m32) / s;
+    q.f_z = 0.25 * s;
   }
   
   return q;
@@ -294,7 +294,7 @@ farm_Euler farm_Euler_setFromQuaternion(farm_Quaternion q, const char* order) {
   strncpy(e.order, order, 3);
   e.order[3] = '\0';
   
-  double x = q.x, y = q.y, z = q.z, w = q.w;
+  double x = q.f_x, y = q.f_y, z = q.f_z, w = q.w;
   double x2 = x * x, y2 = y * y, z2 = z * z, w2 = w * w;
   
   // Build rotation matrix elements we need
@@ -310,17 +310,17 @@ farm_Euler farm_Euler_setFromQuaternion(farm_Quaternion q, const char* order) {
   
   // Extract Euler angles (XYZ order as default)
   if (strcmp(order, "XYZ") == 0 || order[0] == 0) {
-    e.y = asin(fmax(-1.0, fmin(1.0, m13)));
+    e.f_y = asin(fmax(-1.0, fmin(1.0, m13)));
     if (fabs(m13) < 0.9999999) {
-      e.x = atan2(-m23, m33);
-      e.z = atan2(-m12, m11);
+      e.f_x = atan2(-m23, m33);
+      e.f_z = atan2(-m12, m11);
     } else {
-      e.x = atan2(m32, m22);
-      e.z = 0;
+      e.f_x = atan2(m32, m22);
+      e.f_z = 0;
     }
   } else {
     // Simplified - only support XYZ for now
-    e.x = 0; e.y = 0; e.z = 0;
+    e.f_x = 0; e.f_y = 0; e.f_z = 0;
   }
   
   return e;

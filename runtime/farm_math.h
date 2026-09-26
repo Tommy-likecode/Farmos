@@ -9,7 +9,7 @@ static inline farm_Vector2 farm_Vector2_new(double x, double y) { return (farm_V
 static inline farm_Vector2 farm_Vector2_zero() { return (farm_Vector2){0, 0}; }
 
 // Vector3
-typedef struct { double x, y, z; } farm_Vector3;
+typedef struct { double f_x, f_y, f_z; } farm_Vector3;
 static inline farm_Vector3 farm_Vector3_new(double x, double y, double z) { return (farm_Vector3){x, y, z}; }
 static inline farm_Vector3 farm_Vector3_zero() { return (farm_Vector3){0, 0, 0}; }
 
@@ -36,7 +36,7 @@ static inline farm_Color farm_Color_new(double r, double g, double b) { return (
 static inline farm_Color farm_Color_zero() { return (farm_Color){0, 0, 0}; }
 
 // Euler
-typedef struct { double x, y, z; char order[4]; } farm_Euler;
+typedef struct { double f_x, f_y, f_z; char order[4]; } farm_Euler;
 static inline farm_Euler farm_Euler_new(double x, double y, double z, const char* order) {
   farm_Euler e = {x, y, z, {0}};
   for (int i = 0; i < 3 && order[i]; i++) e.order[i] = order[i];

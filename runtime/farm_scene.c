@@ -170,7 +170,7 @@ void farm_Object3D_updateMatrixWorld(farm_Object3D* self, bool force) {
 }
 
 void farm_Object3D_lookAt_xyz(farm_Object3D* self, double x, double y, double z) {
-  farm_Vector3 target = farm_Vector3_new(x, y, z);
+  farm_Vector3 target = farm_Vector3_new(x, f_y, z);
   farm_Vector3 up = farm_Vector3_new(0, 1, 0);
   
   // Direction from this to target
@@ -183,15 +183,15 @@ void farm_Object3D_lookAt_xyz(farm_Object3D* self, double x, double y, double z)
   farm_Vector3 y_axis = farm_Vector3_cross(z_axis, x_axis);
   
   farm_Matrix4 rot_mat = farm_Matrix4_identity();
-  rot_mat.elements[0] = x_axis.x;
-  rot_mat.elements[1] = x_axis.y;
-  rot_mat.elements[2] = x_axis.z;
-  rot_mat.elements[4] = y_axis.x;
-  rot_mat.elements[5] = y_axis.y;
-  rot_mat.elements[6] = y_axis.z;
-  rot_mat.elements[8] = z_axis.x;
-  rot_mat.elements[9] = z_axis.y;
-  rot_mat.elements[10] = z_axis.z;
+  rot_mat.elements[0] = x_axis.f_x;
+  rot_mat.elements[1] = x_axis.f_y;
+  rot_mat.elements[2] = x_axis.f_z;
+  rot_mat.elements[4] = y_axis.f_x;
+  rot_mat.elements[5] = y_axis.f_y;
+  rot_mat.elements[6] = y_axis.f_z;
+  rot_mat.elements[8] = z_axis.f_x;
+  rot_mat.elements[9] = z_axis.f_y;
+  rot_mat.elements[10] = z_axis.f_z;
   
   self->quaternion = farm_Quaternion_setFromRotationMatrix(rot_mat);
   self->quaternion_dirty = true;
@@ -199,7 +199,7 @@ void farm_Object3D_lookAt_xyz(farm_Object3D* self, double x, double y, double z)
 }
 
 void farm_Object3D_lookAt_v(farm_Object3D* self, farm_Vector3 target) {
-  farm_Object3D_lookAt_xyz(self, target.x, target.y, target.z);
+  farm_Object3D_lookAt_xyz(self, target.f_x, target.f_y, target.f_z);
 }
 
 void farm_Object3D_setRotationFromEuler(farm_Object3D* self, farm_Euler e) {
@@ -261,7 +261,7 @@ void farm_PerspectiveCamera_updateProjectionMatrix(farm_PerspectiveCamera* self)
 }
 
 void farm_PerspectiveCamera_lookAt_xyz(farm_PerspectiveCamera* self, double x, double y, double z) {
-  farm_Object3D_lookAt_xyz((farm_Object3D*)self, x, y, z);
+  farm_Object3D_lookAt_xyz((farm_Object3D*)self, x, f_y, z);
 }
 
 void farm_PerspectiveCamera_lookAt_v(farm_PerspectiveCamera* self, farm_Vector3 target) {
@@ -742,20 +742,20 @@ static inline double edge_function(double ax, double ay, double bx, double by, d
 // Helper: transform vector by matrix (point)
 static farm_Vector3 transform_point(farm_Matrix4 m, farm_Vector3 v) {
   double* e = m.elements;
-  double x = e[0]*v.x + e[4]*v.y + e[8]*v.z + e[12];
-  double y = e[1]*v.x + e[5]*v.y + e[9]*v.z + e[13];
-  double z = e[2]*v.x + e[6]*v.y + e[10]*v.z + e[14];
-  double w = e[3]*v.x + e[7]*v.y + e[11]*v.z + e[15];
+  double x = e[0]*v.f_x + e[4]*v.f_y + e[8]*v.f_z + e[12];
+  double y = e[1]*v.f_x + e[5]*v.f_y + e[9]*v.f_z + e[13];
+  double z = e[2]*v.f_x + e[6]*v.f_y + e[10]*v.f_z + e[14];
+  double w = e[3]*v.f_x + e[7]*v.f_y + e[11]*v.f_z + e[15];
   return farm_Vector3_new(x/w, y/w, z/w);
 }
 
 // Helper: transform direction by matrix (no translation)
 static farm_Vector3 transform_direction(farm_Matrix4 m, farm_Vector3 v) {
   double* e = m.elements;
-  double x = e[0]*v.x + e[4]*v.y + e[8]*v.z;
-  double y = e[1]*v.x + e[5]*v.y + e[9]*v.z;
-  double z = e[2]*v.x + e[6]*v.y + e[10]*v.z;
-  return farm_Vector3_new(x, y, z);
+  double x = e[0]*v.f_x + e[4]*v.f_y + e[8]*v.f_z;
+  double y = e[1]*v.f_x + e[5]*v.f_y + e[9]*v.f_z;
+  double z = e[2]*v.f_x + e[6]*v.f_y + e[10]*v.f_z;
+  return farm_Vector3_new(x, f_y, z);
 }
 
 // Collect lights
@@ -860,9 +860,9 @@ static farm_Color shade_standard(
     
     // World position: extract translation from matrixWorld
     farm_Vector3 light_pos;
-    light_pos.x = L->base.matrixWorld.elements[12];
-    light_pos.y = L->base.matrixWorld.elements[13];
-    light_pos.z = L->base.matrixWorld.elements[14];
+    light_pos.f_x = L->base.matrixWorld.elements[12];
+    light_pos.f_y = L->base.matrixWorld.elements[13];
+    light_pos.f_z = L->base.matrixWorld.elements[14];
     
     farm_Vector3 toLight = farm_Vector3_sub(light_pos, world_pos);
     double dist = farm_Vector3_length(toLight);
@@ -958,9 +958,9 @@ static void rasterize_mesh(
   );
   
   farm_Vector3 camera_pos;
-  camera_pos.x = camera->base.matrixWorld.elements[12];
-  camera_pos.y = camera->base.matrixWorld.elements[13];
-  camera_pos.z = camera->base.matrixWorld.elements[14];
+  camera_pos.f_x = camera->base.matrixWorld.elements[12];
+  camera_pos.f_y = camera->base.matrixWorld.elements[13];
+  camera_pos.f_z = camera->base.matrixWorld.elements[14];
   
   // Rasterize each triangle
   for (int32_t ti = 0; ti < geom_data->index_count / 3; ti++) {
@@ -1011,17 +1011,17 @@ static void rasterize_mesh(
     farm_Vector3 wn2 = farm_Vector3_normalize(transform_direction(mesh->base.matrixWorld, n2));
     
     // Transform to clip space
-    farm_Vector4 clip0 = farm_Vector4_applyMatrix4(farm_Vector4_new(p0.x, p0.y, p0.z, 1), mvp);
-    farm_Vector4 clip1 = farm_Vector4_applyMatrix4(farm_Vector4_new(p1.x, p1.y, p1.z, 1), mvp);
-    farm_Vector4 clip2 = farm_Vector4_applyMatrix4(farm_Vector4_new(p2.x, p2.y, p2.z, 1), mvp);
+    farm_Vector4 clip0 = farm_Vector4_applyMatrix4(farm_Vector4_new(p0.f_x, p0.f_y, p0.f_z, 1), mvp);
+    farm_Vector4 clip1 = farm_Vector4_applyMatrix4(farm_Vector4_new(p1.f_x, p1.f_y, p1.f_z, 1), mvp);
+    farm_Vector4 clip2 = farm_Vector4_applyMatrix4(farm_Vector4_new(p2.f_x, p2.f_y, p2.f_z, 1), mvp);
     
     // Reject if behind camera
     if (clip0.w <= 0 || clip1.w <= 0 || clip2.w <= 0) continue;
     
     // NDC
-    double ndc0_x = clip0.x / clip0.w, ndc0_y = clip0.y / clip0.w, ndc0_z = clip0.z / clip0.w;
-    double ndc1_x = clip1.x / clip1.w, ndc1_y = clip1.y / clip1.w, ndc1_z = clip1.z / clip1.w;
-    double ndc2_x = clip2.x / clip2.w, ndc2_y = clip2.y / clip2.w, ndc2_z = clip2.z / clip2.w;
+    double ndc0_x = clip0.f_x / clip0.w, ndc0_y = clip0.f_y / clip0.w, ndc0_z = clip0.f_z / clip0.w;
+    double ndc1_x = clip1.f_x / clip1.w, ndc1_y = clip1.f_y / clip1.w, ndc1_z = clip1.f_z / clip1.w;
+    double ndc2_x = clip2.f_x / clip2.w, ndc2_y = clip2.f_y / clip2.w, ndc2_z = clip2.f_z / clip2.w;
     
     // Screen space
     double sx0 = (ndc0_x * 0.5 + 0.5) * renderer->width;
@@ -1064,14 +1064,14 @@ static void rasterize_mesh(
         
         // Interpolate world position and normal
         farm_Vector3 world_pos;
-        world_pos.x = w0 * wp0.x + w1 * wp1.x + w2 * wp2.x;
-        world_pos.y = w0 * wp0.y + w1 * wp1.y + w2 * wp2.y;
-        world_pos.z = w0 * wp0.z + w1 * wp1.z + w2 * wp2.z;
+        world_pos.f_x = w0 * wp0.f_x + w1 * wp1.f_x + w2 * wp2.f_x;
+        world_pos.f_y = w0 * wp0.f_y + w1 * wp1.f_y + w2 * wp2.f_y;
+        world_pos.f_z = w0 * wp0.f_z + w1 * wp1.f_z + w2 * wp2.f_z;
         
         farm_Vector3 world_normal;
-        world_normal.x = w0 * wn0.x + w1 * wn1.x + w2 * wn2.x;
-        world_normal.y = w0 * wn0.y + w1 * wn1.y + w2 * wn2.y;
-        world_normal.z = w0 * wn0.z + w1 * wn1.z + w2 * wn2.z;
+        world_normal.f_x = w0 * wn0.f_x + w1 * wn1.f_x + w2 * wn2.f_x;
+        world_normal.f_y = w0 * wn0.f_y + w1 * wn1.f_y + w2 * wn2.f_y;
+        world_normal.f_z = w0 * wn0.f_z + w1 * wn1.f_z + w2 * wn2.f_z;
         world_normal = farm_Vector3_normalize(world_normal);
         
         // Shade
@@ -1314,3 +1314,14 @@ void farm_Renderer_savePNG(farm_Renderer* self, FarmString path) {
 void farm_Renderer_dispose(farm_Renderer* self) {
   self->disposed = true;
 }
+
+// Constructor wrapper functions for emit_c compatibility
+farm_Scene* farm_Scene_new() { return farm_arena_alloc(sizeof(farm_Scene)); }
+farm_PerspectiveCamera* farm_PerspectiveCamera_new(double fov, double aspect, double near, double far) { farm_PerspectiveCamera* c = farm_arena_alloc(sizeof(farm_PerspectiveCamera)); farm_PerspectiveCamera__constructor(c, fov, aspect, near, far); return c; }
+farm_BoxGeometry* farm_BoxGeometry_new_whd(double w, double h, double d) { return farm_BoxGeometry__new(w, h, d); }
+farm_SphereGeometry* farm_SphereGeometry_new_full(double r, int ws, int hs) { return farm_SphereGeometry__new(r, ws, hs); }
+farm_PlaneGeometry* farm_PlaneGeometry_new_wh(double w, double h) { return farm_PlaneGeometry__new(w, h); }
+farm_MeshBasicMaterial* farm_MeshBasicMaterial_new_hex(int hex) { return farm_MeshBasicMaterial__new(hex); }
+farm_MeshStandardMaterial* farm_MeshStandardMaterial_new_hex(int hex) { return farm_MeshStandardMaterial__new(hex); }
+farm_Mesh* farm_Mesh_new(void* geom, void* mat) { return farm_Mesh__new(geom, mat); }
+farm_Renderer* farm_Renderer_new_wh(int w, int h) { farm_Renderer* r = farm_arena_alloc(sizeof(farm_Renderer)); farm_Renderer__constructor(r, w, h); return r; }
