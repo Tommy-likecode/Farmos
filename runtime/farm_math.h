@@ -14,7 +14,7 @@ static inline farm_Vector3 farm_Vector3_new(double x, double y, double z) { retu
 static inline farm_Vector3 farm_Vector3_zero() { return (farm_Vector3){0, 0, 0}; }
 
 // Vector4
-typedef struct { double x, y, z, w; } farm_Vector4;
+typedef struct { double f_x, f_y, f_z, w; } farm_Vector4;
 static inline farm_Vector4 farm_Vector4_new(double x, double y, double z, double w) { return (farm_Vector4){x, y, z, w}; }
 static inline farm_Vector4 farm_Vector4_zero() { return (farm_Vector4){0, 0, 0, 0}; }
 
@@ -27,7 +27,7 @@ typedef struct { double elements[16]; } farm_Matrix4;
 farm_Matrix4 farm_Matrix4_identity();
 
 // Quaternion
-typedef struct { double x, y, z, w; } farm_Quaternion;
+typedef struct { double f_x, f_y, f_z, w; } farm_Quaternion;
 static inline farm_Quaternion farm_Quaternion_identity() { return (farm_Quaternion){0, 0, 0, 1}; }
 
 // Color

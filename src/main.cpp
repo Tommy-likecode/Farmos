@@ -2082,11 +2082,20 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   }
   cc = cc_command_prefix(cc);
   // Size-oriented flags; NO -ffast-math. GNU statement-expressions require clang/gcc.
+  // M3: Also compile farm_math.c and farm_scene.c for scene runtime
+  fs::path rt_math_c = rt_h_dir / "farm_math.c";
+  fs::path rt_scene_c = rt_h_dir / "farm_scene.c";
+  
   std::ostringstream cmd;
   cmd << cc << " -std=c11 -Os -flto -ffunction-sections -fdata-sections "
       << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
-      << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" "
-      << "-o \"" << path_to_utf8(out_exe) << "\" "
+      << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
+  
+  // M3: Add math and scene runtime if they exist
+  if (fs::exists(rt_math_c)) cmd << "\"" << path_to_utf8(rt_math_c) << "\" ";
+  if (fs::exists(rt_scene_c)) cmd << "\"" << path_to_utf8(rt_scene_c) << "\" ";
+  
+  cmd << "-o \"" << path_to_utf8(out_exe) << "\" "
       << "-Wl,--gc-sections -s -lm";
   if (verbose) std::cerr << "farmc: " << cmd.str() << "\n";
   int rc = run_cmd(cmd.str());
@@ -2095,8 +2104,12 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
     std::ostringstream cmd2;
     cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections "
          << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
-         << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" "
-         << "-o \"" << path_to_utf8(out_exe) << "\" "
+         << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
+    
+    if (fs::exists(rt_math_c)) cmd2 << "\"" << path_to_utf8(rt_math_c) << "\" ";
+    if (fs::exists(rt_scene_c)) cmd2 << "\"" << path_to_utf8(rt_scene_c) << "\" ";
+    
+    cmd2 << "-o \"" << path_to_utf8(out_exe) << "\" "
          << "-Wl,--gc-sections -s -lm";
     if (verbose) std::cerr << "farmc: retry " << cmd2.str() << "\n";
     rc = run_cmd(cmd2.str());

@@ -52,14 +52,14 @@ typedef struct {
 // Object3D - base scene graph node
 struct farm_Object3D {
   farm_Object3DType type;
-  farm_Vector3 position;
-  farm_Euler rotation;
-  farm_Quaternion quaternion;
-  farm_Vector3 scale;
-  farm_Matrix4 matrix;
-  farm_Matrix4 matrixWorld;
+  farm_Vector3 f_position;
+  farm_Euler f_rotation;
+  farm_Quaternion f_quaternion;
+  farm_Vector3 f_scale;
+  farm_Matrix4 f_matrix;
+  farm_Matrix4 f_matrixWorld;
   bool matrixAutoUpdate;
-  bool visible;
+  bool f_visible;
   farm_Object3D* parent;
   farm_ChildList children;
   // Flags for sync
@@ -69,7 +69,21 @@ struct farm_Object3D {
 
 // Scene - root of scene graph
 struct farm_Scene {
-  farm_Object3D base;
+  // Inherited from Object3D
+  farm_Object3DType type;
+  farm_Vector3 f_position;
+  farm_Euler f_rotation;
+  farm_Quaternion f_quaternion;
+  farm_Vector3 f_scale;
+  farm_Matrix4 f_matrix;
+  farm_Matrix4 f_matrixWorld;
+  bool matrixAutoUpdate;
+  bool f_visible;
+  farm_Object3D* parent;
+  farm_ChildList children;
+  bool rotation_dirty;
+  bool quaternion_dirty;
+  // Scene-specific
   bool hasBackground;
   farm_Color background;
 };

@@ -24,7 +24,7 @@ static bool is_ancestor_of(farm_Object3D* potential_ancestor, farm_Object3D* nod
 // Helper: sync rotation/quaternion
 static void sync_quaternion_from_rotation(farm_Object3D* self) {
   if (self->rotation_dirty) {
-    self->quaternion = farm_Quaternion_setFromEuler(self->rotation);
+    self->f_quaternion = farm_Quaternion_setFromEuler(self->f_rotation);
     self->rotation_dirty = false;
     self->quaternion_dirty = false;
   }
@@ -32,7 +32,7 @@ static void sync_quaternion_from_rotation(farm_Object3D* self) {
 
 static void sync_rotation_from_quaternion(farm_Object3D* self) {
   if (self->quaternion_dirty) {
-    self->rotation = farm_Euler_setFromQuaternion(self->quaternion, self->rotation.order);
+    self->f_rotation = farm_Euler_setFromQuaternion(self->f_quaternion, self->f_rotation.order);
     self->quaternion_dirty = false;
     self->rotation_dirty = false;
   }
@@ -42,14 +42,14 @@ static void sync_rotation_from_quaternion(farm_Object3D* self) {
 farm_Object3D* farm_Object3D_new() {
   farm_Object3D* obj = (farm_Object3D*)farm_arena_alloc(sizeof(farm_Object3D));
   obj->type = FARM_OBJECT3D_TYPE_OBJECT3D;
-  obj->position = farm_Vector3_zero();
-  obj->rotation = farm_Euler_new(0, 0, 0, "XYZ");
-  obj->quaternion = farm_Quaternion_identity();
-  obj->scale = farm_Vector3_new(1, 1, 1);
-  obj->matrix = farm_Matrix4_identity();
-  obj->matrixWorld = farm_Matrix4_identity();
+  obj->f_position = farm_Vector3_zero();
+  obj->f_rotation = farm_Euler_new(0, 0, 0, "XYZ");
+  obj->f_quaternion = farm_Quaternion_identity();
+  obj->f_scale = farm_Vector3_new(1, 1, 1);
+  obj->f_matrix = farm_Matrix4_identity();
+  obj->f_matrixWorld = farm_Matrix4_identity();
   obj->matrixAutoUpdate = true;
-  obj->visible = true;
+  obj->f_visible = true;
   obj->parent = NULL;
   obj->children.items = NULL;
   obj->children.count = 0;
@@ -150,7 +150,7 @@ farm_Object3D* farm_Object3D_getChild(farm_Object3D* self, int64_t index) {
 void farm_Object3D_updateMatrix(farm_Object3D* self) {
   sync_quaternion_from_rotation(self);
   sync_rotation_from_quaternion(self);
-  self->matrix = farm_Matrix4_compose(self->position, self->quaternion, self->scale);
+  self->matrix = farm_Matrix4_compose(self->f_position, self->f_quaternion, self->f_scale);
 }
 
 void farm_Object3D_updateMatrixWorld(farm_Object3D* self, bool force) {
@@ -159,9 +159,9 @@ void farm_Object3D_updateMatrixWorld(farm_Object3D* self, bool force) {
   }
   
   if (self->parent) {
-    self->matrixWorld = farm_Matrix4_multiplyMatrices(self->parent->matrixWorld, self->matrix);
+    self->f_matrixWorld = farm_Matrix4_multiplyMatrices(self->parent->f_matrixWorld, self->matrix);
   } else {
-    self->matrixWorld = self->matrix;
+    self->f_matrixWorld = self->matrix;
   }
   
   for (int32_t i = 0; i < self->children.count; i++) {
@@ -174,7 +174,7 @@ void farm_Object3D_lookAt_xyz(farm_Object3D* self, double x, double y, double z)
   farm_Vector3 up = farm_Vector3_new(0, 1, 0);
   
   // Direction from this to target
-  farm_Vector3 dir = farm_Vector3_sub(target, self->position);
+  farm_Vector3 dir = farm_Vector3_sub(target, self->f_position);
   dir = farm_Vector3_normalize(dir);
   
   // Build rotation matrix to look down -Z toward target
@@ -193,7 +193,7 @@ void farm_Object3D_lookAt_xyz(farm_Object3D* self, double x, double y, double z)
   rot_mat.elements[9] = z_axis.f_y;
   rot_mat.elements[10] = z_axis.f_z;
   
-  self->quaternion = farm_Quaternion_setFromRotationMatrix(rot_mat);
+  self->f_quaternion = farm_Quaternion_setFromRotationMatrix(rot_mat);
   self->quaternion_dirty = true;
   sync_rotation_from_quaternion(self);
 }
@@ -203,13 +203,13 @@ void farm_Object3D_lookAt_v(farm_Object3D* self, farm_Vector3 target) {
 }
 
 void farm_Object3D_setRotationFromEuler(farm_Object3D* self, farm_Euler e) {
-  self->rotation = e;
+  self->f_rotation = e;
   self->rotation_dirty = true;
   sync_quaternion_from_rotation(self);
 }
 
 void farm_Object3D_setRotationFromQuaternion(farm_Object3D* self, farm_Quaternion q) {
-  self->quaternion = q;
+  self->f_quaternion = q;
   self->quaternion_dirty = true;
   sync_rotation_from_quaternion(self);
 }
@@ -242,7 +242,7 @@ farm_PerspectiveCamera* farm_PerspectiveCamera_new(double fov, double aspect, do
   cam->aspect = aspect;
   cam->near = near;
   cam->far = far;
-  cam->matrixWorldInverse = farm_Matrix4_identity();
+  cam->f_matrixWorldInverse = farm_Matrix4_identity();
   cam->projectionMatrix = farm_Matrix4_identity();
   farm_PerspectiveCamera_updateProjectionMatrix(cam);
   return cam;
@@ -769,7 +769,7 @@ typedef struct {
 } LightList;
 
 static void collect_lights_recursive(farm_Object3D* obj, LightList* lights) {
-  if (!obj->visible) return;
+  if (!obj->f_visible) return;
   
   // Check if this is a light (hack: check if it's an ambient/directional/point)
   // In a real implementation we'd have type tags, but for now we check sizes/patterns
@@ -826,9 +826,9 @@ static farm_Color shade_standard(
   for (int i = 0; i < lights->directional_count; i++) {
     farm_DirectionalLight* L = lights->directionals[i];
     
-    // World direction: transform local (0,0,-1) by matrixWorld
+    // World direction: transform local (0,0,-1) by f_matrixWorld
     farm_Vector3 local_dir = farm_Vector3_new(0, 0, -1);
-    farm_Vector3 world_dir = transform_direction(L->base.matrixWorld, local_dir);
+    farm_Vector3 world_dir = transform_direction(L->f_matrixWorld, local_dir);
     world_dir = farm_Vector3_normalize(world_dir);
     
     // Incident light direction (toward surface)
@@ -858,11 +858,11 @@ static farm_Color shade_standard(
   for (int i = 0; i < lights->point_count; i++) {
     farm_PointLight* L = lights->points[i];
     
-    // World position: extract translation from matrixWorld
+    // World position: extract translation from f_matrixWorld
     farm_Vector3 light_pos;
-    light_pos.f_x = L->base.matrixWorld.elements[12];
-    light_pos.f_y = L->base.matrixWorld.elements[13];
-    light_pos.f_z = L->base.matrixWorld.elements[14];
+    light_pos.f_x = L->f_matrixWorld.elements[12];
+    light_pos.f_y = L->f_matrixWorld.elements[13];
+    light_pos.f_z = L->f_matrixWorld.elements[14];
     
     farm_Vector3 toLight = farm_Vector3_sub(light_pos, world_pos);
     double dist = farm_Vector3_length(toLight);
@@ -908,7 +908,7 @@ static farm_Color shade_standard(
 static void traverse_collect_lights(farm_Object3D* obj, LightList* lights);
 
 static void traverse_collect_lights(farm_Object3D* obj, LightList* lights) {
-  if (!obj->visible) return;
+  if (!obj->f_visible) return;
   
   // Heuristic: check if this object could be a light by checking memory layout
   // In reality we'd use proper type tags. For this implementation, we'll
@@ -926,7 +926,7 @@ static void rasterize_mesh(
   farm_PerspectiveCamera* camera,
   LightList* lights
 ) {
-  if (!mesh->base.visible) return;
+  if (!mesh->f_visible) return;
   
   // Check disposed
   farm_GeometryData* geom_data = NULL;
@@ -954,13 +954,13 @@ static void rasterize_mesh(
   
   farm_Matrix4 mvp = farm_Matrix4_multiplyMatrices(
     camera->projectionMatrix,
-    farm_Matrix4_multiplyMatrices(camera->matrixWorldInverse, mesh->base.matrixWorld)
+    farm_Matrix4_multiplyMatrices(camera->f_matrixWorldInverse, mesh->f_matrixWorld)
   );
   
   farm_Vector3 camera_pos;
-  camera_pos.f_x = camera->base.matrixWorld.elements[12];
-  camera_pos.f_y = camera->base.matrixWorld.elements[13];
-  camera_pos.f_z = camera->base.matrixWorld.elements[14];
+  camera_pos.f_x = camera->f_matrixWorld.elements[12];
+  camera_pos.f_y = camera->f_matrixWorld.elements[13];
+  camera_pos.f_z = camera->f_matrixWorld.elements[14];
   
   // Rasterize each triangle
   for (int32_t ti = 0; ti < geom_data->index_count / 3; ti++) {
@@ -1002,13 +1002,13 @@ static void rasterize_mesh(
     );
     
     // Transform to world space
-    farm_Vector3 wp0 = transform_point(mesh->base.matrixWorld, p0);
-    farm_Vector3 wp1 = transform_point(mesh->base.matrixWorld, p1);
-    farm_Vector3 wp2 = transform_point(mesh->base.matrixWorld, p2);
+    farm_Vector3 wp0 = transform_point(mesh->f_matrixWorld, p0);
+    farm_Vector3 wp1 = transform_point(mesh->f_matrixWorld, p1);
+    farm_Vector3 wp2 = transform_point(mesh->f_matrixWorld, p2);
     
-    farm_Vector3 wn0 = farm_Vector3_normalize(transform_direction(mesh->base.matrixWorld, n0));
-    farm_Vector3 wn1 = farm_Vector3_normalize(transform_direction(mesh->base.matrixWorld, n1));
-    farm_Vector3 wn2 = farm_Vector3_normalize(transform_direction(mesh->base.matrixWorld, n2));
+    farm_Vector3 wn0 = farm_Vector3_normalize(transform_direction(mesh->f_matrixWorld, n0));
+    farm_Vector3 wn1 = farm_Vector3_normalize(transform_direction(mesh->f_matrixWorld, n1));
+    farm_Vector3 wn2 = farm_Vector3_normalize(transform_direction(mesh->f_matrixWorld, n2));
     
     // Transform to clip space
     farm_Vector4 clip0 = farm_Vector4_applyMatrix4(farm_Vector4_new(p0.f_x, p0.f_y, p0.f_z, 1), mvp);
@@ -1117,7 +1117,7 @@ static void traverse_render(
   farm_PerspectiveCamera* camera,
   LightList* lights
 ) {
-  if (!obj->visible) return;
+  if (!obj->f_visible) return;
   
   // Check if this is a mesh (heuristic: has geometry and material fields)
   // In production we'd use proper type tags
@@ -1156,7 +1156,7 @@ void farm_Renderer_render(farm_Renderer* self, farm_Scene* scene, farm_Perspecti
   farm_PerspectiveCamera_updateMatrixWorld(camera, true);
   
   // Update camera inverse and projection
-  camera->matrixWorldInverse = farm_Matrix4_invert(camera->base.matrixWorld);
+  camera->f_matrixWorldInverse = farm_Matrix4_invert(camera->f_matrixWorld);
   farm_PerspectiveCamera_updateProjectionMatrix(camera);
   
   // Clear buffers
