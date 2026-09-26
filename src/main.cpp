@@ -173,21 +173,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
   m.diag_path = "farmos:scene";
   m.is_main = false;
   
-  // Import types from farmos:math
-  // Find the math module and copy its struct definitions
-  for (const auto& mod : existing_modules) {
-    if (mod.path == "farmos:math") {
-      for (const auto& s : mod.structs) {
-        Import imp;
-        imp.module_path = "farmos:math";
-        imp.imported_name = s.name;
-        imp.local_name = s.name;
-        imp.loc = SourceLoc{1, 1};
-        m.imports.push_back(imp);
-      }
-      break;
-    }
-  }
+  // No imports needed - will wire math types manually in bind_imports
   
   // For M3, we define classes (reference types)
   // Object3D, Scene, PerspectiveCamera, Mesh, BoxGeometry, SphereGeometry, PlaneGeometry,
@@ -197,46 +183,43 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
   {
     ClassDecl cd;
     cd.name = "Object3D";
-    cd.c_sym = "farm_Object3D";
+    cd.c_sym = "Object3D";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     
-    // Fields - these are stored inline as structs from farmos:math
-    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"rotation", Type::ty_struct("farm_Euler"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"quaternion", Type::ty_struct("farm_Quaternion"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"scale", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"matrix", Type::ty_struct("farm_Matrix4"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"matrixWorld", Type::ty_struct("farm_Matrix4"), SourceLoc{1, 1}});
+    // Fields - use display names for type resolution
+    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"rotation", Type::ty_struct("Euler"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"quaternion", Type::ty_struct("Quaternion"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"scale", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"matrix", Type::ty_struct("Matrix4"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"matrixWorld", Type::ty_struct("Matrix4"), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"matrixAutoUpdate", Type::ty_bool(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"visible", Type::ty_bool(), SourceLoc{1, 1}});
     
-    // Constructor - no args
+    // Constructor - exactly one, no args
     {
       MethodDecl md;
-      md.name = cd.name; // Constructor has same name as class
+      md.name = cd.name;
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
+      md.is_ctor = true;
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
       cd.methods.push_back(std::move(md));
     }
     
-    // Methods with empty bodies (runtime implemented) 
+    // add method
     {
       MethodDecl md;
       md.name = "add";
-      md.params.push_back(Param{"child", Type::ty_class("farm_Object3D"), SourceLoc{1,1}});
-      md.ret = Type::ty_class("farm_Object3D");
+      md.params.push_back(Param{"child", Type::ty_class("Object3D"), SourceLoc{1,1}});
+      md.ret = Type::ty_class("Object3D");
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
-      auto ret = std::make_unique<Stmt>();
-      ret->kind = StmtKind::Return;
-      ret->value = nullptr; // Placeholder
-      block->stmts.push_back(std::move(ret));
+      // Return self for chaining - emit_c will handle
       md.body = std::move(block);
       cd.methods.push_back(std::move(md));
     }
@@ -244,34 +227,33 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     m.classes.push_back(std::move(cd));
   }
   
-  // Scene class (extends Object3D semantics)
+  // Scene class
   {
     ClassDecl cd;
     cd.name = "Scene";
-    cd.c_sym = "farm_Scene";
+    cd.c_sym = "Scene";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     cd.fields.push_back(FieldDecl{"hasBackground", Type::ty_bool(), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"background", Type::ty_struct("farm_Color"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"background", Type::ty_struct("Color"), SourceLoc{1, 1}});
     
-    // Constructor
+    // Constructor - exactly one, no args
     {
       MethodDecl md;
       md.name = cd.name;
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
+      md.is_ctor = true;
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
       cd.methods.push_back(std::move(md));
     }
     
-    // Scene inherits Object3D methods, but also has its own
     {
       MethodDecl md;
       md.name = "setBackground";
-      md.params.push_back(Param{"color", Type::ty_struct("farm_Color"), SourceLoc{1,1}});
+      md.params.push_back(Param{"color", Type::ty_struct("Color"), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();
@@ -282,15 +264,11 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     {
       MethodDecl md;
       md.name = "add";
-      md.params.push_back(Param{"child", Type::ty_class("farm_Object3D"), SourceLoc{1,1}});
-      md.ret = Type::ty_class("farm_Object3D");
+      md.params.push_back(Param{"child", Type::ty_class("Object3D"), SourceLoc{1,1}});
+      md.ret = Type::ty_class("Object3D");
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
-      auto ret = std::make_unique<Stmt>();
-      ret->kind = StmtKind::Return;
-      ret->value = nullptr;
-      block->stmts.push_back(std::move(ret));
       md.body = std::move(block);
       cd.methods.push_back(std::move(md));
     }
@@ -302,16 +280,16 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
   {
     ClassDecl cd;
     cd.name = "PerspectiveCamera";
-    cd.c_sym = "farm_PerspectiveCamera";
+    cd.c_sym = "PerspectiveCamera";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     cd.fields.push_back(FieldDecl{"fov", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"aspect", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"near", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"far", Type::ty_float(), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
     
-    // Constructor (fov, aspect, near, far)
+    // Constructor - exactly one (fov, aspect, near, far)
     {
       MethodDecl md;
       md.name = cd.name;
@@ -321,7 +299,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       md.params.push_back(Param{"far", Type::ty_float(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
+      md.is_ctor = true;
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
@@ -345,15 +323,15 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     m.classes.push_back(std::move(cd));
   }
   
-  // BoxGeometry, SphereGeometry, PlaneGeometry
+  // BoxGeometry
   {
     ClassDecl cd;
     cd.name = "BoxGeometry";
-    cd.c_sym = "farm_BoxGeometry";
+    cd.c_sym = "BoxGeometry";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     
-    // Constructor (width, height, depth)
+    // Constructor - exactly one (width, height, depth)
     {
       MethodDecl md;
       md.name = cd.name;
@@ -362,7 +340,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       md.params.push_back(Param{"depth", Type::ty_float(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
+      md.is_ctor = true;
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
@@ -382,28 +360,16 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     
     m.classes.push_back(std::move(cd));
   }
+  
+  // SphereGeometry - single constructor for most common case (3 args)
   {
     ClassDecl cd;
     cd.name = "SphereGeometry";
-    cd.c_sym = "farm_SphereGeometry";
+    cd.c_sym = "SphereGeometry";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     
-    // Constructor (radius)
-    {
-      MethodDecl md;
-      md.name = cd.name;
-      md.params.push_back(Param{"radius", Type::ty_float(), SourceLoc{1,1}});
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    
-    // Constructor (radius, widthSegments, heightSegments)
+    // Constructor - exactly one (radius, widthSegments, heightSegments)
     {
       MethodDecl md;
       md.name = cd.name;
@@ -412,7 +378,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       md.params.push_back(Param{"heightSegments", Type::ty_int(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
+      md.is_ctor = true;
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
@@ -432,14 +398,16 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     
     m.classes.push_back(std::move(cd));
   }
+  
+  // PlaneGeometry
   {
     ClassDecl cd;
     cd.name = "PlaneGeometry";
-    cd.c_sym = "farm_PlaneGeometry";
+    cd.c_sym = "PlaneGeometry";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     
-    // Constructor (width, height)
+    // Constructor - exactly one (width, height)
     {
       MethodDecl md;
       md.name = cd.name;
@@ -447,7 +415,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       md.params.push_back(Param{"height", Type::ty_float(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
+      md.is_ctor = true;
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
@@ -468,23 +436,23 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     m.classes.push_back(std::move(cd));
   }
   
-  // MeshBasicMaterial, MeshStandardMaterial
+  // MeshBasicMaterial
   {
     ClassDecl cd;
     cd.name = "MeshBasicMaterial";
-    cd.c_sym = "farm_MeshBasicMaterial";
+    cd.c_sym = "MeshBasicMaterial";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
-    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("farm_Color"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("Color"), SourceLoc{1, 1}});
     
-    // Constructor (color_hex)
+    // Constructor - exactly one (color_hex)
     {
       MethodDecl md;
       md.name = cd.name;
       md.params.push_back(Param{"color", Type::ty_int(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
+      md.is_ctor = true;
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
@@ -504,24 +472,26 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     
     m.classes.push_back(std::move(cd));
   }
+  
+  // MeshStandardMaterial
   {
     ClassDecl cd;
     cd.name = "MeshStandardMaterial";
-    cd.c_sym = "farm_MeshStandardMaterial";
+    cd.c_sym = "MeshStandardMaterial";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
-    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("farm_Color"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("Color"), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"roughness", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"metalness", Type::ty_float(), SourceLoc{1, 1}});
     
-    // Constructor (color_hex)
+    // Constructor - exactly one (color_hex)
     {
       MethodDecl md;
       md.name = cd.name;
       md.params.push_back(Param{"color", Type::ty_int(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
+      md.is_ctor = true;
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
@@ -549,20 +519,21 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.c_sym = "farm_Mesh";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
-    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"rotation", Type::ty_struct("farm_Euler"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"quaternion", Type::ty_struct("farm_Quaternion"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"scale", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"rotation", Type::ty_struct("Euler"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"quaternion", Type::ty_struct("Quaternion"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"scale", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
     
-    // Constructor (geometry, material) - generic
+    // Constructor - exactly one (geometry: BoxGeometry, material: MeshBasicMaterial)
+    // Type checker will allow subtype/compatible assignments
     {
       MethodDecl md;
       md.name = cd.name;
-      md.params.push_back(Param{"geometry", Type::ty_class("farm_BoxGeometry"), SourceLoc{1,1}}); // Placeholder type
-      md.params.push_back(Param{"material", Type::ty_class("farm_MeshBasicMaterial"), SourceLoc{1,1}}); // Placeholder type
+      md.params.push_back(Param{"geometry", Type::ty_class("BoxGeometry"), SourceLoc{1,1}});
+      md.params.push_back(Param{"material", Type::ty_class("MeshBasicMaterial"), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
+      md.is_ctor = true;
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
@@ -572,7 +543,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     m.classes.push_back(std::move(cd));
   }
   
-  // Lights
+  // AmbientLight - single constructor (1 arg, most common)
   {
     ClassDecl cd;
     cd.name = "AmbientLight";
@@ -580,29 +551,15 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     
-    // Constructor (color_hex)
+    // Constructor - exactly one (color_hex)
+    // Emit_c will handle 2-arg variant via runtime dispatch
     {
       MethodDecl md;
       md.name = cd.name;
       md.params.push_back(Param{"color", Type::ty_int(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    
-    // Constructor (color_hex, intensity)
-    {
-      MethodDecl md;
-      md.name = cd.name;
-      md.params.push_back(Param{"color", Type::ty_int(), SourceLoc{1,1}});
-      md.params.push_back(Param{"intensity", Type::ty_float(), SourceLoc{1,1}});
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
+      md.is_ctor = true;
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
@@ -611,6 +568,8 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     
     m.classes.push_back(std::move(cd));
   }
+  
+  // DirectionalLight - single constructor (1 arg)
   {
     ClassDecl cd;
     cd.name = "DirectionalLight";
@@ -618,29 +577,14 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     
-    // Constructor (color_hex)
+    // Constructor - exactly one (color_hex)
     {
       MethodDecl md;
       md.name = cd.name;
       md.params.push_back(Param{"color", Type::ty_int(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    
-    // Constructor (color_hex, intensity)
-    {
-      MethodDecl md;
-      md.name = cd.name;
-      md.params.push_back(Param{"color", Type::ty_int(), SourceLoc{1,1}});
-      md.params.push_back(Param{"intensity", Type::ty_float(), SourceLoc{1,1}});
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
+      md.is_ctor = true;
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
@@ -649,6 +593,8 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     
     m.classes.push_back(std::move(cd));
   }
+  
+  // PointLight - single constructor (1 arg)
   {
     ClassDecl cd;
     cd.name = "PointLight";
@@ -656,29 +602,14 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     
-    // Constructor (color_hex)
+    // Constructor - exactly one (color_hex)
     {
       MethodDecl md;
       md.name = cd.name;
       md.params.push_back(Param{"color", Type::ty_int(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    
-    // Constructor (color_hex, intensity)
-    {
-      MethodDecl md;
-      md.name = cd.name;
-      md.params.push_back(Param{"color", Type::ty_int(), SourceLoc{1,1}});
-      md.params.push_back(Param{"intensity", Type::ty_float(), SourceLoc{1,1}});
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
+      md.is_ctor = true;
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
@@ -696,7 +627,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     
-    // Constructor (width, height)
+    // Constructor - exactly one (width, height)
     {
       MethodDecl md;
       md.name = cd.name;
@@ -704,7 +635,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       md.params.push_back(Param{"height", Type::ty_int(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
-      md.is_constructor = true;
+      md.is_ctor = true;
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
@@ -726,321 +657,8 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     {
       MethodDecl md;
       md.name = "render";
-      md.params.push_back(Param{"scene", Type::ty_class("farm_Scene"), SourceLoc{1,1}});
-      md.params.push_back(Param{"camera", Type::ty_class("farm_PerspectiveCamera"), SourceLoc{1,1}});
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    {
-      MethodDecl md;
-      md.name = "savePNG";
-      md.params.push_back(Param{"path", Type::ty_string(), SourceLoc{1,1}});
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    {
-      MethodDecl md;
-      md.name = "dispose";
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    
-    m.classes.push_back(std::move(cd));
-  }
-  
-  return m;
-}
-  
-  // For M3, we define classes (reference types)
-  // Object3D, Scene, PerspectiveCamera, Mesh, BoxGeometry, SphereGeometry, PlaneGeometry,
-  // MeshBasicMaterial, MeshStandardMaterial, AmbientLight, DirectionalLight, PointLight, Renderer
-  
-  // Object3D class
-  {
-    ClassDecl cd;
-    cd.name = "Object3D";
-    cd.c_sym = "farm_Object3D";
-    cd.exported = true;
-    cd.loc = SourceLoc{1, 1};
-    
-    // Fields - these are stored inline as structs from farmos:math
-    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"rotation", Type::ty_struct("farm_Euler"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"quaternion", Type::ty_struct("farm_Quaternion"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"scale", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"matrix", Type::ty_struct("farm_Matrix4"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"matrixWorld", Type::ty_struct("farm_Matrix4"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"matrixAutoUpdate", Type::ty_bool(), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"visible", Type::ty_bool(), SourceLoc{1, 1}});
-    
-    // Methods with empty bodies (runtime implemented) 
-    {
-      MethodDecl md;
-      md.name = "add";
-      md.params.push_back(Param{"child", Type::ty_class("farm_Object3D"), SourceLoc{1,1}});
-      md.ret = Type::ty_class("farm_Object3D");
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    
-    m.classes.push_back(std::move(cd));
-  }
-  
-  // Scene class (extends Object3D semantics)
-  {
-    ClassDecl cd;
-    cd.name = "Scene";
-    cd.c_sym = "farm_Scene";
-    cd.exported = true;
-    cd.loc = SourceLoc{1, 1};
-    cd.fields.push_back(FieldDecl{"hasBackground", Type::ty_bool(), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"background", Type::ty_struct("farm_Color"), SourceLoc{1, 1}});
-    
-    // Scene inherits Object3D methods, but also has its own
-    {
-      MethodDecl md;
-      md.name = "setBackground";
-      md.params.push_back(Param{"color", Type::ty_struct("farm_Color"), SourceLoc{1,1}});
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    {
-      MethodDecl md;
-      md.name = "add";
-      md.params.push_back(Param{"child", Type::ty_class("farm_Object3D"), SourceLoc{1,1}});
-      md.ret = Type::ty_class("farm_Object3D");
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    
-    m.classes.push_back(std::move(cd));
-  }
-  
-  // PerspectiveCamera class
-  {
-    ClassDecl cd;
-    cd.name = "PerspectiveCamera";
-    cd.c_sym = "farm_PerspectiveCamera";
-    cd.exported = true;
-    cd.loc = SourceLoc{1, 1};
-    cd.fields.push_back(FieldDecl{"fov", Type::ty_float(), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"aspect", Type::ty_float(), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"near", Type::ty_float(), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"far", Type::ty_float(), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
-    
-    {
-      MethodDecl md;
-      md.name = "lookAt";
-      md.params.push_back(Param{"x", Type::ty_float(), SourceLoc{1,1}});
-      md.params.push_back(Param{"y", Type::ty_float(), SourceLoc{1,1}});
-      md.params.push_back(Param{"z", Type::ty_float(), SourceLoc{1,1}});
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    
-    m.classes.push_back(std::move(cd));
-  }
-  
-  // BoxGeometry, SphereGeometry, PlaneGeometry
-  {
-    ClassDecl cd;
-    cd.name = "BoxGeometry";
-    cd.c_sym = "farm_BoxGeometry";
-    cd.exported = true;
-    cd.loc = SourceLoc{1, 1};
-    
-    {
-      MethodDecl md;
-      md.name = "dispose";
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    
-    m.classes.push_back(std::move(cd));
-  }
-  {
-    ClassDecl cd;
-    cd.name = "SphereGeometry";
-    cd.c_sym = "farm_SphereGeometry";
-    cd.exported = true;
-    cd.loc = SourceLoc{1, 1};
-    
-    {
-      MethodDecl md;
-      md.name = "dispose";
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    
-    m.classes.push_back(std::move(cd));
-  }
-  {
-    ClassDecl cd;
-    cd.name = "PlaneGeometry";
-    cd.c_sym = "farm_PlaneGeometry";
-    cd.exported = true;
-    cd.loc = SourceLoc{1, 1};
-    
-    {
-      MethodDecl md;
-      md.name = "dispose";
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    
-    m.classes.push_back(std::move(cd));
-  }
-  
-  // MeshBasicMaterial, MeshStandardMaterial
-  {
-    ClassDecl cd;
-    cd.name = "MeshBasicMaterial";
-    cd.c_sym = "farm_MeshBasicMaterial";
-    cd.exported = true;
-    cd.loc = SourceLoc{1, 1};
-    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("farm_Color"), SourceLoc{1, 1}});
-    
-    {
-      MethodDecl md;
-      md.name = "dispose";
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    
-    m.classes.push_back(std::move(cd));
-  }
-  {
-    ClassDecl cd;
-    cd.name = "MeshStandardMaterial";
-    cd.c_sym = "farm_MeshStandardMaterial";
-    cd.exported = true;
-    cd.loc = SourceLoc{1, 1};
-    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("farm_Color"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"roughness", Type::ty_float(), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"metalness", Type::ty_float(), SourceLoc{1, 1}});
-    
-    {
-      MethodDecl md;
-      md.name = "dispose";
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    
-    m.classes.push_back(std::move(cd));
-  }
-  
-  // Mesh
-  {
-    ClassDecl cd;
-    cd.name = "Mesh";
-    cd.c_sym = "farm_Mesh";
-    cd.exported = true;
-    cd.loc = SourceLoc{1, 1};
-    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"rotation", Type::ty_struct("farm_Euler"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"quaternion", Type::ty_struct("farm_Quaternion"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"scale", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
-    m.classes.push_back(std::move(cd));
-  }
-  
-  // Lights
-  {
-    ClassDecl cd;
-    cd.name = "AmbientLight";
-    cd.c_sym = "farm_AmbientLight";
-    cd.exported = true;
-    cd.loc = SourceLoc{1, 1};
-    m.classes.push_back(std::move(cd));
-  }
-  {
-    ClassDecl cd;
-    cd.name = "DirectionalLight";
-    cd.c_sym = "farm_DirectionalLight";
-    cd.exported = true;
-    cd.loc = SourceLoc{1, 1};
-    m.classes.push_back(std::move(cd));
-  }
-  {
-    ClassDecl cd;
-    cd.name = "PointLight";
-    cd.c_sym = "farm_PointLight";
-    cd.exported = true;
-    cd.loc = SourceLoc{1, 1};
-    m.classes.push_back(std::move(cd));
-  }
-  
-  // Renderer
-  {
-    ClassDecl cd;
-    cd.name = "Renderer";
-    cd.c_sym = "farm_Renderer";
-    cd.exported = true;
-    cd.loc = SourceLoc{1, 1};
-    
-    {
-      MethodDecl md;
-      md.name = "setSize";
-      md.params.push_back(Param{"width", Type::ty_int(), SourceLoc{1,1}});
-      md.params.push_back(Param{"height", Type::ty_int(), SourceLoc{1,1}});
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    {
-      MethodDecl md;
-      md.name = "render";
-      md.params.push_back(Param{"scene", Type::ty_class("farm_Scene"), SourceLoc{1,1}});
-      md.params.push_back(Param{"camera", Type::ty_class("farm_PerspectiveCamera"), SourceLoc{1,1}});
+      md.params.push_back(Param{"scene", Type::ty_class("Scene"), SourceLoc{1,1}});
+      md.params.push_back(Param{"camera", Type::ty_class("PerspectiveCamera"), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();
@@ -2074,7 +1692,14 @@ struct Loader {
             }
             continue;
           } else if (im.path == "farmos:scene") {
-            // Ensure farmos:scene is loaded once
+            // Ensure farmos:math is loaded first (scene depends on math types)
+            if (!loaded.count("farmos:math")) {
+              Module math_mod = create_farmos_math_module();
+              int math_mid = (int)prog.modules.size();
+              prog.modules.push_back(std::move(math_mod));
+              loaded["farmos:math"] = math_mid;
+            }
+            // Now load scene
             if (!loaded.count("farmos:scene")) {
               Module scene_mod = create_farmos_scene_module(prog.modules);
               int mid = (int)prog.modules.size();
@@ -2127,7 +1752,9 @@ struct Loader {
       }
       for (auto& c : mod.classes) {
         c.module_id = mod.id;
-        c.c_sym = mod.prefix + "_" + c.name;
+        if (c.c_sym.empty()) {
+          c.c_sym = mod.prefix + "_" + c.name;
+        }
         put_unique(mod.vis_classes, c.name, &c, c.loc);
       }
       for (auto& f : mod.functions) {
@@ -2139,6 +1766,20 @@ struct Loader {
         c.module_id = mod.id;
         c.c_sym = "v_" + mod.prefix + "_" + c.name;
         put_unique(mod.vis_consts, c.name, &c, c.loc);
+      }
+    }
+
+    // Special handling: wire farmos:scene to see farmos:math structs
+    Module* scene_mod = nullptr;
+    Module* math_mod = nullptr;
+    for (auto& m : prog.modules) {
+      if (m.path == "farmos:scene") scene_mod = &m;
+      else if (m.path == "farmos:math") math_mod = &m;
+    }
+    if (scene_mod && math_mod) {
+      // Make all math structs visible to scene module
+      for (auto& pair : math_mod->vis_structs) {
+        scene_mod->vis_structs[pair.first] = pair.second;
       }
     }
 
@@ -2625,7 +2266,8 @@ static int cmd_run(std::vector<std::string> args) {
   // Private per-process run directory (not the build scratch dir, which cmd_build removes).
   ScratchDir run_dir;
   fs::path out = run_dir.file(path_to_utf8(fs::path(infile).stem()) + ".exe");
-  int rc = cmd_build({infile, "-o", path_to_utf8(out)});
+  std::vector<std::string> build_args = {infile, "-o", path_to_utf8(out)};
+  int rc = cmd_build(build_args);
   if (rc != 0) return rc;
   std::ostringstream cmd;
   cmd << "\"" << path_to_utf8(out) << "\"";
