@@ -76,6 +76,16 @@ foreach(exp ${M2_EXPECTED})
   set_tests_properties(m2_${name} PROPERTIES LABELS "spec")
 endforeach()
 
+# ---- M3 Spec fixtures (spec/tests/M3) ----
+set(FARMC_M3_TESTS_DIR "${CMAKE_SOURCE_DIR}/spec/tests/M3")
+file(GLOB M3_EXPECTED "${FARMC_M3_TESTS_DIR}/*.expected")
+foreach(exp ${M3_EXPECTED})
+  get_filename_component(name ${exp} NAME_WE)
+  add_test(NAME m3_${name}
+    COMMAND ${PS} "${FARMC_SCRIPTS}/run_one_m1.ps1" -Farmc $<TARGET_FILE:farmc> -TestsDir "${FARMC_M3_TESTS_DIR}" -Name "${name}")
+  set_tests_properties(m3_${name} PROPERTIES LABELS "spec")
+endforeach()
+
 # ---- Local positive fixtures (tests/local) ----
 set(FARMC_LOCAL_TESTS_DIR "${CMAKE_SOURCE_DIR}/tests/local")
 file(GLOB LOCAL_EXPECTED "${FARMC_LOCAL_TESTS_DIR}/*.expected")

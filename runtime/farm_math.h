@@ -69,3 +69,22 @@ farm_Vector3 farm_Vector3_sub(farm_Vector3 a, farm_Vector3 b);
 farm_Vector3 farm_Vector3_multiplyScalar(farm_Vector3 v, double s);
 double farm_Vector3_dot(farm_Vector3 a, farm_Vector3 b);
 farm_Vector3 farm_Vector3_cross(farm_Vector3 a, farm_Vector3 b);
+
+// Vector4 functions
+farm_Vector4 farm_Vector4_applyMatrix4(farm_Vector4 v, farm_Matrix4 m);
+
+// Matrix4 functions
+farm_Matrix4 farm_Matrix4_compose(farm_Vector3 position, farm_Quaternion quaternion, farm_Vector3 scale);
+farm_Matrix4 farm_Matrix4_multiplyMatrices(farm_Matrix4 a, farm_Matrix4 b);
+farm_Matrix4 farm_Matrix4_invert(farm_Matrix4 m);
+farm_Matrix4 farm_Matrix4_makePerspective(double left, double right, double top, double bottom, double near, double far);
+
+// Quaternion functions
+farm_Quaternion farm_Quaternion_setFromEuler(farm_Euler e);
+farm_Quaternion farm_Quaternion_setFromRotationMatrix(farm_Matrix4 m);
+
+// Euler functions
+farm_Euler farm_Euler_setFromQuaternion(farm_Quaternion q, const char* order);
+
+// Color functions
+farm_Color farm_Color_setHex(int32_t hex);

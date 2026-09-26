@@ -1,0 +1,9 @@
+import { SphereGeometry } from "farmos:scene";
+
+function main(): int {
+  const s: SphereGeometry = new SphereGeometry(1, 8, 6);
+  println(1);
+  s.dispose();
+  println(2);
+  return 0;
+}

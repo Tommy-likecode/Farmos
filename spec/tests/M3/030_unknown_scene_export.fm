@@ -1,0 +1,5 @@
+import { NotAThing } from "farmos:scene";
+
+function main(): int {
+  return 0;
+}

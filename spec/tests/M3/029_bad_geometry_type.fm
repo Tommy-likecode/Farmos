@@ -1,0 +1,7 @@
+import { Mesh, MeshBasicMaterial } from "farmos:scene";
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  const m: Mesh = new Mesh(new Vector3(1, 2, 3), new MeshBasicMaterial(0xffffff));
+  return 0;
+}

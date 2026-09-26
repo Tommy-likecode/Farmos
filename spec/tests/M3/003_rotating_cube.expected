@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: f04f4678f68a9b386c31987ff34661480f6ab24406edf190246893a2fe894078
+## PLAN M3 rotating-cube smoke (fixed pose, not an animation loop)
+# stdout:
+# end

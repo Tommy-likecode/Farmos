@@ -1,0 +1,13 @@
+import { Object3D } from "farmos:scene";
+
+function main(): int {
+  const o: Object3D = new Object3D();
+  o.rotation.x = 0.0;
+  o.rotation.y = 1.5707963267948966;
+  o.rotation.z = 0.0;
+  println(o.quaternion.x);
+  println(o.quaternion.y);
+  println(o.quaternion.z);
+  println(o.quaternion.w);
+  return 0;
+}

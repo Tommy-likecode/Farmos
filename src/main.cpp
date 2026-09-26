@@ -166,6 +166,162 @@ static bool is_farmos_builtin(const std::string& path) {
   return path.rfind("farmos:", 0) == 0;
 }
 
+// Create synthetic farmos:scene module
+static Module create_farmos_scene_module() {
+  Module m;
+  m.path = "farmos:scene";
+  m.diag_path = "farmos:scene";
+  m.is_main = false;
+  
+  // For M3, we define classes (reference types)
+  // Object3D, Scene, PerspectiveCamera, Mesh, BoxGeometry, SphereGeometry, PlaneGeometry,
+  // MeshBasicMaterial, MeshStandardMaterial, AmbientLight, DirectionalLight, PointLight, Renderer
+  
+  // Object3D class
+  {
+    ClassDecl cd;
+    cd.name = "Object3D";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    
+    // Fields - these are stored inline as structs from farmos:math
+    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"rotation", Type::ty_struct("farm_Euler"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"quaternion", Type::ty_struct("farm_Quaternion"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"scale", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"matrix", Type::ty_struct("farm_Matrix4"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"matrixWorld", Type::ty_struct("farm_Matrix4"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"matrixAutoUpdate", Type::ty_bool(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"visible", Type::ty_bool(), SourceLoc{1, 1}});
+    
+    // Methods with empty bodies (runtime implemented)
+    // add, remove, addAt, childCount, getChild, updateMatrix, updateMatrixWorld, lookAt, etc.
+    {
+      MethodDecl md;
+      md.name = "add";
+      md.params.push_back(Param{"child", Type::ty_class("Object3D"), SourceLoc{1,1}});
+      md.ret = Type::ty_class("Object3D");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
+    m.classes.push_back(std::move(cd));
+  }
+  
+  // Scene class (extends Object3D semantics)
+  {
+    ClassDecl cd;
+    cd.name = "Scene";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    cd.fields.push_back(FieldDecl{"hasBackground", Type::ty_bool(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"background", Type::ty_struct("farm_Color"), SourceLoc{1, 1}});
+    m.classes.push_back(std::move(cd));
+  }
+  
+  // PerspectiveCamera class
+  {
+    ClassDecl cd;
+    cd.name = "PerspectiveCamera";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    cd.fields.push_back(FieldDecl{"fov", Type::ty_float(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"aspect", Type::ty_float(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"near", Type::ty_float(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"far", Type::ty_float(), SourceLoc{1, 1}});
+    m.classes.push_back(std::move(cd));
+  }
+  
+  // BoxGeometry, SphereGeometry, PlaneGeometry
+  {
+    ClassDecl cd;
+    cd.name = "BoxGeometry";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    m.classes.push_back(std::move(cd));
+  }
+  {
+    ClassDecl cd;
+    cd.name = "SphereGeometry";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    m.classes.push_back(std::move(cd));
+  }
+  {
+    ClassDecl cd;
+    cd.name = "PlaneGeometry";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    m.classes.push_back(std::move(cd));
+  }
+  
+  // MeshBasicMaterial, MeshStandardMaterial
+  {
+    ClassDecl cd;
+    cd.name = "MeshBasicMaterial";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("farm_Color"), SourceLoc{1, 1}});
+    m.classes.push_back(std::move(cd));
+  }
+  {
+    ClassDecl cd;
+    cd.name = "MeshStandardMaterial";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("farm_Color"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"roughness", Type::ty_float(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"metalness", Type::ty_float(), SourceLoc{1, 1}});
+    m.classes.push_back(std::move(cd));
+  }
+  
+  // Mesh
+  {
+    ClassDecl cd;
+    cd.name = "Mesh";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    m.classes.push_back(std::move(cd));
+  }
+  
+  // Lights
+  {
+    ClassDecl cd;
+    cd.name = "AmbientLight";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    m.classes.push_back(std::move(cd));
+  }
+  {
+    ClassDecl cd;
+    cd.name = "DirectionalLight";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    m.classes.push_back(std::move(cd));
+  }
+  {
+    ClassDecl cd;
+    cd.name = "PointLight";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    m.classes.push_back(std::move(cd));
+  }
+  
+  // Renderer
+  {
+    ClassDecl cd;
+    cd.name = "Renderer";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    m.classes.push_back(std::move(cd));
+  }
+  
+  return m;
+}
+
 // Create synthetic farmos:math module
 static Module create_farmos_math_module() {
   Module m;
@@ -1161,6 +1317,15 @@ struct Loader {
               int mid = (int)prog.modules.size();
               prog.modules.push_back(std::move(math_mod));
               loaded["farmos:math"] = mid;
+            }
+            continue;
+          } else if (im.path == "farmos:scene") {
+            // Ensure farmos:scene is loaded once
+            if (!loaded.count("farmos:scene")) {
+              Module scene_mod = create_farmos_scene_module();
+              int mid = (int)prog.modules.size();
+              prog.modules.push_back(std::move(scene_mod));
+              loaded["farmos:scene"] = mid;
             }
             continue;
           } else {
