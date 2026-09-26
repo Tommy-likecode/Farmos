@@ -286,6 +286,10 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     cd.base_class = "Object3D";  // M3: Camera is-a Object3D
+    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"rotation", Type::ty_struct("Euler"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"quaternion", Type::ty_struct("Quaternion"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"scale", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"fov", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"aspect", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"near", Type::ty_float(), SourceLoc{1, 1}});
@@ -512,6 +516,173 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       cd.methods.push_back(std::move(md));
     }
     
+    m.classes.push_back(std::move(cd));
+  }
+  
+  // BoxGeometry
+  {
+    ClassDecl cd;
+    cd.name = "BoxGeometry";
+    cd.c_sym = "farm_BoxGeometry";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    {
+      MethodDecl md;
+      md.name = cd.name;
+      md.params.push_back(Param{"width", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"height", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"depth", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      md.is_ctor = true;
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "dispose";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    m.classes.push_back(std::move(cd));
+  }
+  
+  // SphereGeometry
+  {
+    ClassDecl cd;
+    cd.name = "SphereGeometry";
+    cd.c_sym = "farm_SphereGeometry";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    {
+      MethodDecl md;
+      md.name = cd.name;
+      md.params.push_back(Param{"radius", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"widthSegments", Type::ty_int(), SourceLoc{1,1}});
+      md.params.push_back(Param{"heightSegments", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      md.is_ctor = true;
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "dispose";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    m.classes.push_back(std::move(cd));
+  }
+  
+  // PlaneGeometry
+  {
+    ClassDecl cd;
+    cd.name = "PlaneGeometry";
+    cd.c_sym = "farm_PlaneGeometry";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    {
+      MethodDecl md;
+      md.name = cd.name;
+      md.params.push_back(Param{"width", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"height", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      md.is_ctor = true;
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "dispose";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    m.classes.push_back(std::move(cd));
+  }
+  
+  // MeshBasicMaterial
+  {
+    ClassDecl cd;
+    cd.name = "MeshBasicMaterial";
+    cd.c_sym = "farm_MeshBasicMaterial";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("Color"), SourceLoc{1, 1}});
+    {
+      MethodDecl md;
+      md.name = cd.name;
+      md.params.push_back(Param{"color", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      md.is_ctor = true;
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "dispose";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    m.classes.push_back(std::move(cd));
+  }
+  
+  // MeshStandardMaterial
+  {
+    ClassDecl cd;
+    cd.name = "MeshStandardMaterial";
+    cd.c_sym = "farm_MeshStandardMaterial";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("Color"), SourceLoc{1, 1}});
+    {
+      MethodDecl md;
+      md.name = cd.name;
+      md.params.push_back(Param{"color", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      md.is_ctor = true;
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "dispose";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
     m.classes.push_back(std::move(cd));
   }
   
