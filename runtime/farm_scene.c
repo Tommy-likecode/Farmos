@@ -247,10 +247,10 @@ farm_PerspectiveCamera* farm_PerspectiveCamera_new(double fov, double aspect, do
   farm_PerspectiveCamera* cam = (farm_PerspectiveCamera*)farm_arena_alloc(sizeof(farm_PerspectiveCamera));
   // Flattened: *farm_Object3D_new();
   cam->type = FARM_OBJECT3D_TYPE_CAMERA;
-  cam->fov = fov;
-  cam->aspect = aspect;
-  cam->near = near;
-  cam->far = far;
+  cam->f_fov = fov;
+  cam->f_aspect = aspect;
+  cam->f_near = near;
+  cam->f_far = far;
   cam->matrixWorldInverse = farm_Matrix4_identity();
   cam->projectionMatrix = farm_Matrix4_identity();
   farm_PerspectiveCamera_updateProjectionMatrix(cam);
@@ -258,15 +258,15 @@ farm_PerspectiveCamera* farm_PerspectiveCamera_new(double fov, double aspect, do
 }
 
 void farm_PerspectiveCamera_updateProjectionMatrix(farm_PerspectiveCamera* self) {
-  double fov_rad = (M_PI / 180.0) * self->fov;
-  double top = self->near * tan(0.5 * fov_rad);
+  double fov_rad = (M_PI / 180.0) * self->f_fov;
+  double top = self->f_near * tan(0.5 * fov_rad);
   double height = 2.0 * top;
-  double width = self->aspect * height;
+  double width = self->f_aspect * height;
   double left = -0.5 * width;
   double right = left + width;
   double bottom = -top;
   
-  self->projectionMatrix = farm_Matrix4_makePerspective(left, right, top, bottom, self->near, self->far);
+  self->projectionMatrix = farm_Matrix4_makePerspective(left, right, top, bottom, self->f_near, self->f_far);
 }
 
 void farm_PerspectiveCamera_lookAt_xyz(farm_PerspectiveCamera* self, double x, double y, double z) {
@@ -536,11 +536,11 @@ void farm_MeshStandardMaterial_set(farm_MeshStandardMaterial* self, farm_Color c
   self->color = color;
 }
 
-void farm_MeshStandardMaterial_setRoughness(farm_MeshStandardMaterial* self, double r) {
+void farm_MeshStandardMaterial__setRoughness(farm_MeshStandardMaterial* self, double r) {
   self->roughness = r;
 }
 
-void farm_MeshStandardMaterial_setMetalness(farm_MeshStandardMaterial* self, double m) {
+void farm_MeshStandardMaterial__setMetalness(farm_MeshStandardMaterial* self, double m) {
   self->metalness = m;
 }
 

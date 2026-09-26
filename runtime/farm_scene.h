@@ -105,10 +105,10 @@ struct farm_PerspectiveCamera {
   bool rotation_dirty;
   bool quaternion_dirty;
   // Camera-specific
-  double fov;
-  double aspect;
-  double near;
-  double far;
+  double f_fov;
+  double f_aspect;
+  double f_near;
+  double f_far;
   farm_Matrix4 matrixWorldInverse;
   farm_Matrix4 projectionMatrix;
 };
@@ -309,6 +309,8 @@ void farm_MeshBasicMaterial_dispose(farm_MeshBasicMaterial* self);
 farm_MeshStandardMaterial* farm_MeshStandardMaterial_new();
 farm_MeshStandardMaterial* farm_MeshStandardMaterial_new_color(farm_Color color);
 farm_MeshStandardMaterial* farm_MeshStandardMaterial_new_hex(int64_t hex);
+void farm_MeshStandardMaterial__setRoughness(farm_MeshStandardMaterial* self, double r);
+void farm_MeshStandardMaterial__setMetalness(farm_MeshStandardMaterial* self, double m);
 void farm_MeshStandardMaterial_set(farm_MeshStandardMaterial* self, farm_Color color);
 void farm_MeshStandardMaterial_setRoughness(farm_MeshStandardMaterial* self, double r);
 void farm_MeshStandardMaterial_setMetalness(farm_MeshStandardMaterial* self, double m);
