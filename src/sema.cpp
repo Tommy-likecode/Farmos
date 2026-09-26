@@ -154,20 +154,13 @@ struct Sema {
       return Type::ty_bool();
     }
     if ((op==TokKind::Plus||op==TokKind::Minus||op==TokKind::Star||op==TokKind::Slash||op==TokKind::Percent)) {
-      // Try int→float coercion for mixed int/float arithmetic (§4A)
-      // Only coerce int literals when the float side is NOT a literal (e.g., variable OP literal)
-      // Reject literal OP literal cases like `1 + 2.0` (m1_039)
-      bool lhs_is_lit = (e.lhs->kind == ExprKind::IntLit || e.lhs->kind == ExprKind::FloatLit ||
-                         (e.lhs->kind == ExprKind::Unary && e.lhs->op == TokKind::Minus && 
-                          (e.lhs->rhs->kind == ExprKind::IntLit || e.lhs->rhs->kind == ExprKind::FloatLit)));
-      bool rhs_is_lit = (e.rhs->kind == ExprKind::IntLit || e.rhs->kind == ExprKind::FloatLit ||
-                         (e.rhs->kind == ExprKind::Unary && e.rhs->op == TokKind::Minus && 
-                          (e.rhs->rhs->kind == ExprKind::IntLit || e.rhs->rhs->kind == ExprKind::FloatLit)));
-      
-      if (lt->kind == TypeKind::Float && rt->kind == TypeKind::Int && !lhs_is_lit) {
+      // M2 §4A (OQ-M2-11): int literal coercion in binary arithmetic
+      // Coerce int LITERALS to float when the other operand has type float
+      // (including when the other operand is itself a float literal: 1 + 2.0 MUST succeed)
+      if (lt->kind == TypeKind::Float && rt->kind == TypeKind::Int) {
         e.rhs = try_coerce_int_to_float(e.rhs);
         rt = e.rhs->type;
-      } else if (rt->kind == TypeKind::Float && lt->kind == TypeKind::Int && !rhs_is_lit) {
+      } else if (rt->kind == TypeKind::Float && lt->kind == TypeKind::Int) {
         e.lhs = try_coerce_int_to_float(e.lhs);
         lt = e.lhs->type;
       }
@@ -276,7 +269,7 @@ struct Sema {
     int64_t val;
     if (!is_coercible_int_lit(e, &val)) return e;
     // Convert to FloatLit
-    auto f = std::make_unique<Expr>();
+    auto f = std::make_shared<Expr>();
     f->kind = ExprKind::FloatLit;
     f->float_val = (double)val;
     f->type = Type::ty_float();
