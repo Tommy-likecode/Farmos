@@ -51,7 +51,7 @@ struct Emitter {
       case TypeKind::String: return "FarmString";
       case TypeKind::Void: return "void";
       case TypeKind::Struct: return "struct Farm_" + t->name;
-      case TypeKind::Class: return "struct Farm_" + t->name + "*";
+      case TypeKind::Class: return "struct " + t->name + "*";  // M3: c_sym already includes prefix
       case TypeKind::DynArray: return "FarmDynArray";
       case TypeKind::FixedArray: return "FarmFixed_" + sanitize(t->str());
       default: return "int64_t";
@@ -707,7 +707,41 @@ struct Emitter {
     out << "#include <stdint.h>\n";
     out << "#include <stdio.h>\n";
     out << "#include <math.h>\n";
-    out << "#include \"farm_rt.h\"\n\n";
+    out << "#include \"farm_rt.h\"\n";
+    // M3: Check if any scene classes are used
+    bool uses_scene = false;
+    for (auto& m : prog.modules) {
+      for (auto& imp : m.imports) {
+        if (imp.path == "farmos:scene") {
+          uses_scene = true;
+          break;
+        }
+      }
+      for (auto& c : m.classes) {
+        // Check if this is a scene class by c_sym prefix
+        if (c.c_sym.find("farm_Scene") == 0 ||
+            c.c_sym.find("farm_Object3D") == 0 ||
+            c.c_sym.find("farm_PerspectiveCamera") == 0 ||
+            c.c_sym.find("farm_Mesh") == 0 ||
+            c.c_sym.find("farm_BoxGeometry") == 0 ||
+            c.c_sym.find("farm_SphereGeometry") == 0 ||
+            c.c_sym.find("farm_PlaneGeometry") == 0 ||
+            c.c_sym.find("farm_MeshBasicMaterial") == 0 ||
+            c.c_sym.find("farm_MeshStandardMaterial") == 0 ||
+            c.c_sym.find("farm_AmbientLight") == 0 ||
+            c.c_sym.find("farm_DirectionalLight") == 0 ||
+            c.c_sym.find("farm_PointLight") == 0 ||
+            c.c_sym.find("farm_Renderer") == 0) {
+          uses_scene = true;
+          break;
+        }
+      }
+      if (uses_scene) break;
+    }
+    if (uses_scene) {
+      out << "#include \"farm_scene.h\"\n";
+    }
+    out << "\n";
     // Emit fixed array typedefs first (structs may reference them)
     emit_fixed_typedefs();
     // Emit all structs first (so classes can reference them)
@@ -718,10 +752,20 @@ struct Emitter {
         out << "};\n";
       }
     }
-    // Then emit all classes
+    // Then emit all classes (skip scene classes - already in farm_scene.h)
     for (auto& m : prog.modules) {
       for (auto& c : m.classes) {
-        out << "struct Farm_" << c.c_sym << " {\n";
+        // M3: Skip scene classes defined in runtime header
+        if (c.c_sym.find("farm_Scene") == 0 || c.c_sym.find("farm_Object3D") == 0 ||
+            c.c_sym.find("farm_PerspectiveCamera") == 0 || c.c_sym.find("farm_Mesh") == 0 ||
+            c.c_sym.find("farm_BoxGeometry") == 0 || c.c_sym.find("farm_SphereGeometry") == 0 ||
+            c.c_sym.find("farm_PlaneGeometry") == 0 || c.c_sym.find("farm_MeshBasicMaterial") == 0 ||
+            c.c_sym.find("farm_MeshStandardMaterial") == 0 || c.c_sym.find("farm_AmbientLight") == 0 ||
+            c.c_sym.find("farm_DirectionalLight") == 0 || c.c_sym.find("farm_PointLight") == 0 ||
+            c.c_sym.find("farm_Renderer") == 0) {
+          continue;
+        }
+        out << "struct " << c.c_sym << " {\n";
         for (auto& f : c.fields) out << "  " << c_type(f.type) << " f_" << f.name << ";\n";
         out << "};\n";
       }
@@ -759,7 +803,7 @@ struct Emitter {
       for (auto& c : m.classes) {
         for (auto& md : c.methods) {
           std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
-          out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.c_sym << "* this";
+          out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct " << c.c_sym << "* this";
           for (auto& p : md.params) out << ", " << c_type(p.type) << " v_" << p.name;
           out << ");\n";
         }
@@ -824,7 +868,7 @@ struct Emitter {
       for (auto& c : m.classes) {
         for (auto& md : c.methods) {
           std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
-          out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.c_sym << "* this";
+          out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct " << c.c_sym << "* this";
           for (auto& p : md.params) out << ", " << c_type(p.type) << " v_" << p.name;
           out << ") ";
           emit_stmt(md.body);

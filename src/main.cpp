@@ -183,9 +183,10 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
   {
     ClassDecl cd;
     cd.name = "Object3D";
-    cd.c_sym = "Object3D";
+    cd.c_sym = "farm_Object3D";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
+    // Object3D is the base - no base_class
     
     // Fields - use display names for type resolution
     cd.fields.push_back(FieldDecl{"position", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
@@ -231,9 +232,10 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
   {
     ClassDecl cd;
     cd.name = "Scene";
-    cd.c_sym = "Scene";
+    cd.c_sym = "farm_Scene";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
+    cd.base_class = "Object3D";  // M3: Scene is-a Object3D
     cd.fields.push_back(FieldDecl{"hasBackground", Type::ty_bool(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"background", Type::ty_struct("Color"), SourceLoc{1, 1}});
     
@@ -280,9 +282,10 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
   {
     ClassDecl cd;
     cd.name = "PerspectiveCamera";
-    cd.c_sym = "PerspectiveCamera";
+    cd.c_sym = "farm_PerspectiveCamera";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
+    cd.base_class = "Object3D";  // M3: Camera is-a Object3D
     cd.fields.push_back(FieldDecl{"fov", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"aspect", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"near", Type::ty_float(), SourceLoc{1, 1}});
@@ -519,6 +522,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.c_sym = "farm_Mesh";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
+    cd.base_class = "Object3D";  // M3: Mesh is-a Object3D
     cd.fields.push_back(FieldDecl{"position", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"rotation", Type::ty_struct("Euler"), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"quaternion", Type::ty_struct("Quaternion"), SourceLoc{1, 1}});
@@ -550,6 +554,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.c_sym = "farm_AmbientLight";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
+    cd.base_class = "Object3D";  // M3: Light is-a Object3D
     
     // Constructor - exactly one (color_hex)
     // Emit_c will handle 2-arg variant via runtime dispatch
@@ -576,6 +581,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.c_sym = "farm_DirectionalLight";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
+    cd.base_class = "Object3D";  // M3: Light is-a Object3D
     
     // Constructor - exactly one (color_hex)
     {
@@ -601,6 +607,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.c_sym = "farm_PointLight";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
+    cd.base_class = "Object3D";  // M3: Light is-a Object3D
     
     // Constructor - exactly one (color_hex)
     {
