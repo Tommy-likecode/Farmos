@@ -1,8 +1,17 @@
-#include "farm_scene.h"
+#define _USE_MATH_DEFINES
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <math.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include "farm_scene.h"
+#include "farm_math.h"
+#include "farm_rt.h"
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 // Helper: clamp double to [min, max]
 static inline double clamp(double v, double min, double max) {
@@ -150,7 +159,7 @@ farm_Object3D* farm_Object3D_getChild(farm_Object3D* self, int64_t index) {
 void farm_Object3D_updateMatrix(farm_Object3D* self) {
   sync_quaternion_from_rotation(self);
   sync_rotation_from_quaternion(self);
-  self->matrix = farm_Matrix4_compose(self->f_position, self->f_quaternion, self->f_scale);
+  self->f_matrix = farm_Matrix4_compose(self->f_position, self->f_quaternion, self->f_scale);
 }
 
 void farm_Object3D_updateMatrixWorld(farm_Object3D* self, bool force) {
@@ -159,9 +168,9 @@ void farm_Object3D_updateMatrixWorld(farm_Object3D* self, bool force) {
   }
   
   if (self->parent) {
-    self->f_matrixWorld = farm_Matrix4_multiplyMatrices(self->parent->f_matrixWorld, self->matrix);
+    self->f_matrixWorld = farm_Matrix4_multiplyMatrices(self->parent->f_matrixWorld, self->f_matrix);
   } else {
-    self->f_matrixWorld = self->matrix;
+    self->f_matrixWorld = self->f_matrix;
   }
   
   for (int32_t i = 0; i < self->children.count; i++) {
@@ -170,7 +179,7 @@ void farm_Object3D_updateMatrixWorld(farm_Object3D* self, bool force) {
 }
 
 void farm_Object3D_lookAt_xyz(farm_Object3D* self, double x, double y, double z) {
-  farm_Vector3 target = farm_Vector3_new(x, f_y, z);
+  farm_Vector3 target = farm_Vector3_new(x, y, z);
   farm_Vector3 up = farm_Vector3_new(0, 1, 0);
   
   // Direction from this to target
@@ -217,8 +226,8 @@ void farm_Object3D_setRotationFromQuaternion(farm_Object3D* self, farm_Quaternio
 // Scene implementation
 farm_Scene* farm_Scene_new() {
   farm_Scene* scene = (farm_Scene*)farm_arena_alloc(sizeof(farm_Scene));
-  scene->base = *farm_Object3D_new();
-  scene->base.type = FARM_OBJECT3D_TYPE_SCENE;
+  // Flattened: scene fields initialized inlinefarm_Object3D_new();
+  scene->type = FARM_OBJECT3D_TYPE_SCENE;
   scene->hasBackground = false;
   scene->background = farm_Color_zero();
   return scene;
@@ -236,13 +245,13 @@ void farm_Scene_clearBackground(farm_Scene* self) {
 // PerspectiveCamera implementation
 farm_PerspectiveCamera* farm_PerspectiveCamera_new(double fov, double aspect, double near, double far) {
   farm_PerspectiveCamera* cam = (farm_PerspectiveCamera*)farm_arena_alloc(sizeof(farm_PerspectiveCamera));
-  cam->base = *farm_Object3D_new();
-  cam->base.type = FARM_OBJECT3D_TYPE_CAMERA;
+  // Flattened: *farm_Object3D_new();
+  cam->type = FARM_OBJECT3D_TYPE_CAMERA;
   cam->fov = fov;
   cam->aspect = aspect;
   cam->near = near;
   cam->far = far;
-  cam->f_matrixWorldInverse = farm_Matrix4_identity();
+  cam->matrixWorldInverse = farm_Matrix4_identity();
   cam->projectionMatrix = farm_Matrix4_identity();
   farm_PerspectiveCamera_updateProjectionMatrix(cam);
   return cam;
@@ -261,7 +270,7 @@ void farm_PerspectiveCamera_updateProjectionMatrix(farm_PerspectiveCamera* self)
 }
 
 void farm_PerspectiveCamera_lookAt_xyz(farm_PerspectiveCamera* self, double x, double y, double z) {
-  farm_Object3D_lookAt_xyz((farm_Object3D*)self, x, f_y, z);
+  farm_Object3D_lookAt_xyz((farm_Object3D*)self, x, y, z);
 }
 
 void farm_PerspectiveCamera_lookAt_v(farm_PerspectiveCamera* self, farm_Vector3 target) {
@@ -542,7 +551,7 @@ void farm_MeshStandardMaterial_dispose(farm_MeshStandardMaterial* self) {
 // Mesh
 farm_Mesh* farm_Mesh_new_box(farm_BoxGeometry* geometry, void* material, uint8_t mat_type) {
   farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
-  mesh->base = *farm_Object3D_new();
+  // Flattened: *farm_Object3D_new();
   mesh->geometry = geometry;
   mesh->material = material;
   mesh->geometry_type = 0;
@@ -552,7 +561,7 @@ farm_Mesh* farm_Mesh_new_box(farm_BoxGeometry* geometry, void* material, uint8_t
 
 farm_Mesh* farm_Mesh_new_sphere(farm_SphereGeometry* geometry, void* material, uint8_t mat_type) {
   farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
-  mesh->base = *farm_Object3D_new();
+  // Flattened: *farm_Object3D_new();
   mesh->geometry = geometry;
   mesh->material = material;
   mesh->geometry_type = 1;
@@ -562,7 +571,7 @@ farm_Mesh* farm_Mesh_new_sphere(farm_SphereGeometry* geometry, void* material, u
 
 farm_Mesh* farm_Mesh_new_plane(farm_PlaneGeometry* geometry, void* material, uint8_t mat_type) {
   farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
-  mesh->base = *farm_Object3D_new();
+  // Flattened: *farm_Object3D_new();
   mesh->geometry = geometry;
   mesh->material = material;
   mesh->geometry_type = 2;
@@ -575,8 +584,8 @@ farm_Mesh* farm_Mesh_new_plane(farm_PlaneGeometry* geometry, void* material, uin
 // For simplicity in M3, we'll use a type-tagging approach
 farm_Mesh* farm_Mesh_new(void* geometry, void* material) {
   farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
-  mesh->base = *farm_Object3D_new();
-  mesh->base.type = FARM_OBJECT3D_TYPE_MESH;
+  // Flattened: *farm_Object3D_new();
+  mesh->type = FARM_OBJECT3D_TYPE_MESH;
   mesh->geometry = geometry;
   mesh->material = material;
   
@@ -609,8 +618,8 @@ farm_Mesh* farm_Mesh_new(void* geometry, void* material) {
 // Lights
 farm_AmbientLight* farm_AmbientLight_new() {
   farm_AmbientLight* light = (farm_AmbientLight*)farm_arena_alloc(sizeof(farm_AmbientLight));
-  light->base = *farm_Object3D_new();
-  light->base.type = FARM_OBJECT3D_TYPE_AMBIENT_LIGHT;
+  // Flattened: *farm_Object3D_new();
+  light->type = FARM_OBJECT3D_TYPE_AMBIENT_LIGHT;
   light->color = farm_Color_new(1, 1, 1);
   light->intensity = 1.0;
   return light;
@@ -638,8 +647,8 @@ farm_AmbientLight* farm_AmbientLight_new_color_i(farm_Color color, double intens
 // DirectionalLight
 farm_DirectionalLight* farm_DirectionalLight_new() {
   farm_DirectionalLight* light = (farm_DirectionalLight*)farm_arena_alloc(sizeof(farm_DirectionalLight));
-  light->base = *farm_Object3D_new();
-  light->base.type = FARM_OBJECT3D_TYPE_DIRECTIONAL_LIGHT;
+  // Flattened: *farm_Object3D_new();
+  light->type = FARM_OBJECT3D_TYPE_DIRECTIONAL_LIGHT;
   light->color = farm_Color_new(1, 1, 1);
   light->intensity = 1.0;
   return light;
@@ -667,8 +676,8 @@ farm_DirectionalLight* farm_DirectionalLight_new_color_i(farm_Color color, doubl
 // PointLight
 farm_PointLight* farm_PointLight_new() {
   farm_PointLight* light = (farm_PointLight*)farm_arena_alloc(sizeof(farm_PointLight));
-  light->base = *farm_Object3D_new();
-  light->base.type = FARM_OBJECT3D_TYPE_POINT_LIGHT;
+  // Flattened: *farm_Object3D_new();
+  light->type = FARM_OBJECT3D_TYPE_POINT_LIGHT;
   light->color = farm_Color_new(1, 1, 1);
   light->intensity = 1.0;
   light->distance = 0.0;
@@ -755,7 +764,7 @@ static farm_Vector3 transform_direction(farm_Matrix4 m, farm_Vector3 v) {
   double x = e[0]*v.f_x + e[4]*v.f_y + e[8]*v.f_z;
   double y = e[1]*v.f_x + e[5]*v.f_y + e[9]*v.f_z;
   double z = e[2]*v.f_x + e[6]*v.f_y + e[10]*v.f_z;
-  return farm_Vector3_new(x, f_y, z);
+  return farm_Vector3_new(x, y, z);
 }
 
 // Collect lights
@@ -954,7 +963,7 @@ static void rasterize_mesh(
   
   farm_Matrix4 mvp = farm_Matrix4_multiplyMatrices(
     camera->projectionMatrix,
-    farm_Matrix4_multiplyMatrices(camera->f_matrixWorldInverse, mesh->f_matrixWorld)
+    farm_Matrix4_multiplyMatrices(camera->matrixWorldInverse, mesh->f_matrixWorld)
   );
   
   farm_Vector3 camera_pos;
@@ -1156,7 +1165,7 @@ void farm_Renderer_render(farm_Renderer* self, farm_Scene* scene, farm_Perspecti
   farm_PerspectiveCamera_updateMatrixWorld(camera, true);
   
   // Update camera inverse and projection
-  camera->f_matrixWorldInverse = farm_Matrix4_invert(camera->f_matrixWorld);
+  camera->matrixWorldInverse = farm_Matrix4_invert(camera->f_matrixWorld);
   farm_PerspectiveCamera_updateProjectionMatrix(camera);
   
   // Clear buffers
@@ -1316,12 +1325,3 @@ void farm_Renderer_dispose(farm_Renderer* self) {
 }
 
 // Constructor wrapper functions for emit_c compatibility
-farm_Scene* farm_Scene_new() { return farm_arena_alloc(sizeof(farm_Scene)); }
-farm_PerspectiveCamera* farm_PerspectiveCamera_new(double fov, double aspect, double near, double far) { farm_PerspectiveCamera* c = farm_arena_alloc(sizeof(farm_PerspectiveCamera)); farm_PerspectiveCamera__constructor(c, fov, aspect, near, far); return c; }
-farm_BoxGeometry* farm_BoxGeometry_new_whd(double w, double h, double d) { return farm_BoxGeometry__new(w, h, d); }
-farm_SphereGeometry* farm_SphereGeometry_new_full(double r, int ws, int hs) { return farm_SphereGeometry__new(r, ws, hs); }
-farm_PlaneGeometry* farm_PlaneGeometry_new_wh(double w, double h) { return farm_PlaneGeometry__new(w, h); }
-farm_MeshBasicMaterial* farm_MeshBasicMaterial_new_hex(int hex) { return farm_MeshBasicMaterial__new(hex); }
-farm_MeshStandardMaterial* farm_MeshStandardMaterial_new_hex(int hex) { return farm_MeshStandardMaterial__new(hex); }
-farm_Mesh* farm_Mesh_new(void* geom, void* mat) { return farm_Mesh__new(geom, mat); }
-farm_Renderer* farm_Renderer_new_wh(int w, int h) { farm_Renderer* r = farm_arena_alloc(sizeof(farm_Renderer)); farm_Renderer__constructor(r, w, h); return r; }
