@@ -877,6 +877,11 @@ struct Sema {
   void check_method(ClassDecl& c, MethodDecl& m) {
     cur_fn = m.name; cur_ret = m.ret; cur_class = &c; in_ctor = m.is_ctor;
     Scope sc; scope = &sc;
+    // Skip body checks for synthetic/builtin methods (empty Block stub)
+    if (m.body && m.body->kind == StmtKind::Block && m.body->stmts.empty()) {
+      scope = nullptr;
+      return;
+    }
     for (auto& p : m.params) sc.declare(p.name, VarInfo{p.type, false, p.loc}, path);
     bool ret=false;
     check_stmt(m.body, &ret);
