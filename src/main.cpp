@@ -181,6 +181,7 @@ static Module create_farmos_scene_module() {
   {
     ClassDecl cd;
     cd.name = "Object3D";
+    cd.c_sym = "farm_Object3D";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     
@@ -194,13 +195,12 @@ static Module create_farmos_scene_module() {
     cd.fields.push_back(FieldDecl{"matrixAutoUpdate", Type::ty_bool(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"visible", Type::ty_bool(), SourceLoc{1, 1}});
     
-    // Methods with empty bodies (runtime implemented)
-    // add, remove, addAt, childCount, getChild, updateMatrix, updateMatrixWorld, lookAt, etc.
+    // Methods with empty bodies (runtime implemented) 
     {
       MethodDecl md;
       md.name = "add";
-      md.params.push_back(Param{"child", Type::ty_class("Object3D"), SourceLoc{1,1}});
-      md.ret = Type::ty_class("Object3D");
+      md.params.push_back(Param{"child", Type::ty_class("farm_Object3D"), SourceLoc{1,1}});
+      md.ret = Type::ty_class("farm_Object3D");
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
@@ -215,10 +215,36 @@ static Module create_farmos_scene_module() {
   {
     ClassDecl cd;
     cd.name = "Scene";
+    cd.c_sym = "farm_Scene";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     cd.fields.push_back(FieldDecl{"hasBackground", Type::ty_bool(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"background", Type::ty_struct("farm_Color"), SourceLoc{1, 1}});
+    
+    // Scene inherits Object3D methods, but also has its own
+    {
+      MethodDecl md;
+      md.name = "setBackground";
+      md.params.push_back(Param{"color", Type::ty_struct("farm_Color"), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "add";
+      md.params.push_back(Param{"child", Type::ty_class("farm_Object3D"), SourceLoc{1,1}});
+      md.ret = Type::ty_class("farm_Object3D");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
     m.classes.push_back(std::move(cd));
   }
   
@@ -226,12 +252,29 @@ static Module create_farmos_scene_module() {
   {
     ClassDecl cd;
     cd.name = "PerspectiveCamera";
+    cd.c_sym = "farm_PerspectiveCamera";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     cd.fields.push_back(FieldDecl{"fov", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"aspect", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"near", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"far", Type::ty_float(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
+    
+    {
+      MethodDecl md;
+      md.name = "lookAt";
+      md.params.push_back(Param{"x", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"y", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"z", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
     m.classes.push_back(std::move(cd));
   }
   
@@ -239,22 +282,61 @@ static Module create_farmos_scene_module() {
   {
     ClassDecl cd;
     cd.name = "BoxGeometry";
+    cd.c_sym = "farm_BoxGeometry";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
+    
+    {
+      MethodDecl md;
+      md.name = "dispose";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
     m.classes.push_back(std::move(cd));
   }
   {
     ClassDecl cd;
     cd.name = "SphereGeometry";
+    cd.c_sym = "farm_SphereGeometry";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
+    
+    {
+      MethodDecl md;
+      md.name = "dispose";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
     m.classes.push_back(std::move(cd));
   }
   {
     ClassDecl cd;
     cd.name = "PlaneGeometry";
+    cd.c_sym = "farm_PlaneGeometry";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
+    
+    {
+      MethodDecl md;
+      md.name = "dispose";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
     m.classes.push_back(std::move(cd));
   }
   
@@ -262,19 +344,45 @@ static Module create_farmos_scene_module() {
   {
     ClassDecl cd;
     cd.name = "MeshBasicMaterial";
+    cd.c_sym = "farm_MeshBasicMaterial";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     cd.fields.push_back(FieldDecl{"color", Type::ty_struct("farm_Color"), SourceLoc{1, 1}});
+    
+    {
+      MethodDecl md;
+      md.name = "dispose";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
     m.classes.push_back(std::move(cd));
   }
   {
     ClassDecl cd;
     cd.name = "MeshStandardMaterial";
+    cd.c_sym = "farm_MeshStandardMaterial";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     cd.fields.push_back(FieldDecl{"color", Type::ty_struct("farm_Color"), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"roughness", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"metalness", Type::ty_float(), SourceLoc{1, 1}});
+    
+    {
+      MethodDecl md;
+      md.name = "dispose";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
     m.classes.push_back(std::move(cd));
   }
   
@@ -282,8 +390,13 @@ static Module create_farmos_scene_module() {
   {
     ClassDecl cd;
     cd.name = "Mesh";
+    cd.c_sym = "farm_Mesh";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
+    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"rotation", Type::ty_struct("farm_Euler"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"quaternion", Type::ty_struct("farm_Quaternion"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"scale", Type::ty_struct("farm_Vector3"), SourceLoc{1, 1}});
     m.classes.push_back(std::move(cd));
   }
   
@@ -291,6 +404,7 @@ static Module create_farmos_scene_module() {
   {
     ClassDecl cd;
     cd.name = "AmbientLight";
+    cd.c_sym = "farm_AmbientLight";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     m.classes.push_back(std::move(cd));
@@ -298,6 +412,7 @@ static Module create_farmos_scene_module() {
   {
     ClassDecl cd;
     cd.name = "DirectionalLight";
+    cd.c_sym = "farm_DirectionalLight";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     m.classes.push_back(std::move(cd));
@@ -305,6 +420,7 @@ static Module create_farmos_scene_module() {
   {
     ClassDecl cd;
     cd.name = "PointLight";
+    cd.c_sym = "farm_PointLight";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     m.classes.push_back(std::move(cd));
@@ -314,8 +430,56 @@ static Module create_farmos_scene_module() {
   {
     ClassDecl cd;
     cd.name = "Renderer";
+    cd.c_sym = "farm_Renderer";
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
+    
+    {
+      MethodDecl md;
+      md.name = "setSize";
+      md.params.push_back(Param{"width", Type::ty_int(), SourceLoc{1,1}});
+      md.params.push_back(Param{"height", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "render";
+      md.params.push_back(Param{"scene", Type::ty_class("farm_Scene"), SourceLoc{1,1}});
+      md.params.push_back(Param{"camera", Type::ty_class("farm_PerspectiveCamera"), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "savePNG";
+      md.params.push_back(Param{"path", Type::ty_string(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "dispose";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
     m.classes.push_back(std::move(cd));
   }
   

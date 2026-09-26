@@ -368,10 +368,65 @@ struct Emitter {
       case ExprKind::New: {
         if (e->type->kind == TypeKind::Class) {
           std::string v = fresh("obj");
-          out << "struct Farm_" << e->mangled << "* " << v << " = (struct Farm_" << e->mangled << "*)farm_arena_alloc(sizeof(struct Farm_" << e->mangled << "));\n";
-          out << e->mangled << "__constructor(" << v;
-          for (auto& a : e->args) out << ", " << emit_expr(a);
-          out << ");\n";
+          
+          // M3 scene classes: map to runtime constructor functions
+          // Check if this is a farmos:scene class by name
+          std::string class_name = e->type->name;
+          bool is_scene_class = (class_name == "farm_Scene" || class_name == "farm_Object3D" ||
+                                 class_name == "farm_PerspectiveCamera" || class_name == "farm_Mesh" ||
+                                 class_name == "farm_BoxGeometry" || class_name == "farm_SphereGeometry" ||
+                                 class_name == "farm_PlaneGeometry" || class_name == "farm_MeshBasicMaterial" ||
+                                 class_name == "farm_MeshStandardMaterial" || class_name == "farm_AmbientLight" ||
+                                 class_name == "farm_DirectionalLight" || class_name == "farm_PointLight" ||
+                                 class_name == "farm_Renderer");
+          
+          if (is_scene_class) {
+            // Call runtime constructor function directly
+            out << "struct " << e->mangled << "* " << v << " = " << e->mangled << "_new";
+            
+            // Handle overloaded constructors with argument counts
+            if (class_name == "farm_BoxGeometry" && e->args.size() == 3) {
+              out << "_whd";
+            } else if (class_name == "farm_SphereGeometry" && e->args.size() == 3) {
+              out << "_full";
+            } else if (class_name == "farm_SphereGeometry" && e->args.size() == 1) {
+              out << "_r";
+            } else if (class_name == "farm_PlaneGeometry" && e->args.size() == 2) {
+              out << "_wh";
+            } else if (class_name == "farm_MeshBasicMaterial" && e->args.size() == 1) {
+              out << "_hex";
+            } else if (class_name == "farm_MeshStandardMaterial" && e->args.size() == 1) {
+              out << "_hex";
+            } else if (class_name == "farm_AmbientLight" && e->args.size() == 1) {
+              out << "_hex";
+            } else if (class_name == "farm_AmbientLight" && e->args.size() == 2) {
+              out << "_hex_i";
+            } else if (class_name == "farm_DirectionalLight" && e->args.size() == 1) {
+              out << "_hex";
+            } else if (class_name == "farm_DirectionalLight" && e->args.size() == 2) {
+              out << "_hex_i";
+            } else if (class_name == "farm_PointLight" && e->args.size() == 1) {
+              out << "_hex";
+            } else if (class_name == "farm_PointLight" && e->args.size() == 2) {
+              out << "_hex_i";
+            } else if (class_name == "farm_Renderer" && e->args.size() == 2) {
+              out << "_wh";
+            }
+            // else: use base _new() for no-arg or standard signatures
+            
+            out << "(";
+            for (size_t i = 0; i < e->args.size(); ++i) {
+              if (i > 0) out << ", ";
+              out << emit_expr(e->args[i]);
+            }
+            out << ");\n";
+          } else {
+            // Original class constructor logic
+            out << "struct Farm_" << e->mangled << "* " << v << " = (struct Farm_" << e->mangled << "*)farm_arena_alloc(sizeof(struct Farm_" << e->mangled << "));\n";
+            out << e->mangled << "__constructor(" << v;
+            for (auto& a : e->args) out << ", " << emit_expr(a);
+            out << ");\n";
+          }
           return v;
         }
         std::string ty = c_type(e->type);

@@ -24,6 +24,16 @@ typedef struct farm_PointLight farm_PointLight;
 typedef struct farm_Renderer farm_Renderer;
 
 // Internal structures for hierarchy and geometry
+typedef enum {
+  FARM_OBJECT3D_TYPE_OBJECT3D = 0,
+  FARM_OBJECT3D_TYPE_SCENE = 1,
+  FARM_OBJECT3D_TYPE_CAMERA = 2,
+  FARM_OBJECT3D_TYPE_MESH = 3,
+  FARM_OBJECT3D_TYPE_AMBIENT_LIGHT = 4,
+  FARM_OBJECT3D_TYPE_DIRECTIONAL_LIGHT = 5,
+  FARM_OBJECT3D_TYPE_POINT_LIGHT = 6
+} farm_Object3DType;
+
 typedef struct {
   farm_Object3D** items;
   int32_t count;
@@ -41,6 +51,7 @@ typedef struct {
 
 // Object3D - base scene graph node
 struct farm_Object3D {
+  farm_Object3DType type;
   farm_Vector3 position;
   farm_Euler rotation;
   farm_Quaternion quaternion;
@@ -219,6 +230,7 @@ void farm_MeshStandardMaterial_setMetalness(farm_MeshStandardMaterial* self, dou
 void farm_MeshStandardMaterial_dispose(farm_MeshStandardMaterial* self);
 
 // Mesh methods
+farm_Mesh* farm_Mesh_new(void* geometry, void* material);
 farm_Mesh* farm_Mesh_new_box(farm_BoxGeometry* geometry, void* material, uint8_t mat_type);
 farm_Mesh* farm_Mesh_new_sphere(farm_SphereGeometry* geometry, void* material, uint8_t mat_type);
 farm_Mesh* farm_Mesh_new_plane(farm_PlaneGeometry* geometry, void* material, uint8_t mat_type);

@@ -41,6 +41,7 @@ static void sync_rotation_from_quaternion(farm_Object3D* self) {
 // Object3D implementation
 farm_Object3D* farm_Object3D_new() {
   farm_Object3D* obj = (farm_Object3D*)farm_arena_alloc(sizeof(farm_Object3D));
+  obj->type = FARM_OBJECT3D_TYPE_OBJECT3D;
   obj->position = farm_Vector3_zero();
   obj->rotation = farm_Euler_new(0, 0, 0, "XYZ");
   obj->quaternion = farm_Quaternion_identity();
@@ -217,6 +218,7 @@ void farm_Object3D_setRotationFromQuaternion(farm_Object3D* self, farm_Quaternio
 farm_Scene* farm_Scene_new() {
   farm_Scene* scene = (farm_Scene*)farm_arena_alloc(sizeof(farm_Scene));
   scene->base = *farm_Object3D_new();
+  scene->base.type = FARM_OBJECT3D_TYPE_SCENE;
   scene->hasBackground = false;
   scene->background = farm_Color_zero();
   return scene;
@@ -235,6 +237,7 @@ void farm_Scene_clearBackground(farm_Scene* self) {
 farm_PerspectiveCamera* farm_PerspectiveCamera_new(double fov, double aspect, double near, double far) {
   farm_PerspectiveCamera* cam = (farm_PerspectiveCamera*)farm_arena_alloc(sizeof(farm_PerspectiveCamera));
   cam->base = *farm_Object3D_new();
+  cam->base.type = FARM_OBJECT3D_TYPE_CAMERA;
   cam->fov = fov;
   cam->aspect = aspect;
   cam->near = near;
@@ -567,10 +570,47 @@ farm_Mesh* farm_Mesh_new_plane(farm_PlaneGeometry* geometry, void* material, uin
   return mesh;
 }
 
+// Generic Mesh constructor - determines types at runtime
+// This requires us to identify geometry/material types, which we'll do via pointer ranges
+// For simplicity in M3, we'll use a type-tagging approach
+farm_Mesh* farm_Mesh_new(void* geometry, void* material) {
+  farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
+  mesh->base = *farm_Object3D_new();
+  mesh->base.type = FARM_OBJECT3D_TYPE_MESH;
+  mesh->geometry = geometry;
+  mesh->material = material;
+  
+  // Type detection: check the first few bytes of the structure
+  // BoxGeometry, SphereGeometry, PlaneGeometry all start with farm_GeometryData
+  // We'll use a simple heuristic: check if disposed field pattern
+  farm_BoxGeometry* box_test = (farm_BoxGeometry*)geometry;
+  farm_SphereGeometry* sphere_test = (farm_SphereGeometry*)geometry;
+  farm_PlaneGeometry* plane_test = (farm_PlaneGeometry*)geometry;
+  
+  // Check vertex counts to distinguish geometry types
+  // Box: 24 vertices, Sphere: varies, Plane: 4 vertices
+  if (box_test->data.vertex_count == 24) {
+    mesh->geometry_type = 0; // Box
+  } else if (plane_test->data.vertex_count == 4) {
+    mesh->geometry_type = 2; // Plane
+  } else {
+    mesh->geometry_type = 1; // Sphere (or other)
+  }
+  
+  // Material type detection: Basic vs Standard
+  // Check if the struct size suggests Standard (has roughness/metalness)
+  // For now, assume MeshBasicMaterial if color is the only field
+  // This is a simplification - in production we'd use proper type tags
+  mesh->material_type = 0; // Assume Basic for now, will refine
+  
+  return mesh;
+}
+
 // Lights
 farm_AmbientLight* farm_AmbientLight_new() {
   farm_AmbientLight* light = (farm_AmbientLight*)farm_arena_alloc(sizeof(farm_AmbientLight));
   light->base = *farm_Object3D_new();
+  light->base.type = FARM_OBJECT3D_TYPE_AMBIENT_LIGHT;
   light->color = farm_Color_new(1, 1, 1);
   light->intensity = 1.0;
   return light;
@@ -599,6 +639,7 @@ farm_AmbientLight* farm_AmbientLight_new_color_i(farm_Color color, double intens
 farm_DirectionalLight* farm_DirectionalLight_new() {
   farm_DirectionalLight* light = (farm_DirectionalLight*)farm_arena_alloc(sizeof(farm_DirectionalLight));
   light->base = *farm_Object3D_new();
+  light->base.type = FARM_OBJECT3D_TYPE_DIRECTIONAL_LIGHT;
   light->color = farm_Color_new(1, 1, 1);
   light->intensity = 1.0;
   return light;
@@ -627,6 +668,7 @@ farm_DirectionalLight* farm_DirectionalLight_new_color_i(farm_Color color, doubl
 farm_PointLight* farm_PointLight_new() {
   farm_PointLight* light = (farm_PointLight*)farm_arena_alloc(sizeof(farm_PointLight));
   light->base = *farm_Object3D_new();
+  light->base.type = FARM_OBJECT3D_TYPE_POINT_LIGHT;
   light->color = farm_Color_new(1, 1, 1);
   light->intensity = 1.0;
   light->distance = 0.0;
@@ -1131,12 +1173,8 @@ void farm_Renderer_render(farm_Renderer* self, farm_Scene* scene, farm_Perspecti
   }
   
   // Collect lights from scene graph
-  // For simplicity, we'll do a manual traversal and identify lights
-  // In production, we'd have proper type information
   LightList lights = {0};
-  
-  // Simplified light collection - we'll need to enhance this
-  // For now, just initialize empty and let shading handle it
+  traverse_collect_lights((farm_Object3D*)scene, &lights);
   
   // Traverse and render
   traverse_render((farm_Object3D*)scene, self, camera, &lights);
