@@ -55,7 +55,7 @@ struct Emitter {
   // M2/M3: Get runtime field name for math module structs (inconsistent f_ prefix usage)
   std::string runtime_field_name(const std::string& field_name) {
     static const std::set<std::string> no_prefix_fields = 
-      {"x", "y", "r", "g", "b", "w", "elements", "origin", "direction", "min", "max", "order"};
+      {"r", "g", "b", "w", "elements", "origin", "direction", "min", "max", "order", "hit", "point", "distance", "center", "radius"};
     return no_prefix_fields.count(field_name) ? field_name : ("f_" + field_name);
   }
 
