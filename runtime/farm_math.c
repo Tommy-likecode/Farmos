@@ -334,3 +334,13 @@ farm_Color farm_Color_setHex(int32_t hex) {
   c.b = (hex & 0xFF) / 255.0;
   return c;
 }
+
+int32_t farm_Color_getHex(farm_Color c) {
+  int32_t r = (int32_t)(c.r * 255.0 + 0.5);
+  int32_t g = (int32_t)(c.g * 255.0 + 0.5);
+  int32_t b = (int32_t)(c.b * 255.0 + 0.5);
+  if (r < 0) r = 0; if (r > 255) r = 255;
+  if (g < 0) g = 0; if (g > 255) g = 255;
+  if (b < 0) b = 0; if (b > 255) b = 255;
+  return (r << 16) | (g << 8) | b;
+}

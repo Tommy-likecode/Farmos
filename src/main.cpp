@@ -1554,6 +1554,18 @@ static Module create_farmos_math_module() {
       c.methods.push_back(std::move(md));
     }
     
+    // getHex(): int
+    {
+      MethodDecl md;
+      md.name = "getHex";
+      md.ret = Type::ty_int();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      c.methods.push_back(std::move(md));
+    }
+    
     // multiplyScalar(s: float): Color
     {
       MethodDecl md;
