@@ -20,3 +20,4 @@ _default_ctest_*
 _bundle_ctest_*
 _hello_size.txt
 
+/[0-9][0-9][0-9]_*
