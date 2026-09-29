@@ -622,7 +622,7 @@ farm_AmbientLight* farm_AmbientLight_new() {
   farm_AmbientLight* light = (farm_AmbientLight*)farm_arena_alloc(sizeof(farm_AmbientLight));
   init_Object3D_fields((farm_Object3D*)light, FARM_OBJECT3D_TYPE_AMBIENT_LIGHT);
   light->f_color = farm_Color_new(1, 1, 1);
-  light->intensity = 1.0;
+  light->f_intensity = 1.0;
   return light;
 }
 
@@ -634,14 +634,14 @@ farm_AmbientLight* farm_AmbientLight_new_hex(int64_t hex) {
 
 farm_AmbientLight* farm_AmbientLight_new_hex_i(int64_t hex, double intensity) {
   farm_AmbientLight* light = farm_AmbientLight_new_hex(hex);
-  light->intensity = intensity;
+  light->f_intensity = intensity;
   return light;
 }
 
 farm_AmbientLight* farm_AmbientLight_new_color_i(farm_Color color, double intensity) {
   farm_AmbientLight* light = farm_AmbientLight_new();
   light->f_color = color;
-  light->intensity = intensity;
+  light->f_intensity = intensity;
   return light;
 }
 
@@ -650,7 +650,7 @@ farm_DirectionalLight* farm_DirectionalLight_new() {
   farm_DirectionalLight* light = (farm_DirectionalLight*)farm_arena_alloc(sizeof(farm_DirectionalLight));
   init_Object3D_fields((farm_Object3D*)light, FARM_OBJECT3D_TYPE_DIRECTIONAL_LIGHT);
   light->f_color = farm_Color_new(1, 1, 1);
-  light->intensity = 1.0;
+  light->f_intensity = 1.0;
   return light;
 }
 
@@ -662,14 +662,14 @@ farm_DirectionalLight* farm_DirectionalLight_new_hex(int64_t hex) {
 
 farm_DirectionalLight* farm_DirectionalLight_new_hex_i(int64_t hex, double intensity) {
   farm_DirectionalLight* light = farm_DirectionalLight_new_hex(hex);
-  light->intensity = intensity;
+  light->f_intensity = intensity;
   return light;
 }
 
 farm_DirectionalLight* farm_DirectionalLight_new_color_i(farm_Color color, double intensity) {
   farm_DirectionalLight* light = farm_DirectionalLight_new();
   light->f_color = color;
-  light->intensity = intensity;
+  light->f_intensity = intensity;
   return light;
 }
 
@@ -678,9 +678,9 @@ farm_PointLight* farm_PointLight_new() {
   farm_PointLight* light = (farm_PointLight*)farm_arena_alloc(sizeof(farm_PointLight));
   init_Object3D_fields((farm_Object3D*)light, FARM_OBJECT3D_TYPE_POINT_LIGHT);
   light->f_color = farm_Color_new(1, 1, 1);
-  light->intensity = 1.0;
-  light->distance = 0.0;
-  light->decay = 2.0;
+  light->f_intensity = 1.0;
+  light->f_distance = 0.0;
+  light->f_decay = 2.0;
   return light;
 }
 
@@ -692,23 +692,23 @@ farm_PointLight* farm_PointLight_new_hex(int64_t hex) {
 
 farm_PointLight* farm_PointLight_new_hex_i(int64_t hex, double intensity) {
   farm_PointLight* light = farm_PointLight_new_hex(hex);
-  light->intensity = intensity;
+  light->f_intensity = intensity;
   return light;
 }
 
 farm_PointLight* farm_PointLight_new_color_i(farm_Color color, double intensity) {
   farm_PointLight* light = farm_PointLight_new();
   light->f_color = color;
-  light->intensity = intensity;
+  light->f_intensity = intensity;
   return light;
 }
 
 farm_PointLight* farm_PointLight_new_full(farm_Color color, double intensity, double distance, double decay) {
   farm_PointLight* light = farm_PointLight_new();
   light->f_color = color;
-  light->intensity = intensity;
-  light->distance = distance;
-  light->decay = decay;
+  light->f_intensity = intensity;
+  light->f_distance = distance;
+  light->f_decay = decay;
   return light;
 }
 
@@ -815,9 +815,9 @@ static farm_Color shade_standard(
   // Ambient lights
   for (int i = 0; i < lights->ambient_count; i++) {
     farm_AmbientLight* L = lights->ambients[i];
-    result.r += albedo.r * L->f_color.r * L->intensity;
-    result.g += albedo.g * L->f_color.g * L->intensity;
-    result.b += albedo.b * L->f_color.b * L->intensity;
+    result.r += albedo.r * L->f_color.r * L->f_intensity;
+    result.g += albedo.g * L->f_color.g * L->f_intensity;
+    result.b += albedo.b * L->f_color.b * L->f_intensity;
   }
   
   double shininess = 1.0 + (1.0 - rough) * 255.0;
@@ -847,9 +847,9 @@ static farm_Color shade_standard(
     
     // Diffuse
     double diff_factor = NdotL * (1.0 - 0.9 * metal);
-    result.r += albedo.r * L->f_color.r * L->intensity * diff_factor;
-    result.g += albedo.g * L->f_color.g * L->intensity * diff_factor;
-    result.b += albedo.b * L->f_color.b * L->intensity * diff_factor;
+    result.r += albedo.r * L->f_color.r * L->f_intensity * diff_factor;
+    result.g += albedo.g * L->f_color.g * L->f_intensity * diff_factor;
+    result.b += albedo.b * L->f_color.b * L->f_intensity * diff_factor;
     
     // Specular (Blinn-Phong)
     farm_Vector3 H = farm_Vector3_normalize(farm_Vector3_add(Ldir, V));
@@ -857,9 +857,9 @@ static farm_Color shade_standard(
     if (NdotH < 0) NdotH = 0;
     
     double specular = (NdotH > 0) ? pow(NdotH, shininess) * specStrength : 0;
-    result.r += specColor.r * L->f_color.r * L->intensity * specular;
-    result.g += specColor.g * L->f_color.g * L->intensity * specular;
-    result.b += specColor.b * L->f_color.b * L->intensity * specular;
+    result.r += specColor.r * L->f_color.r * L->f_intensity * specular;
+    result.g += specColor.g * L->f_color.g * L->f_intensity * specular;
+    result.b += specColor.b * L->f_color.b * L->f_intensity * specular;
   }
   
   // Point lights
@@ -879,8 +879,8 @@ static farm_Color shade_standard(
     farm_Vector3 Ldir = farm_Vector3_multiplyScalar(toLight, 1.0 / dist);
     
     // Attenuation
-    double attenuation = 1.0 / fmax(pow(dist, L->decay), 1e-6);
-    if (L->distance > 0 && dist >= L->distance) {
+    double attenuation = 1.0 / fmax(pow(dist, L->f_decay), 1e-6);
+    if (L->f_distance > 0 && dist >= L->f_distance) {
       attenuation = 0;
     }
     
@@ -889,9 +889,9 @@ static farm_Color shade_standard(
     
     // Diffuse
     double diff_factor = NdotL * (1.0 - 0.9 * metal) * attenuation;
-    result.r += albedo.r * L->f_color.r * L->intensity * diff_factor;
-    result.g += albedo.g * L->f_color.g * L->intensity * diff_factor;
-    result.b += albedo.b * L->f_color.b * L->intensity * diff_factor;
+    result.r += albedo.r * L->f_color.r * L->f_intensity * diff_factor;
+    result.g += albedo.g * L->f_color.g * L->f_intensity * diff_factor;
+    result.b += albedo.b * L->f_color.b * L->f_intensity * diff_factor;
     
     // Specular
     farm_Vector3 H = farm_Vector3_normalize(farm_Vector3_add(Ldir, V));
@@ -899,9 +899,9 @@ static farm_Color shade_standard(
     if (NdotH < 0) NdotH = 0;
     
     double specular = (NdotH > 0) ? pow(NdotH, shininess) * specStrength * attenuation : 0;
-    result.r += specColor.r * L->f_color.r * L->intensity * specular;
-    result.g += specColor.g * L->f_color.g * L->intensity * specular;
-    result.b += specColor.b * L->f_color.b * L->intensity * specular;
+    result.r += specColor.r * L->f_color.r * L->f_intensity * specular;
+    result.g += specColor.g * L->f_color.g * L->f_intensity * specular;
+    result.b += specColor.b * L->f_color.b * L->f_intensity * specular;
   }
   
   // Clamp

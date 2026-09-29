@@ -186,7 +186,7 @@ struct farm_AmbientLight {
   bool quaternion_dirty;
   // Light-specific
   farm_Color f_color;
-  double intensity;
+  double f_intensity;
 };
 
 struct farm_DirectionalLight {
@@ -206,7 +206,7 @@ struct farm_DirectionalLight {
   bool quaternion_dirty;
   // Light-specific
   farm_Color f_color;
-  double intensity;
+  double f_intensity;
 };
 
 struct farm_PointLight {
@@ -226,9 +226,9 @@ struct farm_PointLight {
   bool quaternion_dirty;
   // Light-specific
   farm_Color f_color;
-  double intensity;
-  double distance;
-  double decay;
+  double f_intensity;
+  double f_distance;
+  double f_decay;
 };
 
 // Renderer

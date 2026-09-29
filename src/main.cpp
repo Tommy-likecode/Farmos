@@ -305,6 +305,18 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       cd.methods.push_back(std::move(md));
     }
     
+    // updateMatrix method
+    {
+      MethodDecl md;
+      md.name = "updateMatrix";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
     // updateMatrixWorld method
     {
       MethodDecl md;
@@ -566,6 +578,8 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     cd.fields.push_back(FieldDecl{"color", Type::ty_struct("Color"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"roughness", Type::ty_float(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"metalness", Type::ty_float(), SourceLoc{1, 1}});
     {
       MethodDecl md;
       md.name = cd.name;
@@ -621,10 +635,8 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     cd.base_class = "Object3D";  // M3: Mesh is-a Object3D
-    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"rotation", Type::ty_struct("Euler"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"quaternion", Type::ty_struct("Quaternion"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"scale", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"geometry", Type::ty_class("BoxGeometry"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"material", Type::ty_class("MeshBasicMaterial"), SourceLoc{1, 1}});
     
     // Constructor - exactly one (geometry: BoxGeometry, material: MeshBasicMaterial)
     // Type checker will allow subtype/compatible assignments
@@ -653,6 +665,8 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     cd.base_class = "Object3D";  // M3: Light is-a Object3D
+    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("Color"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"intensity", Type::ty_float(), SourceLoc{1, 1}});
     
     // Constructor - exactly one (color_hex)
     // Emit_c will handle 2-arg variant via runtime dispatch
@@ -680,6 +694,8 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     cd.base_class = "Object3D";  // M3: Light is-a Object3D
+    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("Color"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"intensity", Type::ty_float(), SourceLoc{1, 1}});
     
     // Constructor - exactly one (color_hex)
     {
@@ -706,6 +722,10 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     cd.base_class = "Object3D";  // M3: Light is-a Object3D
+    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("Color"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"intensity", Type::ty_float(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"distance", Type::ty_float(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"decay", Type::ty_float(), SourceLoc{1, 1}});
     
     // Constructor - exactly one (color_hex)
     {
