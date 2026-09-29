@@ -430,19 +430,24 @@ struct Emitter {
             recv = emit_expr(e->lhs->lhs);
           }
           
-          // M3: Special handling for lookAt(x, y, z) on Object3D and subclasses
-          if (e->mangled.find("_lookAt") != std::string::npos && e->args.size() == 3) {
-            // Check if this is an Object3D or subclass
+          // M3: Special handling for lookAt on Object3D and subclasses
+          if (e->mangled.find("_lookAt") != std::string::npos) {
             std::string class_name = e->lhs->lhs->type->name;
             if (class_name == "farm_Object3D" || class_name == "farm_Scene" || 
                 class_name == "farm_PerspectiveCamera" || class_name == "farm_Mesh" ||
                 class_name == "farm_AmbientLight" || class_name == "farm_DirectionalLight" || 
                 class_name == "farm_PointLight") {
-              std::string x = emit_expr(e->args[0]);
-              std::string y = emit_expr(e->args[1]);
-              std::string z = emit_expr(e->args[2]);
-              // Cast to Object3D* and call Object3D_lookAt_xyz
-              return "farm_Object3D_lookAt_xyz((farm_Object3D*)" + recv + ", " + x + ", " + y + ", " + z + ")";
+              if (e->args.size() == 3) {
+                // lookAt(x, y, z)
+                std::string x = emit_expr(e->args[0]);
+                std::string y = emit_expr(e->args[1]);
+                std::string z = emit_expr(e->args[2]);
+                return "farm_Object3D_lookAt_xyz((farm_Object3D*)" + recv + ", " + x + ", " + y + ", " + z + ")";
+              } else if (e->args.size() == 1) {
+                // lookAt(Vector3)
+                std::string v = emit_expr(e->args[0]);
+                return "farm_Object3D_lookAt_v((farm_Object3D*)" + recv + ", " + v + ")";
+              }
             }
           }
           

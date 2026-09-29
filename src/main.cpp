@@ -277,13 +277,39 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       cd.methods.push_back(std::move(md));
     }
     
-    // lookAt method
+    // lookAt method (x, y, z)
     {
       MethodDecl md;
       md.name = "lookAt";
       md.params.push_back(Param{"x", Type::ty_float(), SourceLoc{1,1}});
       md.params.push_back(Param{"y", Type::ty_float(), SourceLoc{1,1}});
       md.params.push_back(Param{"z", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
+    // lookAt method (Vector3) - overload
+    {
+      MethodDecl md;
+      md.name = "lookAt";
+      md.params.push_back(Param{"target", Type::ty_struct("Vector3"), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
+    // updateMatrixWorld method
+    {
+      MethodDecl md;
+      md.name = "updateMatrixWorld";
+      md.params.push_back(Param{"force", Type::ty_bool(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();

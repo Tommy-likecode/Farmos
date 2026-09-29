@@ -523,27 +523,50 @@ struct Sema {
           auto rt = e->lhs->lhs->type;
           if (rt->kind == TypeKind::Class) {
             auto* cd = find_class_any(rt->name);
-            MethodDecl* md = nullptr;
-            // Search in current class and walk base_class chain
+            // M3: Find all methods with matching name in class and base chain
+            std::vector<MethodDecl*> candidates;
             auto* search_class = cd;
-            while (search_class && !md) {
+            while (search_class) {
               for (auto& m : search_class->methods) {
                 if (!m.is_ctor && m.name == e->lhs->name) {
-                  md = &m;
-                  // M3: TEMP - always use single underscore for debugging
-                  std::string sep = "_";
-                  e->mangled = search_class->c_sym + sep + md->name;
-                  break;
+                  candidates.push_back(&m);
                 }
               }
-              if (!md && !search_class->base_class.empty()) {
-                // Walk to base class (base_class stores display names like "Object3D")
+              if (!search_class->base_class.empty()) {
                 std::string base_c_sym = "farm_" + search_class->base_class;
                 search_class = find_class_any(base_c_sym);
               } else {
                 break;
               }
             }
+            
+            // M3: Select best overload based on arity and types
+            MethodDecl* md = nullptr;
+            for (auto* candidate : candidates) {
+              if (candidate->params.size() == e->args.size()) {
+                // Check if all arguments match (with int→float coercion)
+                bool all_match = true;
+                for (size_t i = 0; i < e->args.size(); ++i) {
+                  TypePtr arg_type = e->args[i]->type;
+                  TypePtr param_type = candidate->params[i].type;
+                  
+                  // Allow int→float coercion
+                  if (param_type->kind == TypeKind::Float && arg_type->kind == TypeKind::Int) {
+                    continue; // Will be coerced
+                  }
+                  
+                  if (!types_assignable(arg_type, param_type)) {
+                    all_match = false;
+                    break;
+                  }
+                }
+                if (all_match) {
+                  md = candidate;
+                  break;
+                }
+              }
+            }
+            
             if (!md) { error_at(path, e->loc, "E0505", "undefined name `" + e->lhs->name + "`"); e->type=Type::ty_error(); }
             else {
               if (e->args.size()!=md->params.size())
