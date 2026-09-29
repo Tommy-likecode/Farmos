@@ -398,12 +398,35 @@ struct Sema {
           auto* cd = find_class_any(t->name);
           if (!cd) { error_at(path, e->loc, "E0505", "undefined name `" + e->name + "`"); e->type=Type::ty_error(); break; }
           bool found=false;
-          for (auto& f : cd->fields) if (f.name==e->name) { e->type=f.type; found=true; break; }
-          if (!found) {
-            for (auto& md : cd->methods) if (!md.is_ctor && md.name==e->name) {
-              e->mangled = cd->c_sym + "__" + e->name;
-              e->type = Type::ty_error();
-              found = true; break;
+          
+          // Search fields and methods in current class and base chain
+          auto* search_class = cd;
+          while (search_class && !found) {
+            for (auto& f : search_class->fields) {
+              if (f.name==e->name) {
+                e->type=f.type;
+                found=true;
+                break;
+              }
+            }
+            if (!found) {
+              for (auto& md : search_class->methods) {
+                if (!md.is_ctor && md.name==e->name) {
+                  // M3: Scene classes use single underscore (runtime convention)
+                  bool is_scene_class = (search_class->c_sym.find("farm_") == 0);  // All farm_ classes are stdlib
+                  std::string sep = is_scene_class ? "_" : "__";
+                  e->mangled = search_class->c_sym + sep + e->name;
+                  e->type = Type::ty_error();
+                  found = true;
+                  break;
+                }
+              }
+            }
+            if (!found && !search_class->base_class.empty()) {
+              std::string base_c_sym = "farm_" + search_class->base_class;
+              search_class = find_class_any(base_c_sym);
+            } else {
+              break;
             }
           }
           if (!found) {
@@ -502,7 +525,27 @@ struct Sema {
           if (rt->kind == TypeKind::Class) {
             auto* cd = find_class_any(rt->name);
             MethodDecl* md = nullptr;
-            if (cd) for (auto& m : cd->methods) if (!m.is_ctor && m.name == e->lhs->name) { md = &m; break; }
+            // Search in current class and walk base_class chain
+            auto* search_class = cd;
+            while (search_class && !md) {
+              for (auto& m : search_class->methods) {
+                if (!m.is_ctor && m.name == e->lhs->name) {
+                  md = &m;
+                  // M3: Scene classes use single underscore (runtime convention)
+                  bool is_scene_class = (search_class->c_sym.find("farm_") == 0);  // All farm_ classes are stdlib
+                  std::string sep = is_scene_class ? "_" : "__";
+                  e->mangled = search_class->c_sym + sep + md->name;
+                  break;
+                }
+              }
+              if (!md && !search_class->base_class.empty()) {
+                // Walk to base class (base_class stores display names like "Object3D")
+                std::string base_c_sym = "farm_" + search_class->base_class;
+                search_class = find_class_any(base_c_sym);
+              } else {
+                break;
+              }
+            }
             if (!md) { error_at(path, e->loc, "E0505", "undefined name `" + e->lhs->name + "`"); e->type=Type::ty_error(); }
             else {
               if (e->args.size()!=md->params.size())

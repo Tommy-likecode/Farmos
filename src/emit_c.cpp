@@ -801,6 +801,16 @@ struct Emitter {
         out << ");\n";
       }
       for (auto& c : m.classes) {
+        // M3: Skip forward declarations for scene classes - they're in farm_scene.h
+        bool is_scene_class = (c.c_sym == "farm_Scene" || c.c_sym == "farm_Object3D" ||
+                               c.c_sym == "farm_PerspectiveCamera" || c.c_sym == "farm_Mesh" ||
+                               c.c_sym == "farm_BoxGeometry" || c.c_sym == "farm_SphereGeometry" ||
+                               c.c_sym == "farm_PlaneGeometry" || c.c_sym == "farm_MeshBasicMaterial" ||
+                               c.c_sym == "farm_MeshStandardMaterial" || c.c_sym == "farm_AmbientLight" ||
+                               c.c_sym == "farm_DirectionalLight" || c.c_sym == "farm_PointLight" ||
+                               c.c_sym == "farm_Renderer");
+        if (is_scene_class) continue;
+        
         for (auto& md : c.methods) {
           std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
           out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct " << c.c_sym << "* this";
@@ -866,6 +876,16 @@ struct Emitter {
         out << "\n";
       }
       for (auto& c : m.classes) {
+        // M3: Skip implementations for scene classes - they're in farm_scene.c
+        bool is_scene_class = (c.c_sym == "farm_Scene" || c.c_sym == "farm_Object3D" ||
+                               c.c_sym == "farm_PerspectiveCamera" || c.c_sym == "farm_Mesh" ||
+                               c.c_sym == "farm_BoxGeometry" || c.c_sym == "farm_SphereGeometry" ||
+                               c.c_sym == "farm_PlaneGeometry" || c.c_sym == "farm_MeshBasicMaterial" ||
+                               c.c_sym == "farm_MeshStandardMaterial" || c.c_sym == "farm_AmbientLight" ||
+                               c.c_sym == "farm_DirectionalLight" || c.c_sym == "farm_PointLight" ||
+                               c.c_sym == "farm_Renderer");
+        if (is_scene_class) continue;
+        
         for (auto& md : c.methods) {
           std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
           out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct " << c.c_sym << "* this";

@@ -225,6 +225,58 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       cd.methods.push_back(std::move(md));
     }
     
+    // remove method
+    {
+      MethodDecl md;
+      md.name = "remove";
+      md.params.push_back(Param{"child", Type::ty_class("Object3D"), SourceLoc{1,1}});
+      md.ret = Type::ty_class("Object3D");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
+    // addAt method
+    {
+      MethodDecl md;
+      md.name = "addAt";
+      md.params.push_back(Param{"child", Type::ty_class("Object3D"), SourceLoc{1,1}});
+      md.params.push_back(Param{"index", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_class("Object3D");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
+    // childCount method
+    {
+      MethodDecl md;
+      md.name = "childCount";
+      md.ret = Type::ty_int();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
+    // getChild method
+    {
+      MethodDecl md;
+      md.name = "getChild";
+      md.params.push_back(Param{"index", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_class("Object3D");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
     m.classes.push_back(std::move(cd));
   }
   
