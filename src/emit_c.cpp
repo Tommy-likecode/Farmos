@@ -43,6 +43,22 @@ struct Emitter {
     return s;
   }
 
+  // M2/M3: Check if struct is from farmos:math module
+  bool is_math_struct(StructDecl* sd) {
+    if (!sd) return false;
+    static const std::set<std::string> math_structs = 
+      {"Vector2", "Vector3", "Vector4", "Matrix3", "Matrix4", 
+       "Quaternion", "Color", "Euler", "Ray", "Sphere", "Box3"};
+    return math_structs.count(sd->name) > 0;
+  }
+
+  // M2/M3: Get runtime field name for math module structs (inconsistent f_ prefix usage)
+  std::string runtime_field_name(const std::string& field_name) {
+    static const std::set<std::string> no_prefix_fields = 
+      {"x", "y", "r", "g", "b", "w", "elements", "origin", "direction", "min", "max", "order"};
+    return no_prefix_fields.count(field_name) ? field_name : ("f_" + field_name);
+  }
+
   std::string c_type(const TypePtr& t) {
     switch (t->kind) {
       case TypeKind::Int: return "int64_t";
@@ -50,7 +66,12 @@ struct Emitter {
       case TypeKind::Bool: return "int8_t";
       case TypeKind::String: return "FarmString";
       case TypeKind::Void: return "void";
-      case TypeKind::Struct: return "struct Farm_" + t->name;
+      case TypeKind::Struct:
+        // M2/M3: Math module structs use runtime typedefs (farm_Vector3, farm_Color, etc.)
+        if (t->name.find("m1_") == 0) {
+          return "farm_" + t->name.substr(3); // m1_Color -> farm_Color
+        }
+        return "struct Farm_" + t->name;
       case TypeKind::Class: return "struct " + t->name + "*";  // M3: c_sym already includes prefix
       case TypeKind::DynArray: return "FarmDynArray";
       case TypeKind::FixedArray: return "FarmFixed_" + sanitize(t->str());
@@ -215,8 +236,13 @@ struct Emitter {
       }
       case ExprKind::Field: {
         auto base = emit_expr(e->lhs);
-        if (e->lhs->type->kind == TypeKind::Class)
+        if (e->lhs->type->kind == TypeKind::Class) {
           return "(" + base + ")->f_" + e->name;
+        }
+        // M2/M3: Math module structs have inconsistent field naming in runtime
+        if (e->lhs->type->kind == TypeKind::Struct && e->lhs->type->name.find("m1_") == 0) {
+          return "(" + base + ")." + runtime_field_name(e->name);
+        }
         return "(" + base + ").f_" + e->name;
       }
       case ExprKind::Call: {
@@ -507,9 +533,15 @@ struct Emitter {
         } else if (sd->name == "Color" && e->args.size() == 1) {
           // Color(hex: int) constructor
           std::string hex_val = emit_expr(e->args[0]);
-          out << v << ".f_r = ((" << hex_val << " >> 16) & 255) / 255.0;\n";
-          out << v << ".f_g = ((" << hex_val << " >> 8) & 255) / 255.0;\n";
-          out << v << ".f_b = (" << hex_val << " & 255) / 255.0;\n";
+          if (is_math_struct(sd)) {
+            out << v << ".r = ((" << hex_val << " >> 16) & 255) / 255.0;\n";
+            out << v << ".g = ((" << hex_val << " >> 8) & 255) / 255.0;\n";
+            out << v << ".b = (" << hex_val << " & 255) / 255.0;\n";
+          } else {
+            out << v << ".f_r = ((" << hex_val << " >> 16) & 255) / 255.0;\n";
+            out << v << ".f_g = ((" << hex_val << " >> 8) & 255) / 255.0;\n";
+            out << v << ".f_b = (" << hex_val << " & 255) / 255.0;\n";
+          }
         } else if (sd->name == "Euler" && e->args.size() == 3) {
           // Euler(x, y, z) constructor with default order "XYZ"
           for (size_t i=0; i<3; ++i) {
@@ -521,7 +553,8 @@ struct Emitter {
           // Explicit constructor with all arguments
           for (size_t i=0;i<e->args.size();++i) {
             std::string arg_val = emit_expr(e->args[i]);
-            out << v << ".f_" << sd->fields[i].name << " = " << arg_val << ";\n";
+            std::string field_name = is_math_struct(sd) ? runtime_field_name(sd->fields[i].name) : ("f_" + sd->fields[i].name);
+            out << v << "." << field_name << " = " << arg_val << ";\n";
           }
         }
         return v;
@@ -747,7 +780,11 @@ struct Emitter {
     emit_fixed_typedefs();
     // Emit all structs first (so classes can reference them)
     for (auto& m : prog.modules) {
+      // M2/M3: Skip math module structs - they're typedefs in farm_math.h
+      bool is_math_module = (m.path == "farmos:math");
       for (auto& s : m.structs) {
+        if (is_math_module) continue;
+        
         out << "struct Farm_" << s.c_sym << " {\n";
         for (auto& f : s.fields) out << "  " << c_type(f.type) << " f_" << f.name << ";\n";
         out << "};\n";
@@ -775,9 +812,11 @@ struct Emitter {
     // M2: Forward declare struct print helpers  
     out << "/* M2 struct print helpers forward declarations */\n";
     for (auto& m : prog.modules) {
+      bool is_math_module = (m.path == "farmos:math");
       for (auto& s : m.structs) {
-        out << "void farm_print_" << sanitize(s.name) << "(struct Farm_" << s.c_sym << " v);\n";
-        out << "void farm_print_" << sanitize(s.name) << "_ln(struct Farm_" << s.c_sym << " v);\n";
+        std::string type_name = is_math_module ? ("farm_" + s.name) : ("struct Farm_" + s.c_sym);
+        out << "void farm_print_" << sanitize(s.name) << "(" << type_name << " v);\n";
+        out << "void farm_print_" << sanitize(s.name) << "_ln(" << type_name << " v);\n";
       }
     }
     out << "/* End M2 forward declarations */\n";
@@ -820,6 +859,12 @@ struct Emitter {
         }
       }
       // M2: Forward declare struct methods
+      bool is_math_module = (m.path == "farmos:math");
+      if (is_math_module) {
+        // Skip math module - methods are declared in farm_math.h
+        continue;
+      }
+      
       for (auto& s : m.structs) {
         for (auto& md : s.methods) {
           // If method is mutating (returns this), return pointer for chaining
@@ -898,6 +943,12 @@ struct Emitter {
       }
       
       // M2: Implement struct methods
+      bool is_math_module = (m.path == "farmos:math");
+      if (is_math_module) {
+        // Skip math module struct methods - they're implemented in farm_math.c
+        continue;
+      }
+      
       for (auto& s : m.structs) {
         for (auto& md : s.methods) {
           // If method is mutating (returns this), return pointer for chaining
