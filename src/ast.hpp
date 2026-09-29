@@ -150,6 +150,7 @@ struct ClassDecl {
   int ctor_index = -1;
   std::string c_sym;
   int module_id = 0;
+  std::string base_class;  // M3: stdlib-only is-a (e.g. "Object3D" for Mesh/Scene/Light/Camera)
 };
 
 struct FunctionDecl {

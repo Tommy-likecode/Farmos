@@ -1,0 +1,6 @@
+# kind: run
+# exit: 0
+## M2 §4A: int literals in float ctor args
+# stdout:
+75
+# end

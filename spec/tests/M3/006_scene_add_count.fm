@@ -1,0 +1,11 @@
+import { Scene, Object3D, Mesh, BoxGeometry, MeshBasicMaterial } from "farmos:scene";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  const a: Object3D = new Object3D();
+  const b: Mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(0xff0000));
+  scene.add(a);
+  scene.add(b);
+  println(scene.childCount());
+  return 0;
+}

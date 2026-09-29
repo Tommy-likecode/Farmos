@@ -1,0 +1,8 @@
+import { BoxGeometry, PerspectiveCamera } from "farmos:scene";
+
+function main(): int {
+  const g: BoxGeometry = new BoxGeometry(1, 2, 3);
+  const c: PerspectiveCamera = new PerspectiveCamera(75, 1, 0.1, 1000);
+  println(c.fov);
+  return 0;
+}

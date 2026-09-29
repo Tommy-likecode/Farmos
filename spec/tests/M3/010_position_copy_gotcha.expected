@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+## M2 §3.7 / M3 porting: assignment copies Vector3
+# stdout:
+Vector3(1, 2, 3)
+Vector3(9, 2, 3)
+# end

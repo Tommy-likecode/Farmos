@@ -1,0 +1,11 @@
+import { Scene, PerspectiveCamera, Renderer } from "farmos:scene";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  const camera: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);
+  const renderer: Renderer = new Renderer();
+  renderer.setSize(16, 16);
+  renderer.render(scene, camera);
+  println(1);
+  return 0;
+}

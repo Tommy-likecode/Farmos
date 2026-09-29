@@ -77,6 +77,29 @@ struct Sema {
     return nullptr;
   }
 
+  // M3: Check if `actual` type is assignable to `expected` (type_eq OR stdlib is-a for classes)
+  bool types_assignable(TypePtr actual, TypePtr expected) {
+    if (type_eq(actual, expected)) return true;
+    // Check stdlib class is-a (Mesh/Light/Camera/Scene → Object3D)
+    if (actual->kind == TypeKind::Class && expected->kind == TypeKind::Class) {
+      auto* actual_class = find_class_any(actual->name);
+      if (!actual_class) return false;
+      // Walk base chain (base_class stores display names, so look them up)
+      std::string base = actual_class->base_class;
+      while (!base.empty()) {
+        auto* base_class = find_class_any("farm_" + base);  // Convert display name to c_sym
+        if (!base_class) {
+          // Try without farm_ prefix (in case it's already a c_sym)
+          base_class = find_class_any(base);
+        }
+        if (!base_class) break;
+        if (base_class->c_sym == expected->name) return true;
+        base = base_class->base_class;
+      }
+    }
+    return false;
+  }
+
   TypePtr finalize_type(TypePtr t, SourceLoc loc, bool allow_void=false) {
     if (!t) return Type::ty_error();
     if (t->kind == TypeKind::Void) {
@@ -492,7 +515,7 @@ struct Sema {
                       e->args[i]->type->kind == TypeKind::Int) {
                     e->args[i] = try_coerce_int_to_float(e->args[i]);
                   }
-                  if (!type_eq(e->args[i]->type, md->params[i].type))
+                  if (!types_assignable(e->args[i]->type, md->params[i].type))
                     error_at(path, e->args[i]->loc, "E0408", "type mismatch");
                 }
               }
@@ -516,7 +539,7 @@ struct Sema {
                       e->args[i]->type->kind == TypeKind::Int) {
                     e->args[i] = try_coerce_int_to_float(e->args[i]);
                   }
-                  if (!type_eq(e->args[i]->type, md->params[i].type))
+                  if (!types_assignable(e->args[i]->type, md->params[i].type))
                     error_at(path, e->args[i]->loc, "E0408", "type mismatch");
                 }
               }
@@ -584,9 +607,16 @@ struct Sema {
           auto& ctor = cd->methods[cd->ctor_index];
           if (e->args.size()!=ctor.params.size())
             error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(ctor.params.size()) + ", found " + std::to_string(e->args.size()));
-          else for (size_t i=0;i<e->args.size();++i)
-            if (!type_eq(e->args[i]->type, ctor.params[i].type))
+          else for (size_t i=0;i<e->args.size();++i) {
+            // M3: Try int→float coercion (same as struct constructors)
+            if (!types_assignable(e->args[i]->type, ctor.params[i].type) &&
+                ctor.params[i].type->kind == TypeKind::Float &&
+                e->args[i]->type->kind == TypeKind::Int) {
+              e->args[i] = try_coerce_int_to_float(e->args[i]);
+            }
+            if (!types_assignable(e->args[i]->type, ctor.params[i].type))
               error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+          }
           e->type = Type::ty_class(cd->c_sym);
           e->mangled = cd->c_sym;
         } else if (auto* sd = find_struct(e->type_name)) {
@@ -877,6 +907,11 @@ struct Sema {
   void check_method(ClassDecl& c, MethodDecl& m) {
     cur_fn = m.name; cur_ret = m.ret; cur_class = &c; in_ctor = m.is_ctor;
     Scope sc; scope = &sc;
+    // Skip body checks for synthetic/builtin methods (empty Block stub)
+    if (m.body && m.body->kind == StmtKind::Block && m.body->stmts.empty()) {
+      scope = nullptr;
+      return;
+    }
     for (auto& p : m.params) sc.declare(p.name, VarInfo{p.type, false, p.loc}, path);
     bool ret=false;
     check_stmt(m.body, &ret);

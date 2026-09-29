@@ -1,0 +1,10 @@
+# kind: run_approx
+# exit: 0
+# epsilon: 1e-12
+## rotation.y = π/2 → quaternion ≈ (0, √2/2, 0, √2/2)
+# stdout:
+0
+0.7071067811865475
+0
+0.7071067811865476
+# end

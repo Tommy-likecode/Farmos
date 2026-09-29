@@ -1,0 +1,9 @@
+import { Mesh, BoxGeometry, MeshBasicMaterial } from "farmos:scene";
+
+function main(): int {
+  const geo: BoxGeometry = new BoxGeometry(2, 2, 2);
+  const a: Mesh = new Mesh(geo, new MeshBasicMaterial(0xffffff));
+  const b: Mesh = new Mesh(geo, new MeshBasicMaterial(0xffffff));
+  println(1);
+  return 0;
+}

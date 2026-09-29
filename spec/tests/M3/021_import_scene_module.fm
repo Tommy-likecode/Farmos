@@ -1,0 +1,7 @@
+import { Scene } from "farmos:scene";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  println(scene.childCount());
+  return 0;
+}

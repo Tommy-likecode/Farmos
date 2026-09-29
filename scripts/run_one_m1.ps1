@@ -34,6 +34,8 @@ function Parse-Expected([string]$path) {
   $stderr = $null; $hasStderr = $false
   $stderrExact = $null
   $errors = @()
+  $pngPath = $null
+  $sha256 = $null
   $mode = $null
   $buf = New-Object System.Collections.Generic.List[string]
 
@@ -57,6 +59,8 @@ function Parse-Expected([string]$path) {
 
     if ($line -cmatch '^# kind:[ \t]*(\S+)[ \t]*$') { $kind = $Matches[1]; continue }
     if ($line -cmatch '^# exit:[ \t]*(-?\d+)[ \t]*$') { $exitCode = [int]$Matches[1]; continue }
+    if ($line -cmatch '^# png:[ \t]*(.+)[ \t]*$') { $pngPath = $Matches[1].Trim(); continue }
+    if ($line -cmatch '^# sha256:[ \t]*([0-9a-fA-F]{64})[ \t]*$') { $sha256 = $Matches[1].ToLower(); continue }
     if ($line -cmatch '^# stderr_exact:[ \t]*(true|false)[ \t]*$') { $stderrExact = (Same $Matches[1] 'true'); continue }
     if ($line -cmatch '^# error:[ \t]*(\d+):(\d+):[ \t]*(E\d{4})[ \t]*$') {
       $errors += @{ line=[int]$Matches[1]; col=[int]$Matches[2]; code=$Matches[3]; path="" }
@@ -80,6 +84,7 @@ function Parse-Expected([string]$path) {
     stderr=$stderr; hasStderr=$hasStderr
     stderrExact=$stderrExact
     errors=$errors
+    pngPath=$pngPath; sha256=$sha256
   }
 }
 
@@ -140,7 +145,7 @@ if (Same $exp.kind 'compile_error') {
   exit 0
 }
 
-if (-not ((Same $exp.kind 'run') -or (Same $exp.kind 'run_approx') -or (Same $exp.kind 'runtime_trap'))) { Write-Host "FAIL ${Name}: unknown kind '$($exp.kind)'"; exit 1 }
+if (-not ((Same $exp.kind 'run') -or (Same $exp.kind 'run_approx') -or (Same $exp.kind 'run_png') -or (Same $exp.kind 'runtime_trap'))) { Write-Host "FAIL ${Name}: unknown kind '$($exp.kind)'"; exit 1 }
 
 # README harness contract: build must succeed (exit 0) for run/runtime_trap.
 $p = Invoke-FarmcBuild
@@ -246,6 +251,68 @@ if (Same $exp.kind 'runtime_trap') {
       exit 1
     }
   }
+}
+
+if (Same $exp.kind 'run_png') {
+  # M3 PNG fixture: check stdout, stderr, and PNG hash
+  if (-not $exp.hasStdout) { Write-Host "FAIL ${Name}: run_png fixture missing # stdout: block"; exit 1 }
+  $wantOut = Norm-Newlines $exp.stdout
+  if (-not (Same $stdoutGot $wantOut)) {
+    Write-Host "FAIL ${Name}: stdout mismatch"
+    Write-Host "GOT:<<<$stdoutGot>>>"; Write-Host "WANT:<<<$wantOut>>>"
+    exit 1
+  }
+  
+  # README: stderr MUST be empty for run_png.
+  if ($stderrGot.Length -ne 0) {
+    Write-Host "FAIL ${Name}: unexpected stderr (run_png fixtures require empty stderr)"
+    Write-Host "GOT_STDERR:<<<$stderrGot>>>"
+    exit 1
+  }
+  
+  if ($null -eq $exp.pngPath) { Write-Host "FAIL ${Name}: run_png fixture missing # png: path"; exit 1 }
+  if ($null -eq $exp.sha256) { Write-Host "FAIL ${Name}: run_png fixture missing # sha256: hash"; exit 1 }
+  
+  # The program was run from $TestsDir, so PNG path is relative to that
+  $pngFile = Join-Path $TestsDir $exp.pngPath
+  if (-not (Test-Path -LiteralPath $pngFile)) {
+    Write-Host "FAIL ${Name}: PNG file not found: $pngFile"
+    exit 1
+  }
+  
+  # Compute SHA-256 of the PNG file
+  $hash = (Get-FileHash -LiteralPath $pngFile -Algorithm SHA256).Hash.ToLower()
+  if (-not (Same $hash $exp.sha256)) {
+    Write-Host "FAIL ${Name}: PNG SHA-256 mismatch"
+    Write-Host "GOT:  $hash"
+    Write-Host "WANT: $($exp.sha256)"
+    exit 1
+  }
+  
+  # Optional: byte-compare with golden PNG if it exists
+  $goldenPng = Join-Path $TestsDir "$Name.golden.png"
+  if (Test-Path -LiteralPath $goldenPng) {
+    $gotBytes = [System.IO.File]::ReadAllBytes($pngFile)
+    $goldenBytes = [System.IO.File]::ReadAllBytes($goldenPng)
+    if ($gotBytes.Length -ne $goldenBytes.Length) {
+      Write-Host "FAIL ${Name}: PNG size mismatch with golden (got $($gotBytes.Length) bytes, golden $($goldenBytes.Length) bytes)"
+      exit 1
+    }
+    $match = $true
+    for ($i = 0; $i -lt $gotBytes.Length; $i++) {
+      if ($gotBytes[$i] -ne $goldenBytes[$i]) {
+        $match = $false
+        break
+      }
+    }
+    if (-not $match) {
+      Write-Host "FAIL ${Name}: PNG bytes differ from golden at byte $i"
+      exit 1
+    }
+  }
+  
+  # Clean up PNG file after test
+  Remove-Item -Force $pngFile -ErrorAction SilentlyContinue
 }
 
 Write-Host "PASS ${Name}"

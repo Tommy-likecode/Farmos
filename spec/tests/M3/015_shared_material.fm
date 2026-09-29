@@ -1,0 +1,12 @@
+import { Mesh, BoxGeometry, MeshBasicMaterial } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const mat: MeshBasicMaterial = new MeshBasicMaterial(0x00ff00);
+  const a: Mesh = new Mesh(new BoxGeometry(1, 1, 1), mat);
+  const b: Mesh = new Mesh(new BoxGeometry(1, 1, 1), mat);
+  mat.color.setHex(0x0000ff);
+  println(a.material.color.getHex());
+  println(b.material.color.getHex());
+  return 0;
+}

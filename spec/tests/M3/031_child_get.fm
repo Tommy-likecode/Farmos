@@ -1,0 +1,11 @@
+import { Scene, Object3D } from "farmos:scene";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  const a: Object3D = new Object3D();
+  a.position.x = 7;
+  scene.add(a);
+  const c: Object3D = scene.getChild(0);
+  println(c.position.x);
+  return 0;
+}
