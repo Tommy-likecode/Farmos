@@ -30,6 +30,25 @@ static bool is_ancestor_of(farm_Object3D* potential_ancestor, farm_Object3D* nod
   return false;
 }
 
+// Helper: initialize Object3D fields (used by all subclass constructors)
+static void init_Object3D_fields(farm_Object3D* obj, farm_Object3DType type) {
+  obj->type = type;
+  obj->f_position = farm_Vector3_zero();
+  obj->f_rotation = farm_Euler_new(0, 0, 0, "XYZ");
+  obj->f_quaternion = farm_Quaternion_identity();
+  obj->f_scale = farm_Vector3_new(1, 1, 1);
+  obj->f_matrix = farm_Matrix4_identity();
+  obj->f_matrixWorld = farm_Matrix4_identity();
+  obj->matrixAutoUpdate = true;
+  obj->f_visible = true;
+  obj->parent = NULL;
+  obj->children.items = NULL;
+  obj->children.count = 0;
+  obj->children.capacity = 0;
+  obj->rotation_dirty = false;
+  obj->quaternion_dirty = false;
+}
+
 // Helper: sync rotation/quaternion
 static void sync_quaternion_from_rotation(farm_Object3D* self) {
   if (self->rotation_dirty) {
@@ -50,21 +69,7 @@ static void sync_rotation_from_quaternion(farm_Object3D* self) {
 // Object3D implementation
 farm_Object3D* farm_Object3D_new() {
   farm_Object3D* obj = (farm_Object3D*)farm_arena_alloc(sizeof(farm_Object3D));
-  obj->type = FARM_OBJECT3D_TYPE_OBJECT3D;
-  obj->f_position = farm_Vector3_zero();
-  obj->f_rotation = farm_Euler_new(0, 0, 0, "XYZ");
-  obj->f_quaternion = farm_Quaternion_identity();
-  obj->f_scale = farm_Vector3_new(1, 1, 1);
-  obj->f_matrix = farm_Matrix4_identity();
-  obj->f_matrixWorld = farm_Matrix4_identity();
-  obj->matrixAutoUpdate = true;
-  obj->f_visible = true;
-  obj->parent = NULL;
-  obj->children.items = NULL;
-  obj->children.count = 0;
-  obj->children.capacity = 0;
-  obj->rotation_dirty = false;
-  obj->quaternion_dirty = false;
+  init_Object3D_fields(obj, FARM_OBJECT3D_TYPE_OBJECT3D);
   return obj;
 }
 
@@ -226,8 +231,7 @@ void farm_Object3D_setRotationFromQuaternion(farm_Object3D* self, farm_Quaternio
 // Scene implementation
 farm_Scene* farm_Scene_new() {
   farm_Scene* scene = (farm_Scene*)farm_arena_alloc(sizeof(farm_Scene));
-  // Flattened: scene fields initialized inlinefarm_Object3D_new();
-  scene->type = FARM_OBJECT3D_TYPE_SCENE;
+  init_Object3D_fields((farm_Object3D*)scene, FARM_OBJECT3D_TYPE_SCENE);
   scene->hasBackground = false;
   scene->background = farm_Color_zero();
   return scene;
@@ -245,8 +249,7 @@ void farm_Scene_clearBackground(farm_Scene* self) {
 // PerspectiveCamera implementation
 farm_PerspectiveCamera* farm_PerspectiveCamera_new(double fov, double aspect, double near, double far) {
   farm_PerspectiveCamera* cam = (farm_PerspectiveCamera*)farm_arena_alloc(sizeof(farm_PerspectiveCamera));
-  // Flattened: *farm_Object3D_new();
-  cam->type = FARM_OBJECT3D_TYPE_CAMERA;
+  init_Object3D_fields((farm_Object3D*)cam, FARM_OBJECT3D_TYPE_CAMERA);
   cam->f_fov = fov;
   cam->f_aspect = aspect;
   cam->f_near = near;
@@ -551,7 +554,7 @@ void farm_MeshStandardMaterial_dispose(farm_MeshStandardMaterial* self) {
 // Mesh
 farm_Mesh* farm_Mesh_new_box(farm_BoxGeometry* geometry, void* material, uint8_t mat_type) {
   farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
-  // Flattened: *farm_Object3D_new();
+  init_Object3D_fields((farm_Object3D*)mesh, FARM_OBJECT3D_TYPE_MESH);
   mesh->geometry = geometry;
   mesh->material = material;
   mesh->geometry_type = 0;
@@ -561,7 +564,7 @@ farm_Mesh* farm_Mesh_new_box(farm_BoxGeometry* geometry, void* material, uint8_t
 
 farm_Mesh* farm_Mesh_new_sphere(farm_SphereGeometry* geometry, void* material, uint8_t mat_type) {
   farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
-  // Flattened: *farm_Object3D_new();
+  init_Object3D_fields((farm_Object3D*)mesh, FARM_OBJECT3D_TYPE_MESH);
   mesh->geometry = geometry;
   mesh->material = material;
   mesh->geometry_type = 1;
@@ -571,7 +574,7 @@ farm_Mesh* farm_Mesh_new_sphere(farm_SphereGeometry* geometry, void* material, u
 
 farm_Mesh* farm_Mesh_new_plane(farm_PlaneGeometry* geometry, void* material, uint8_t mat_type) {
   farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
-  // Flattened: *farm_Object3D_new();
+  init_Object3D_fields((farm_Object3D*)mesh, FARM_OBJECT3D_TYPE_MESH);
   mesh->geometry = geometry;
   mesh->material = material;
   mesh->geometry_type = 2;
@@ -584,8 +587,7 @@ farm_Mesh* farm_Mesh_new_plane(farm_PlaneGeometry* geometry, void* material, uin
 // For simplicity in M3, we'll use a type-tagging approach
 farm_Mesh* farm_Mesh_new(void* geometry, void* material) {
   farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
-  // Flattened: *farm_Object3D_new();
-  mesh->type = FARM_OBJECT3D_TYPE_MESH;
+  init_Object3D_fields((farm_Object3D*)mesh, FARM_OBJECT3D_TYPE_MESH);
   mesh->geometry = geometry;
   mesh->material = material;
   
@@ -618,8 +620,7 @@ farm_Mesh* farm_Mesh_new(void* geometry, void* material) {
 // Lights
 farm_AmbientLight* farm_AmbientLight_new() {
   farm_AmbientLight* light = (farm_AmbientLight*)farm_arena_alloc(sizeof(farm_AmbientLight));
-  // Flattened: *farm_Object3D_new();
-  light->type = FARM_OBJECT3D_TYPE_AMBIENT_LIGHT;
+  init_Object3D_fields((farm_Object3D*)light, FARM_OBJECT3D_TYPE_AMBIENT_LIGHT);
   light->color = farm_Color_new(1, 1, 1);
   light->intensity = 1.0;
   return light;
@@ -647,8 +648,7 @@ farm_AmbientLight* farm_AmbientLight_new_color_i(farm_Color color, double intens
 // DirectionalLight
 farm_DirectionalLight* farm_DirectionalLight_new() {
   farm_DirectionalLight* light = (farm_DirectionalLight*)farm_arena_alloc(sizeof(farm_DirectionalLight));
-  // Flattened: *farm_Object3D_new();
-  light->type = FARM_OBJECT3D_TYPE_DIRECTIONAL_LIGHT;
+  init_Object3D_fields((farm_Object3D*)light, FARM_OBJECT3D_TYPE_DIRECTIONAL_LIGHT);
   light->color = farm_Color_new(1, 1, 1);
   light->intensity = 1.0;
   return light;
@@ -676,8 +676,7 @@ farm_DirectionalLight* farm_DirectionalLight_new_color_i(farm_Color color, doubl
 // PointLight
 farm_PointLight* farm_PointLight_new() {
   farm_PointLight* light = (farm_PointLight*)farm_arena_alloc(sizeof(farm_PointLight));
-  // Flattened: *farm_Object3D_new();
-  light->type = FARM_OBJECT3D_TYPE_POINT_LIGHT;
+  init_Object3D_fields((farm_Object3D*)light, FARM_OBJECT3D_TYPE_POINT_LIGHT);
   light->color = farm_Color_new(1, 1, 1);
   light->intensity = 1.0;
   light->distance = 0.0;
@@ -919,9 +918,14 @@ static void traverse_collect_lights(farm_Object3D* obj, LightList* lights);
 static void traverse_collect_lights(farm_Object3D* obj, LightList* lights) {
   if (!obj->f_visible) return;
   
-  // Heuristic: check if this object could be a light by checking memory layout
-  // In reality we'd use proper type tags. For this implementation, we'll
-  // pass lights separately or mark them in render.
+  // Check the type field to determine if this is a light
+  if (obj->type == FARM_OBJECT3D_TYPE_AMBIENT_LIGHT && lights->ambient_count < 16) {
+    lights->ambients[lights->ambient_count++] = (farm_AmbientLight*)obj;
+  } else if (obj->type == FARM_OBJECT3D_TYPE_DIRECTIONAL_LIGHT && lights->directional_count < 16) {
+    lights->directionals[lights->directional_count++] = (farm_DirectionalLight*)obj;
+  } else if (obj->type == FARM_OBJECT3D_TYPE_POINT_LIGHT && lights->point_count < 16) {
+    lights->points[lights->point_count++] = (farm_PointLight*)obj;
+  }
   
   for (int32_t i = 0; i < obj->children.count; i++) {
     traverse_collect_lights(obj->children.items[i], lights);
@@ -1128,19 +1132,9 @@ static void traverse_render(
 ) {
   if (!obj->f_visible) return;
   
-  // Check if this is a mesh (heuristic: has geometry and material fields)
-  // In production we'd use proper type tags
-  // For now, we'll check if casting to Mesh makes sense by checking the base offset
-  
-  // This is a simplified check - in reality we need proper type information
-  // For this implementation, we'll assume objects are either Object3D, Scene, Mesh, or Lights
-  
-  // Try to render as mesh if it looks like one
-  // Simplified: check if it's not the scene root
-  if (obj != (farm_Object3D*)renderer) { // Hacky check
-    // Cast to mesh and try to render
+  // Check if this is a mesh using the type field
+  if (obj->type == FARM_OBJECT3D_TYPE_MESH) {
     farm_Mesh* mesh = (farm_Mesh*)obj;
-    // Check if geometry pointer is valid (another heuristic)
     if (mesh->geometry != NULL) {
       rasterize_mesh(renderer, mesh, camera, lights);
     }
