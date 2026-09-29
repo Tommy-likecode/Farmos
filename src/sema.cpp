@@ -585,7 +585,16 @@ struct Sema {
                     error_at(path, e->args[i]->loc, "E0408", "type mismatch");
                 }
               }
-              e->mangled = sd->c_sym + "__" + md->name;
+              // M2/M3: Math module structs use runtime naming
+              bool is_math_struct = (sd->name == "Vector2" || sd->name == "Vector3" || sd->name == "Vector4" ||
+                                    sd->name == "Matrix3" || sd->name == "Matrix4" || sd->name == "Quaternion" ||
+                                    sd->name == "Color" || sd->name == "Euler" || sd->name == "Ray" || 
+                                    sd->name == "Sphere" || sd->name == "Box3");
+              if (is_math_struct) {
+                e->mangled = "farm_" + sd->name + "_" + md->name;
+              } else {
+                e->mangled = sd->c_sym + "__" + md->name;
+              }
               e->type = md->ret;
             }
           } else {
