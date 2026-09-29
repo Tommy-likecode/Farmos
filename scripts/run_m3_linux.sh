@@ -84,8 +84,9 @@ for test_file in "$TEST_DIR"/*.fm; do
   chmod +x test_prog
   
   # Run
-  timeout 5s ./test_prog > run_out.txt 2> run_err.txt || true
+  timeout 5s ./test_prog > run_out.txt 2> run_err.txt
   actual_exit=$?
+  true  # Prevent script exit on non-zero
   
   # Timeout returns 124
   if [ $actual_exit -eq 124 ]; then

@@ -537,6 +537,19 @@ struct Emitter {
               out << arg_values[i];
             }
             out << ");\n";
+            
+            // M3: Runtime bug workaround - farm_Mesh_new and Light constructors don't initialize Object3D fields
+            // Only initialize for Mesh and Lights - NOT Scene/Camera (see comment below)
+            bool needs_object3d_init = (class_name == "farm_Mesh" || class_name == "farm_AmbientLight" ||
+                                       class_name == "farm_DirectionalLight" || class_name == "farm_PointLight");
+            if (needs_object3d_init) {
+              out << v << "->f_visible = 1;\n"; // true
+              out << v << "->matrixAutoUpdate = 1;\n"; // true
+              out << v << "->parent = NULL;\n";
+              out << v << "->children.items = NULL;\n";
+              out << v << "->children.count = 0;\n";
+              out << v << "->children.capacity = 0;\n";
+            }
           } else {
             // Original class constructor logic
             out << "struct Farm_" << e->mangled << "* " << v << " = (struct Farm_" << e->mangled << "*)farm_arena_alloc(sizeof(struct Farm_" << e->mangled << "));\n";
