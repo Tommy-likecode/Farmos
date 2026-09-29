@@ -252,9 +252,15 @@ struct Emitter {
       case ExprKind::Index: {
         auto arr = emit_expr(e->lhs);
         auto idx = emit_expr(e->rhs);
-        if (e->lhs->type->kind == TypeKind::FixedArray)
-          return "({ int64_t __i=(" + idx + "); farm_bounds_check(__i, (int64_t)" + std::to_string(e->lhs->type->fixed_len) + "); (" + arr + ").data[__i]; })";
-        else {
+        if (e->lhs->type->kind == TypeKind::FixedArray) {
+          // Check if lhs is a direct field access to a fixed array (e.g., matrix.elements[i])
+          // In that case, the field is already a C array, so we don't need .data
+          if (e->lhs->kind == ExprKind::Field) {
+            return "({ int64_t __i=(" + idx + "); farm_bounds_check(__i, (int64_t)" + std::to_string(e->lhs->type->fixed_len) + "); (" + arr + ")[__i]; })";
+          } else {
+            return "({ int64_t __i=(" + idx + "); farm_bounds_check(__i, (int64_t)" + std::to_string(e->lhs->type->fixed_len) + "); (" + arr + ").data[__i]; })";
+          }
+        } else {
           std::string et = c_type(e->lhs->type->elem);
           return "({ int64_t __i=(" + idx + "); *(" + et + "*)farm_dyn_index(&(" + arr + "), __i); })";
         }
