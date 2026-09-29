@@ -59,6 +59,25 @@ struct Emitter {
     return no_prefix_fields.count(field_name) ? field_name : ("f_" + field_name);
   }
 
+  // M3: Check if type is a scene class
+  bool is_scene_class(const TypePtr& t) {
+    if (t->kind != TypeKind::Class) return false;
+    static const std::set<std::string> scene_classes = 
+      {"farm_Scene", "farm_Object3D", "farm_PerspectiveCamera", "farm_Mesh",
+       "farm_BoxGeometry", "farm_SphereGeometry", "farm_PlaneGeometry",
+       "farm_MeshBasicMaterial", "farm_MeshStandardMaterial",
+       "farm_AmbientLight", "farm_DirectionalLight", "farm_PointLight", "farm_Renderer"};
+    return scene_classes.count(t->name) > 0;
+  }
+
+  // M3: Check if scene class inherits from Object3D
+  bool is_object3d_subclass(const std::string& class_name) {
+    static const std::set<std::string> subclasses = 
+      {"farm_Scene", "farm_PerspectiveCamera", "farm_Mesh",
+       "farm_AmbientLight", "farm_DirectionalLight", "farm_PointLight"};
+    return subclasses.count(class_name) > 0;
+  }
+
   std::string c_type(const TypePtr& t) {
     switch (t->kind) {
       case TypeKind::Int: return "int64_t";
@@ -313,10 +332,31 @@ struct Emitter {
           }
           if (n=="float") return "farm_int_to_float(" + emit_expr(e->args[0]) + ")";
           if (!e->mangled.empty() && e->mangled != n) {
+            // M3: Special handling for lookAt(x, y, z) -> lookAt_v(Vector3)
+            if (e->mangled == "farm_PerspectiveCamera_lookAt" && e->args.size() == 3) {
+              std::string x = emit_expr(e->args[0]);
+              std::string y = emit_expr(e->args[1]);
+              std::string z = emit_expr(e->args[2]);
+              return "farm_PerspectiveCamera_lookAt_v(farm_Vector3_new(" + x + ", " + y + ", " + z + "))";
+            }
+            
             std::string call = e->mangled + "(";
             for (size_t i=0;i<e->args.size();++i) {
               if (i) call += ", ";
-              call += emit_expr(e->args[i]);
+              std::string arg_val = emit_expr(e->args[i]);
+              // M3: Auto-upcast Object3D subclasses for hierarchy methods
+              if (e->args[i]->type->kind == TypeKind::Class &&
+                  (e->mangled.find("add") != std::string::npos || 
+                   e->mangled.find("remove") != std::string::npos ||
+                   e->mangled.find("addAt") != std::string::npos)) {
+                std::string class_name = e->args[i]->type->name;
+                if (class_name == "farm_Scene" || class_name == "farm_PerspectiveCamera" || 
+                    class_name == "farm_Mesh" || class_name == "farm_AmbientLight" || 
+                    class_name == "farm_DirectionalLight" || class_name == "farm_PointLight") {
+                  arg_val = "(farm_Object3D*)" + arg_val;
+                }
+              }
+              call += arg_val;
             }
             call += ")";
             return call;
@@ -325,7 +365,20 @@ struct Emitter {
             std::string call = e->mangled + "(";
             for (size_t i=0;i<e->args.size();++i) {
               if (i) call += ", ";
-              call += emit_expr(e->args[i]);
+              std::string arg_val = emit_expr(e->args[i]);
+              // M3: Auto-upcast Object3D subclasses for hierarchy methods
+              if (e->args[i]->type->kind == TypeKind::Class &&
+                  (e->mangled.find("add") != std::string::npos || 
+                   e->mangled.find("remove") != std::string::npos ||
+                   e->mangled.find("addAt") != std::string::npos)) {
+                std::string class_name = e->args[i]->type->name;
+                if (class_name == "farm_Scene" || class_name == "farm_PerspectiveCamera" || 
+                    class_name == "farm_Mesh" || class_name == "farm_AmbientLight" || 
+                    class_name == "farm_DirectionalLight" || class_name == "farm_PointLight") {
+                  arg_val = "(farm_Object3D*)" + arg_val;
+                }
+              }
+              call += arg_val;
             }
             call += ")";
             return call;
@@ -359,8 +412,34 @@ struct Emitter {
             // Class method: receiver is already a pointer
             recv = emit_expr(e->lhs->lhs);
           }
+          
+          // M3: Special handling for lookAt(x, y, z) -> lookAt_v(Vector3)
+          if (e->mangled == "farm_PerspectiveCamera_lookAt" && e->args.size() == 3) {
+            std::string x = emit_expr(e->args[0]);
+            std::string y = emit_expr(e->args[1]);
+            std::string z = emit_expr(e->args[2]);
+            return "farm_PerspectiveCamera_lookAt_v(" + recv + ", farm_Vector3_new(" + x + ", " + y + ", " + z + "))";
+          }
+          
           std::string call = e->mangled + "(" + recv;
-          for (auto& a : e->args) { call += ", "; call += emit_expr(a); }
+          for (auto& a : e->args) { 
+            call += ", ";
+            std::string arg_val = emit_expr(a);
+            // M3: Auto-upcast Object3D subclasses to Object3D* for scene hierarchy methods
+            if (a->type->kind == TypeKind::Class) {
+              std::string class_name = a->type->name;
+              // Check if this is an Object3D subclass and the method likely expects Object3D*
+              if ((class_name == "farm_Scene" || class_name == "farm_PerspectiveCamera" || 
+                   class_name == "farm_Mesh" || class_name == "farm_AmbientLight" || 
+                   class_name == "farm_DirectionalLight" || class_name == "farm_PointLight") &&
+                  (e->mangled.find("add") != std::string::npos || 
+                   e->mangled.find("remove") != std::string::npos ||
+                   e->mangled.find("addAt") != std::string::npos)) {
+                arg_val = "(farm_Object3D*)" + arg_val;
+              }
+            }
+            call += arg_val;
+          }
           call += ")";
           return call;
         }
