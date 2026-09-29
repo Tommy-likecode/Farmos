@@ -819,7 +819,9 @@ struct Sema {
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0 or 2, found " + std::to_string(nargs));
               }
             } else if (cd->c_sym == "farm_Renderer") {
-              if (nargs == 2) {
+              if (nargs == 0) {
+                variant = "";
+              } else if (nargs == 2) {
                 variant = "wh";
                 for (int i = 0; i < 2; ++i) {
                   if (e->args[i]->type->kind != TypeKind::Int) {
@@ -827,7 +829,7 @@ struct Sema {
                   }
                 }
               } else {
-                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 2, found " + std::to_string(nargs));
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0 or 2, found " + std::to_string(nargs));
               }
             }
             // Other scene classes (Scene, PerspectiveCamera, etc.) use default constructors
