@@ -133,12 +133,12 @@ struct farm_PlaneGeometry {
 
 // Materials
 struct farm_MeshBasicMaterial {
-  farm_Color color;
+  farm_Color f_color;
   bool disposed;
 };
 
 struct farm_MeshStandardMaterial {
-  farm_Color color;
+  farm_Color f_color;
   double roughness;
   double metalness;
   bool disposed;
@@ -161,8 +161,8 @@ struct farm_Mesh {
   bool rotation_dirty;
   bool quaternion_dirty;
   // Mesh-specific
-  void* geometry;       // Points to one of the geometry types
-  void* material;       // Points to one of the material types
+  void* f_geometry;       // Points to one of the geometry types
+  void* f_material;       // Points to one of the material types
   uint8_t geometry_type; // 0=Box, 1=Sphere, 2=Plane
   uint8_t material_type; // 0=Basic, 1=Standard
 };
@@ -185,7 +185,7 @@ struct farm_AmbientLight {
   bool rotation_dirty;
   bool quaternion_dirty;
   // Light-specific
-  farm_Color color;
+  farm_Color f_color;
   double intensity;
 };
 
@@ -205,7 +205,7 @@ struct farm_DirectionalLight {
   bool rotation_dirty;
   bool quaternion_dirty;
   // Light-specific
-  farm_Color color;
+  farm_Color f_color;
   double intensity;
 };
 
@@ -225,7 +225,7 @@ struct farm_PointLight {
   bool rotation_dirty;
   bool quaternion_dirty;
   // Light-specific
-  farm_Color color;
+  farm_Color f_color;
   double intensity;
   double distance;
   double decay;

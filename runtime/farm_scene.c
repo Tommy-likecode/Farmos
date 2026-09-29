@@ -492,20 +492,20 @@ void farm_PlaneGeometry_dispose(farm_PlaneGeometry* self) {
 // MeshBasicMaterial
 farm_MeshBasicMaterial* farm_MeshBasicMaterial_new() {
   farm_MeshBasicMaterial* mat = (farm_MeshBasicMaterial*)farm_arena_alloc(sizeof(farm_MeshBasicMaterial));
-  mat->color = farm_Color_new(1, 1, 1);
+  mat->f_color = farm_Color_new(1, 1, 1);
   mat->disposed = false;
   return mat;
 }
 
 farm_MeshBasicMaterial* farm_MeshBasicMaterial_new_color(farm_Color color) {
   farm_MeshBasicMaterial* mat = farm_MeshBasicMaterial_new();
-  mat->color = color;
+  mat->f_color = color;
   return mat;
 }
 
 farm_MeshBasicMaterial* farm_MeshBasicMaterial_new_hex(int64_t hex) {
   farm_MeshBasicMaterial* mat = farm_MeshBasicMaterial_new();
-  mat->color = farm_Color_setHex((int32_t)hex);
+  mat->f_color = farm_Color_setHex((int32_t)hex);
   return mat;
 }
 
@@ -516,7 +516,7 @@ void farm_MeshBasicMaterial_dispose(farm_MeshBasicMaterial* self) {
 // MeshStandardMaterial
 farm_MeshStandardMaterial* farm_MeshStandardMaterial_new() {
   farm_MeshStandardMaterial* mat = (farm_MeshStandardMaterial*)farm_arena_alloc(sizeof(farm_MeshStandardMaterial));
-  mat->color = farm_Color_new(1, 1, 1);
+  mat->f_color = farm_Color_new(1, 1, 1);
   mat->roughness = 1.0;
   mat->metalness = 0.0;
   mat->disposed = false;
@@ -525,18 +525,18 @@ farm_MeshStandardMaterial* farm_MeshStandardMaterial_new() {
 
 farm_MeshStandardMaterial* farm_MeshStandardMaterial_new_color(farm_Color color) {
   farm_MeshStandardMaterial* mat = farm_MeshStandardMaterial_new();
-  mat->color = color;
+  mat->f_color = color;
   return mat;
 }
 
 farm_MeshStandardMaterial* farm_MeshStandardMaterial_new_hex(int64_t hex) {
   farm_MeshStandardMaterial* mat = farm_MeshStandardMaterial_new();
-  mat->color = farm_Color_setHex((int32_t)hex);
+  mat->f_color = farm_Color_setHex((int32_t)hex);
   return mat;
 }
 
 void farm_MeshStandardMaterial_set(farm_MeshStandardMaterial* self, farm_Color color) {
-  self->color = color;
+  self->f_color = color;
 }
 
 void farm_MeshStandardMaterial_setRoughness(farm_MeshStandardMaterial* self, double r) {
@@ -555,8 +555,8 @@ void farm_MeshStandardMaterial_dispose(farm_MeshStandardMaterial* self) {
 farm_Mesh* farm_Mesh_new_box(farm_BoxGeometry* geometry, void* material, uint8_t mat_type) {
   farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
   init_Object3D_fields((farm_Object3D*)mesh, FARM_OBJECT3D_TYPE_MESH);
-  mesh->geometry = geometry;
-  mesh->material = material;
+  mesh->f_geometry = geometry;
+  mesh->f_material = material;
   mesh->geometry_type = 0;
   mesh->material_type = mat_type;
   return mesh;
@@ -565,8 +565,8 @@ farm_Mesh* farm_Mesh_new_box(farm_BoxGeometry* geometry, void* material, uint8_t
 farm_Mesh* farm_Mesh_new_sphere(farm_SphereGeometry* geometry, void* material, uint8_t mat_type) {
   farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
   init_Object3D_fields((farm_Object3D*)mesh, FARM_OBJECT3D_TYPE_MESH);
-  mesh->geometry = geometry;
-  mesh->material = material;
+  mesh->f_geometry = geometry;
+  mesh->f_material = material;
   mesh->geometry_type = 1;
   mesh->material_type = mat_type;
   return mesh;
@@ -575,8 +575,8 @@ farm_Mesh* farm_Mesh_new_sphere(farm_SphereGeometry* geometry, void* material, u
 farm_Mesh* farm_Mesh_new_plane(farm_PlaneGeometry* geometry, void* material, uint8_t mat_type) {
   farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
   init_Object3D_fields((farm_Object3D*)mesh, FARM_OBJECT3D_TYPE_MESH);
-  mesh->geometry = geometry;
-  mesh->material = material;
+  mesh->f_geometry = geometry;
+  mesh->f_material = material;
   mesh->geometry_type = 2;
   mesh->material_type = mat_type;
   return mesh;
@@ -588,8 +588,8 @@ farm_Mesh* farm_Mesh_new_plane(farm_PlaneGeometry* geometry, void* material, uin
 farm_Mesh* farm_Mesh_new(void* geometry, void* material) {
   farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
   init_Object3D_fields((farm_Object3D*)mesh, FARM_OBJECT3D_TYPE_MESH);
-  mesh->geometry = geometry;
-  mesh->material = material;
+  mesh->f_geometry = geometry;
+  mesh->f_material = material;
   
   // Type detection: check the first few bytes of the structure
   // BoxGeometry, SphereGeometry, PlaneGeometry all start with farm_GeometryData
@@ -621,14 +621,14 @@ farm_Mesh* farm_Mesh_new(void* geometry, void* material) {
 farm_AmbientLight* farm_AmbientLight_new() {
   farm_AmbientLight* light = (farm_AmbientLight*)farm_arena_alloc(sizeof(farm_AmbientLight));
   init_Object3D_fields((farm_Object3D*)light, FARM_OBJECT3D_TYPE_AMBIENT_LIGHT);
-  light->color = farm_Color_new(1, 1, 1);
+  light->f_color = farm_Color_new(1, 1, 1);
   light->intensity = 1.0;
   return light;
 }
 
 farm_AmbientLight* farm_AmbientLight_new_hex(int64_t hex) {
   farm_AmbientLight* light = farm_AmbientLight_new();
-  light->color = farm_Color_setHex((int32_t)hex);
+  light->f_color = farm_Color_setHex((int32_t)hex);
   return light;
 }
 
@@ -640,7 +640,7 @@ farm_AmbientLight* farm_AmbientLight_new_hex_i(int64_t hex, double intensity) {
 
 farm_AmbientLight* farm_AmbientLight_new_color_i(farm_Color color, double intensity) {
   farm_AmbientLight* light = farm_AmbientLight_new();
-  light->color = color;
+  light->f_color = color;
   light->intensity = intensity;
   return light;
 }
@@ -649,14 +649,14 @@ farm_AmbientLight* farm_AmbientLight_new_color_i(farm_Color color, double intens
 farm_DirectionalLight* farm_DirectionalLight_new() {
   farm_DirectionalLight* light = (farm_DirectionalLight*)farm_arena_alloc(sizeof(farm_DirectionalLight));
   init_Object3D_fields((farm_Object3D*)light, FARM_OBJECT3D_TYPE_DIRECTIONAL_LIGHT);
-  light->color = farm_Color_new(1, 1, 1);
+  light->f_color = farm_Color_new(1, 1, 1);
   light->intensity = 1.0;
   return light;
 }
 
 farm_DirectionalLight* farm_DirectionalLight_new_hex(int64_t hex) {
   farm_DirectionalLight* light = farm_DirectionalLight_new();
-  light->color = farm_Color_setHex((int32_t)hex);
+  light->f_color = farm_Color_setHex((int32_t)hex);
   return light;
 }
 
@@ -668,7 +668,7 @@ farm_DirectionalLight* farm_DirectionalLight_new_hex_i(int64_t hex, double inten
 
 farm_DirectionalLight* farm_DirectionalLight_new_color_i(farm_Color color, double intensity) {
   farm_DirectionalLight* light = farm_DirectionalLight_new();
-  light->color = color;
+  light->f_color = color;
   light->intensity = intensity;
   return light;
 }
@@ -677,7 +677,7 @@ farm_DirectionalLight* farm_DirectionalLight_new_color_i(farm_Color color, doubl
 farm_PointLight* farm_PointLight_new() {
   farm_PointLight* light = (farm_PointLight*)farm_arena_alloc(sizeof(farm_PointLight));
   init_Object3D_fields((farm_Object3D*)light, FARM_OBJECT3D_TYPE_POINT_LIGHT);
-  light->color = farm_Color_new(1, 1, 1);
+  light->f_color = farm_Color_new(1, 1, 1);
   light->intensity = 1.0;
   light->distance = 0.0;
   light->decay = 2.0;
@@ -686,7 +686,7 @@ farm_PointLight* farm_PointLight_new() {
 
 farm_PointLight* farm_PointLight_new_hex(int64_t hex) {
   farm_PointLight* light = farm_PointLight_new();
-  light->color = farm_Color_setHex((int32_t)hex);
+  light->f_color = farm_Color_setHex((int32_t)hex);
   return light;
 }
 
@@ -698,14 +698,14 @@ farm_PointLight* farm_PointLight_new_hex_i(int64_t hex, double intensity) {
 
 farm_PointLight* farm_PointLight_new_color_i(farm_Color color, double intensity) {
   farm_PointLight* light = farm_PointLight_new();
-  light->color = color;
+  light->f_color = color;
   light->intensity = intensity;
   return light;
 }
 
 farm_PointLight* farm_PointLight_new_full(farm_Color color, double intensity, double distance, double decay) {
   farm_PointLight* light = farm_PointLight_new();
-  light->color = color;
+  light->f_color = color;
   light->intensity = intensity;
   light->distance = distance;
   light->decay = decay;
@@ -795,7 +795,7 @@ static void collect_lights_recursive(farm_Object3D* obj, LightList* lights) {
 
 // Shader: Basic (unlit)
 static farm_Color shade_basic(farm_MeshBasicMaterial* mat) {
-  return mat->color;
+  return mat->f_color;
 }
 
 // Shader: Standard (Lambert + Blinn-Phong approximation)
@@ -806,7 +806,7 @@ static farm_Color shade_standard(
   farm_Vector3 camera_pos,
   LightList* lights
 ) {
-  farm_Color albedo = mat->color;
+  farm_Color albedo = mat->f_color;
   double metal = clamp(mat->metalness, 0, 1);
   double rough = clamp(mat->roughness, 0, 1);
   
@@ -815,9 +815,9 @@ static farm_Color shade_standard(
   // Ambient lights
   for (int i = 0; i < lights->ambient_count; i++) {
     farm_AmbientLight* L = lights->ambients[i];
-    result.r += albedo.r * L->color.r * L->intensity;
-    result.g += albedo.g * L->color.g * L->intensity;
-    result.b += albedo.b * L->color.b * L->intensity;
+    result.r += albedo.r * L->f_color.r * L->intensity;
+    result.g += albedo.g * L->f_color.g * L->intensity;
+    result.b += albedo.b * L->f_color.b * L->intensity;
   }
   
   double shininess = 1.0 + (1.0 - rough) * 255.0;
@@ -847,9 +847,9 @@ static farm_Color shade_standard(
     
     // Diffuse
     double diff_factor = NdotL * (1.0 - 0.9 * metal);
-    result.r += albedo.r * L->color.r * L->intensity * diff_factor;
-    result.g += albedo.g * L->color.g * L->intensity * diff_factor;
-    result.b += albedo.b * L->color.b * L->intensity * diff_factor;
+    result.r += albedo.r * L->f_color.r * L->intensity * diff_factor;
+    result.g += albedo.g * L->f_color.g * L->intensity * diff_factor;
+    result.b += albedo.b * L->f_color.b * L->intensity * diff_factor;
     
     // Specular (Blinn-Phong)
     farm_Vector3 H = farm_Vector3_normalize(farm_Vector3_add(Ldir, V));
@@ -857,9 +857,9 @@ static farm_Color shade_standard(
     if (NdotH < 0) NdotH = 0;
     
     double specular = (NdotH > 0) ? pow(NdotH, shininess) * specStrength : 0;
-    result.r += specColor.r * L->color.r * L->intensity * specular;
-    result.g += specColor.g * L->color.g * L->intensity * specular;
-    result.b += specColor.b * L->color.b * L->intensity * specular;
+    result.r += specColor.r * L->f_color.r * L->intensity * specular;
+    result.g += specColor.g * L->f_color.g * L->intensity * specular;
+    result.b += specColor.b * L->f_color.b * L->intensity * specular;
   }
   
   // Point lights
@@ -889,9 +889,9 @@ static farm_Color shade_standard(
     
     // Diffuse
     double diff_factor = NdotL * (1.0 - 0.9 * metal) * attenuation;
-    result.r += albedo.r * L->color.r * L->intensity * diff_factor;
-    result.g += albedo.g * L->color.g * L->intensity * diff_factor;
-    result.b += albedo.b * L->color.b * L->intensity * diff_factor;
+    result.r += albedo.r * L->f_color.r * L->intensity * diff_factor;
+    result.g += albedo.g * L->f_color.g * L->intensity * diff_factor;
+    result.b += albedo.b * L->f_color.b * L->intensity * diff_factor;
     
     // Specular
     farm_Vector3 H = farm_Vector3_normalize(farm_Vector3_add(Ldir, V));
@@ -899,9 +899,9 @@ static farm_Color shade_standard(
     if (NdotH < 0) NdotH = 0;
     
     double specular = (NdotH > 0) ? pow(NdotH, shininess) * specStrength * attenuation : 0;
-    result.r += specColor.r * L->color.r * L->intensity * specular;
-    result.g += specColor.g * L->color.g * L->intensity * specular;
-    result.b += specColor.b * L->color.b * L->intensity * specular;
+    result.r += specColor.r * L->f_color.r * L->intensity * specular;
+    result.g += specColor.g * L->f_color.g * L->intensity * specular;
+    result.b += specColor.b * L->f_color.b * L->intensity * specular;
   }
   
   // Clamp
@@ -944,11 +944,11 @@ static void rasterize_mesh(
   // Check disposed
   farm_GeometryData* geom_data = NULL;
   if (mesh->geometry_type == 0) {
-    geom_data = &((farm_BoxGeometry*)mesh->geometry)->data;
+    geom_data = &((farm_BoxGeometry*)mesh->f_geometry)->data;
   } else if (mesh->geometry_type == 1) {
-    geom_data = &((farm_SphereGeometry*)mesh->geometry)->data;
+    geom_data = &((farm_SphereGeometry*)mesh->f_geometry)->data;
   } else if (mesh->geometry_type == 2) {
-    geom_data = &((farm_PlaneGeometry*)mesh->geometry)->data;
+    geom_data = &((farm_PlaneGeometry*)mesh->f_geometry)->data;
   }
   
   if (geom_data->disposed) {
@@ -957,9 +957,9 @@ static void rasterize_mesh(
   
   bool mat_disposed = false;
   if (mesh->material_type == 0) {
-    mat_disposed = ((farm_MeshBasicMaterial*)mesh->material)->disposed;
+    mat_disposed = ((farm_MeshBasicMaterial*)mesh->f_material)->disposed;
   } else {
-    mat_disposed = ((farm_MeshStandardMaterial*)mesh->material)->disposed;
+    mat_disposed = ((farm_MeshStandardMaterial*)mesh->f_material)->disposed;
   }
   if (mat_disposed) {
     farm_trap(105, "runtime error: use after dispose");
@@ -1091,11 +1091,11 @@ static void rasterize_mesh(
         farm_Color color;
         if (mesh->material_type == 0) {
           // Basic material (unlit)
-          color = shade_basic((farm_MeshBasicMaterial*)mesh->material);
+          color = shade_basic((farm_MeshBasicMaterial*)mesh->f_material);
         } else {
           // Standard material (lit)
           color = shade_standard(
-            (farm_MeshStandardMaterial*)mesh->material,
+            (farm_MeshStandardMaterial*)mesh->f_material,
             world_pos,
             world_normal,
             camera_pos,
@@ -1135,7 +1135,7 @@ static void traverse_render(
   // Check if this is a mesh using the type field
   if (obj->type == FARM_OBJECT3D_TYPE_MESH) {
     farm_Mesh* mesh = (farm_Mesh*)obj;
-    if (mesh->geometry != NULL) {
+    if (mesh->f_geometry != NULL) {
       rasterize_mesh(renderer, mesh, camera, lights);
     }
   }
