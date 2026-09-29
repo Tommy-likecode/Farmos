@@ -741,6 +741,7 @@ struct Emitter {
     if (uses_scene) {
       out << "#include \"farm_scene.h\"\n";
     }
+    out << "/* farmc build: " << __DATE__ << " " << __TIME__ << " */\n";
     out << "\n";
     // Emit fixed array typedefs first (structs may reference them)
     emit_fixed_typedefs();
