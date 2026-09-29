@@ -539,18 +539,6 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     }
     {
       MethodDecl md;
-      md.name = cd.name;
-      md.params.push_back(Param{"color", Type::ty_struct("Color"), SourceLoc{1,1}});
-      md.ret = Type::ty_void();
-      md.loc = SourceLoc{1, 1};
-      md.is_ctor = true;
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      cd.methods.push_back(std::move(md));
-    }
-    {
-      MethodDecl md;
       md.name = "setRoughness";
       md.params.push_back(Param{"roughness", Type::ty_float(), SourceLoc{1,1}});
       md.ret = Type::ty_void();

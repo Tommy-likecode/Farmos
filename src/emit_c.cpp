@@ -486,6 +486,18 @@ struct Emitter {
                                  class_name == "farm_Renderer");
           
           if (is_scene_class) {
+            // M3: Pre-emit nested New expressions as temporaries to avoid invalid C syntax
+            std::vector<std::string> arg_values;
+            for (auto& arg : e->args) {
+              if (arg->kind == ExprKind::New) {
+                // Emit the nested new as a temporary variable first
+                std::string temp_val = emit_expr(arg);
+                arg_values.push_back(temp_val);
+              } else {
+                arg_values.push_back(emit_expr(arg));
+              }
+            }
+            
             // Call runtime constructor function directly
             out << "struct " << e->mangled << "* " << v << " = " << e->mangled << "_new";
             
@@ -520,9 +532,9 @@ struct Emitter {
             // else: use base _new() for no-arg or standard signatures
             
             out << "(";
-            for (size_t i = 0; i < e->args.size(); ++i) {
+            for (size_t i = 0; i < arg_values.size(); ++i) {
               if (i > 0) out << ", ";
-              out << emit_expr(e->args[i]);
+              out << arg_values[i];
             }
             out << ");\n";
           } else {
