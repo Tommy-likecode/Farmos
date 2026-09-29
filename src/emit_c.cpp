@@ -385,10 +385,17 @@ struct Emitter {
           }
         }
         if (e->lhs->kind==ExprKind::Field) {
+          // Check if this is a math struct method (farmos:math)
+          bool is_math_method = false;
+          if (e->lhs->lhs->type->kind == TypeKind::Struct && e->lhs->lhs->type->name.find("m1_") == 0) {
+            is_math_method = true;
+          }
+          
           // For struct methods, pass &receiver; for class methods, pass receiver (already a pointer)
+          // Exception: math struct methods pass receiver by value and return a new value
           std::string recv;
-          if (e->lhs->lhs->type->kind == TypeKind::Struct) {
-            // Struct method: need address of receiver
+          if (e->lhs->lhs->type->kind == TypeKind::Struct && !is_math_method) {
+            // Regular struct method: need address of receiver
             if (e->lhs->lhs->is_lvalue) {
               // Receiver is an lvalue, pass its address directly
               recv = emit_lvalue_ptr(e->lhs->lhs);
@@ -408,6 +415,9 @@ struct Emitter {
                 recv = "&" + tmp;
               }
             }
+          } else if (is_math_method) {
+            // Math struct method: pass receiver by value
+            recv = emit_expr(e->lhs->lhs);
           } else {
             // Class method: receiver is already a pointer
             recv = emit_expr(e->lhs->lhs);
@@ -441,6 +451,15 @@ struct Emitter {
             call += arg_val;
           }
           call += ")";
+          
+          // M3: For math methods that return a value and the receiver is an lvalue,
+          // we need to assign the result back to the receiver
+          if (is_math_method && e->lhs->lhs->is_lvalue && e->type->kind != TypeKind::Void) {
+            // Method returns a value, assign it back to the receiver
+            emit_assign(e->lhs->lhs, call);
+            return "0"; // Expression value doesn't matter since we wrapped in (void) at statement level
+          }
+          
           return call;
         }
         return "0";
