@@ -972,8 +972,12 @@ struct Sema {
           md.ret = finalize_type(md.ret, md.loc, true);
           if (md.is_ctor) { ctors++; c.ctor_index = (int)i; }
         }
-        if (ctors != 1)
+        // M3: E0414 applies only to user classes, not stdlib (farmos:scene / farmos:math)
+        bool is_stdlib = (m.path == "farmos:scene" || m.path == "farmos:math");
+        if (!is_stdlib && ctors != 1)
           error_at(path, c.loc, "E0414", "class `" + c.name + "` must have exactly one constructor");
+        if (is_stdlib && ctors < 1)
+          error_at(path, c.loc, "E0414", "stdlib class `" + c.name + "` must have at least one constructor");
       }
       // M2: Finalize struct method types
       for (auto& s : m.structs) {
