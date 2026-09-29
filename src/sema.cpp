@@ -412,9 +412,8 @@ struct Sema {
             if (!found) {
               for (auto& md : search_class->methods) {
                 if (!md.is_ctor && md.name==e->name) {
-                  // M3: Scene classes use single underscore (runtime convention)
-                  bool is_scene_class = (search_class->c_sym.find("farm_") == 0);  // All farm_ classes are stdlib
-                  std::string sep = is_scene_class ? "_" : "__";
+                  // M3: TEMP - always use single underscore for debugging
+                  std::string sep = "_";
                   e->mangled = search_class->c_sym + sep + e->name;
                   e->type = Type::ty_error();
                   found = true;
@@ -531,9 +530,8 @@ struct Sema {
               for (auto& m : search_class->methods) {
                 if (!m.is_ctor && m.name == e->lhs->name) {
                   md = &m;
-                  // M3: Scene classes use single underscore (runtime convention)
-                  bool is_scene_class = (search_class->c_sym.find("farm_") == 0);  // All farm_ classes are stdlib
-                  std::string sep = is_scene_class ? "_" : "__";
+                  // M3: TEMP - always use single underscore for debugging
+                  std::string sep = "_";
                   e->mangled = search_class->c_sym + sep + md->name;
                   break;
                 }
@@ -562,7 +560,8 @@ struct Sema {
                     error_at(path, e->args[i]->loc, "E0408", "type mismatch");
                 }
               }
-              e->mangled = cd->c_sym + "__" + md->name;
+              // M3: Use single underscore for scene classes
+              e->mangled = cd->c_sym + "_" + md->name;
               e->type = md->ret;
             }
           } else if (rt->kind == TypeKind::Struct) {
