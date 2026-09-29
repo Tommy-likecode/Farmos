@@ -53,7 +53,13 @@ struct Emitter {
   }
 
   // M2/M3: Get runtime field name for math module structs (inconsistent f_ prefix usage)
-  std::string runtime_field_name(const std::string& field_name) {
+  std::string runtime_field_name(const std::string& field_name, const std::string& struct_name = "") {
+    // Vector2 uses x, y without prefix; most others use f_x, f_y
+    if (struct_name == "Vector2" && (field_name == "x" || field_name == "y")) {
+      return field_name;
+    }
+    
+    // Fields that don't have f_ prefix in runtime (for all structs)
     static const std::set<std::string> no_prefix_fields = 
       {"r", "g", "b", "w", "elements", "origin", "direction", "min", "max", "order", "hit", "point", "distance", "center", "radius"};
     return no_prefix_fields.count(field_name) ? field_name : ("f_" + field_name);
@@ -260,7 +266,8 @@ struct Emitter {
         }
         // M2/M3: Math module structs have inconsistent field naming in runtime
         if (e->lhs->type->kind == TypeKind::Struct && e->lhs->type->name.find("m1_") == 0) {
-          return "(" + base + ")." + runtime_field_name(e->name);
+          std::string struct_name = e->lhs->type->name.substr(3); // Remove "m1_" prefix
+          return "(" + base + ")." + runtime_field_name(e->name, struct_name);
         }
         return "(" + base + ").f_" + e->name;
       }
@@ -676,7 +683,7 @@ struct Emitter {
           // Explicit constructor with all arguments
           for (size_t i=0;i<e->args.size();++i) {
             std::string arg_val = emit_expr(e->args[i]);
-            std::string field_name = is_math_struct(sd) ? runtime_field_name(sd->fields[i].name) : ("f_" + sd->fields[i].name);
+            std::string field_name = is_math_struct(sd) ? runtime_field_name(sd->fields[i].name, sd->name) : ("f_" + sd->fields[i].name);
             out << v << "." << field_name << " = " << arg_val << ";\n";
           }
         }
@@ -1067,6 +1074,78 @@ struct Emitter {
       
       // M2: Implement struct methods
       bool is_math_module = (m.path == "farmos:math");
+      // M2: Implement struct print helpers (must be before continue for math modules)
+      for (auto& s : m.structs) {
+        // Determine if this is a math module struct
+        std::string type_name = is_math_module ? ("farm_" + s.name) : ("struct Farm_" + s.c_sym);
+        
+        // print version (no newline)
+        out << "void farm_print_" << sanitize(s.name) << "(" << type_name << " v) {\n";
+        // Check for types with array fields
+        if (s.name == "Matrix4" || s.name == "Matrix3") {
+          out << "  printf(\"" << s.name << "{...}\");\n";
+        } else {
+          // M2: RayHit prints with field names
+          bool with_field_names = (s.name == "RayHit");
+          out << "  printf(\"" << s.name << "(\");\n";
+          out << "  fflush(stdout);\n"; // Flush before unbuffered writes
+          for (size_t i = 0; i < s.fields.size(); ++i) {
+            if (i > 0) {
+              out << "  printf(\", \");\n";
+              out << "  fflush(stdout);\n";
+            }
+            auto& field = s.fields[i];
+            if (with_field_names) {
+              out << "  printf(\"" << field.name << ": \");\n";
+              out << "  fflush(stdout);\n";
+            }
+            
+            // Determine field name with proper prefix
+            std::string field_access = is_math_module ? ("v." + runtime_field_name(field.name, s.name)) : ("v.f_" + field.name);
+            
+            // Special case for Euler.order (char[4])
+            if (s.name == "Euler" && field.name == "order") {
+              out << "  printf(\"\\\"%s\\\"\", " << field_access << ");\n";
+              out << "  fflush(stdout);\n";
+            } else if (field.type->kind == TypeKind::FixedArray) {
+              // Fixed char array - print as C string
+              out << "  printf(\"\\\"%s\\\"\", " << field_access << ");\n";
+              out << "  fflush(stdout);\n";
+            } else if (field.type->kind == TypeKind::Float) {
+              out << "  farm_print_float(" << field_access << ");\n";
+            } else if (field.type->kind == TypeKind::String) {
+              out << "  printf(\"\\\"\");\n";  // Opening quote
+              out << "  fflush(stdout);\n";
+              out << "  farm_print_string(" << field_access << ");\n";
+              out << "  printf(\"\\\"\");\n";  // Closing quote
+              out << "  fflush(stdout);\n";
+            } else if (field.type->kind == TypeKind::Bool) {
+              out << "  farm_print_bool(" << field_access << ");\n";
+            } else if (field.type->kind == TypeKind::Struct) {
+              // For struct fields, find the base type name without module prefix
+              std::string field_type_name = field.type->name;
+              size_t pos = field_type_name.find_last_of('_');
+              if (pos != std::string::npos && field_type_name.substr(0, pos).find("m") == 0) {
+                field_type_name = field_type_name.substr(pos + 1);
+              }
+              out << "  farm_print_" << field_type_name << "(" << field_access << ");\n";
+            } else {
+              out << "  farm_print_float(" << field_access << ");\n"; // Default
+            }
+          }
+          out << "  printf(\")\");\n";
+          out << "  fflush(stdout);\n"; // Flush closing paren before function returns
+        }
+        out << "}\n";
+        
+        // println version (with newline)
+        out << "void farm_print_" << sanitize(s.name) << "_ln(" << type_name << " v) {\n";
+        out << "  farm_print_" << sanitize(s.name) << "(v);\n";
+        out << "  putchar('\\n');\n";
+        out << "  fflush(stdout);\n"; // Flush newline before returning
+        out << "}\n";
+      }
+      
       if (is_math_module) {
         // Skip math module struct methods - they're implemented in farm_math.c
         continue;
@@ -1529,63 +1608,6 @@ struct Emitter {
             out << "\n";
           }
         }
-      }
-      
-      // M2: Implement struct print helpers
-      for (auto& s : m.structs) {
-        // print version (no newline)
-        out << "void farm_print_" << sanitize(s.name) << "(struct Farm_" << s.c_sym << " v) {\n";
-        // Check for types with array fields
-        if (s.name == "Matrix4" || s.name == "Matrix3") {
-          out << "  printf(\"" << s.name << "{...}\");\n";
-        } else {
-          // M2: RayHit prints with field names
-          bool with_field_names = (s.name == "RayHit");
-          out << "  printf(\"" << s.name << "(\");\n";
-          out << "  fflush(stdout);\n"; // Flush before unbuffered writes
-          for (size_t i = 0; i < s.fields.size(); ++i) {
-            if (i > 0) {
-              out << "  printf(\", \");\n";
-              out << "  fflush(stdout);\n";
-            }
-            auto& field = s.fields[i];
-            if (with_field_names) {
-              out << "  printf(\"" << field.name << ": \");\n";
-              out << "  fflush(stdout);\n";
-            }
-            if (field.type->kind == TypeKind::Float) {
-              out << "  farm_print_float(v.f_" << field.name << ");\n";
-            } else if (field.type->kind == TypeKind::String) {
-              out << "  printf(\"\\\"\");\n";  // Opening quote
-              out << "  fflush(stdout);\n";
-              out << "  farm_print_string(v.f_" << field.name << ");\n";
-              out << "  printf(\"\\\"\");\n";  // Closing quote
-              out << "  fflush(stdout);\n";
-            } else if (field.type->kind == TypeKind::Bool) {
-              out << "  farm_print_bool(v.f_" << field.name << ");\n";
-            } else if (field.type->kind == TypeKind::Struct) {
-              // For struct fields, find the base type name without module prefix
-              std::string type_name = field.type->name;
-              size_t pos = type_name.find_last_of('_');
-              if (pos != std::string::npos && type_name.substr(0, pos).find("m") == 0) {
-                type_name = type_name.substr(pos + 1);
-              }
-              out << "  farm_print_" << type_name << "(v.f_" << field.name << ");\n";
-            } else {
-              out << "  farm_print_float(v.f_" << field.name << ");\n"; // Default
-            }
-          }
-          out << "  printf(\")\");\n";
-          out << "  fflush(stdout);\n"; // Flush closing paren before function returns
-        }
-        out << "}\n";
-        
-        // println version (with newline)
-        out << "void farm_print_" << sanitize(s.name) << "_ln(struct Farm_" << s.c_sym << " v) {\n";
-        out << "  farm_print_" << sanitize(s.name) << "(v);\n";
-        out << "  putchar('\\n');\n";
-        out << "  fflush(stdout);\n"; // Flush newline before returning
-        out << "}\n";
       }
     }
     std::string main_sym = "fn_m0_main";
