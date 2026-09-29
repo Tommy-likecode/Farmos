@@ -742,7 +742,29 @@ struct Sema {
               if (nargs != 2) {
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 2, found " + std::to_string(nargs));
               }
-              // Mesh constructor accepts (geometry, material) - no variant needed
+              // Mesh constructor accepts (geometry, material) - validate types
+              // First arg must be a geometry class type
+              bool valid_geometry = false;
+              if (e->args[0]->type->kind == TypeKind::Class) {
+                std::string geom_type = e->args[0]->type->name;
+                if (geom_type == "farm_BoxGeometry" || geom_type == "farm_SphereGeometry" || geom_type == "farm_PlaneGeometry") {
+                  valid_geometry = true;
+                }
+              }
+              if (!valid_geometry) {
+                error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected geometry type (BoxGeometry, SphereGeometry, or PlaneGeometry)");
+              }
+              // Second arg must be a material class type
+              bool valid_material = false;
+              if (e->args[1]->type->kind == TypeKind::Class) {
+                std::string mat_type = e->args[1]->type->name;
+                if (mat_type == "farm_MeshBasicMaterial" || mat_type == "farm_MeshStandardMaterial") {
+                  valid_material = true;
+                }
+              }
+              if (!valid_material) {
+                error_at(path, e->args[1]->loc, "E0408", "type mismatch: expected material type (MeshBasicMaterial or MeshStandardMaterial)");
+              }
               variant = "";
             } else if (cd->c_sym == "farm_BoxGeometry") {
               if (nargs == 0) {
