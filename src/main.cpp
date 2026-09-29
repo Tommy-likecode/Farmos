@@ -277,6 +277,21 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       cd.methods.push_back(std::move(md));
     }
     
+    // lookAt method
+    {
+      MethodDecl md;
+      md.name = "lookAt";
+      md.params.push_back(Param{"x", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"y", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"z", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    
     m.classes.push_back(std::move(cd));
   }
   
@@ -1319,6 +1334,22 @@ static Module create_farmos_math_module() {
       md.name = "setFromAxisAngle";
       md.params.push_back(Param{"axis", Type::ty_struct("Vector3"), SourceLoc{1,1}});
       md.params.push_back(Param{"angle", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_struct("Quaternion");
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      q.methods.push_back(std::move(md));
+    }
+    
+    // set(x: float, y: float, z: float, w: float): Quaternion
+    {
+      MethodDecl md;
+      md.name = "set";
+      md.params.push_back(Param{"x", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"y", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"z", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"w", Type::ty_float(), SourceLoc{1,1}});
       md.ret = Type::ty_struct("Quaternion");
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();

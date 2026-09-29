@@ -430,12 +430,62 @@ struct Emitter {
             recv = emit_expr(e->lhs->lhs);
           }
           
-          // M3: Special handling for lookAt(x, y, z) -> lookAt_v(Vector3)
-          if (e->mangled == "farm_PerspectiveCamera_lookAt" && e->args.size() == 3) {
-            std::string x = emit_expr(e->args[0]);
-            std::string y = emit_expr(e->args[1]);
-            std::string z = emit_expr(e->args[2]);
-            return "farm_PerspectiveCamera_lookAt_v(" + recv + ", farm_Vector3_new(" + x + ", " + y + ", " + z + "))";
+          // M3: Special handling for lookAt(x, y, z) on Object3D and subclasses
+          if (e->mangled.find("_lookAt") != std::string::npos && e->args.size() == 3) {
+            // Check if this is an Object3D or subclass
+            std::string class_name = e->lhs->lhs->type->name;
+            if (class_name == "farm_Object3D" || class_name == "farm_Scene" || 
+                class_name == "farm_PerspectiveCamera" || class_name == "farm_Mesh" ||
+                class_name == "farm_AmbientLight" || class_name == "farm_DirectionalLight" || 
+                class_name == "farm_PointLight") {
+              std::string x = emit_expr(e->args[0]);
+              std::string y = emit_expr(e->args[1]);
+              std::string z = emit_expr(e->args[2]);
+              // Cast to Object3D* and call Object3D_lookAt_xyz
+              return "farm_Object3D_lookAt_xyz((farm_Object3D*)" + recv + ", " + x + ", " + y + ", " + z + ")";
+            }
+          }
+          
+          // M3: Special handling for Vector3.set(x, y, z) and Quaternion.set(x, y, z, w) - inline field assignment
+          if (e->mangled.find("_set") != std::string::npos && 
+              e->lhs->lhs->type->kind == TypeKind::Struct) {
+            std::string struct_name = e->lhs->lhs->type->name;
+            bool is_vector3_set = struct_name.find("Vector3") != std::string::npos && e->args.size() == 3;
+            bool is_quat_set = struct_name.find("Quaternion") != std::string::npos && e->args.size() == 4;
+            
+            if (is_vector3_set || is_quat_set) {
+              // Emit inline assignment
+              std::string ptr;
+              if (e->lhs->lhs->is_lvalue) {
+                ptr = emit_lvalue_ptr(e->lhs->lhs);
+              } else {
+                std::string recv_val = emit_expr(e->lhs->lhs);
+                std::string tmp = fresh("rcv");
+                out << c_type(e->lhs->lhs->type) << " " << tmp << " = " << recv_val << ";\n";
+                ptr = "&" + tmp;
+              }
+              
+              if (is_vector3_set) {
+                std::string x = emit_expr(e->args[0]);
+                std::string y = emit_expr(e->args[1]);
+                std::string z = emit_expr(e->args[2]);
+                out << "(" << ptr << ")->f_x = " << x << ";\n";
+                out << "(" << ptr << ")->f_y = " << y << ";\n";
+                out << "(" << ptr << ")->f_z = " << z << ";\n";
+              } else { // is_quat_set
+                std::string x = emit_expr(e->args[0]);
+                std::string y = emit_expr(e->args[1]);
+                std::string z = emit_expr(e->args[2]);
+                std::string w = emit_expr(e->args[3]);
+                out << "(" << ptr << ")->f_x = " << x << ";\n";
+                out << "(" << ptr << ")->f_y = " << y << ";\n";
+                out << "(" << ptr << ")->f_z = " << z << ";\n";
+                out << "(" << ptr << ")->w = " << w << ";\n";  // w has no f_ prefix
+              }
+              
+              // Return dereferenced value (set returns the struct)
+              return "*(" + ptr + ")";
+            }
           }
           
           std::string call = e->mangled + "(" + recv;
@@ -527,35 +577,10 @@ struct Emitter {
             // Call runtime constructor function directly
             out << "struct " << e->mangled << "* " << v << " = " << e->mangled << "_new";
             
-            // Handle overloaded constructors with argument counts
-            if (class_name == "farm_BoxGeometry" && e->args.size() == 3) {
-              out << "_whd";
-            } else if (class_name == "farm_SphereGeometry" && e->args.size() == 3) {
-              out << "_full";
-            } else if (class_name == "farm_SphereGeometry" && e->args.size() == 1) {
-              out << "_r";
-            } else if (class_name == "farm_PlaneGeometry" && e->args.size() == 2) {
-              out << "_wh";
-            } else if (class_name == "farm_MeshBasicMaterial" && e->args.size() == 1) {
-              out << "_hex";
-            } else if (class_name == "farm_MeshStandardMaterial" && e->args.size() == 1) {
-              out << "_hex";
-            } else if (class_name == "farm_AmbientLight" && e->args.size() == 1) {
-              out << "_hex";
-            } else if (class_name == "farm_AmbientLight" && e->args.size() == 2) {
-              out << "_hex_i";
-            } else if (class_name == "farm_DirectionalLight" && e->args.size() == 1) {
-              out << "_hex";
-            } else if (class_name == "farm_DirectionalLight" && e->args.size() == 2) {
-              out << "_hex_i";
-            } else if (class_name == "farm_PointLight" && e->args.size() == 1) {
-              out << "_hex";
-            } else if (class_name == "farm_PointLight" && e->args.size() == 2) {
-              out << "_hex_i";
-            } else if (class_name == "farm_Renderer" && e->args.size() == 2) {
-              out << "_wh";
+            // M3: Use the resolved constructor variant from sema
+            if (!e->ctor_variant.empty()) {
+              out << "_" << e->ctor_variant;
             }
-            // else: use base _new() for no-arg or standard signatures
             
             out << "(";
             for (size_t i = 0; i < arg_values.size(); ++i) {

@@ -536,11 +536,11 @@ void farm_MeshStandardMaterial_set(farm_MeshStandardMaterial* self, farm_Color c
   self->color = color;
 }
 
-void farm_MeshStandardMaterial__setRoughness(farm_MeshStandardMaterial* self, double r) {
+void farm_MeshStandardMaterial_setRoughness(farm_MeshStandardMaterial* self, double r) {
   self->roughness = r;
 }
 
-void farm_MeshStandardMaterial__setMetalness(farm_MeshStandardMaterial* self, double m) {
+void farm_MeshStandardMaterial_setMetalness(farm_MeshStandardMaterial* self, double m) {
   self->metalness = m;
 }
 

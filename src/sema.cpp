@@ -654,22 +654,161 @@ struct Sema {
       case ExprKind::New: {
         for (auto& a : e->args) check_expr(a);
         if (auto* cd = find_class(e->type_name)) {
-          if (cd->ctor_index < 0) { e->type=Type::ty_error(); break; }
-          auto& ctor = cd->methods[cd->ctor_index];
-          if (e->args.size()!=ctor.params.size())
-            error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(ctor.params.size()) + ", found " + std::to_string(e->args.size()));
-          else for (size_t i=0;i<e->args.size();++i) {
-            // M3: Try int→float coercion (same as struct constructors)
-            if (!types_assignable(e->args[i]->type, ctor.params[i].type) &&
-                ctor.params[i].type->kind == TypeKind::Float &&
-                e->args[i]->type->kind == TypeKind::Int) {
-              e->args[i] = try_coerce_int_to_float(e->args[i]);
+          // M3: Check if this is a farmos:scene class that uses runtime constructor overloads
+          bool is_scene_class = (cd->c_sym.find("farm_") == 0);
+          
+          if (is_scene_class) {
+            // Scene classes: resolve constructor variant based on arity and argument types
+            std::string variant = "";
+            size_t nargs = e->args.size();
+            
+            if (cd->c_sym == "farm_MeshStandardMaterial") {
+              if (nargs == 0) {
+                variant = "";
+              } else if (nargs == 1) {
+                if (e->args[0]->type->kind == TypeKind::Int) {
+                  variant = "hex";
+                } else if (e->args[0]->type->kind == TypeKind::Struct && e->args[0]->type->name.find("Color") != std::string::npos) {
+                  variant = "color";
+                } else {
+                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int or Color");
+                }
+              } else {
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0 or 1, found " + std::to_string(nargs));
+              }
+            } else if (cd->c_sym == "farm_MeshBasicMaterial") {
+              if (nargs == 0) {
+                variant = "";
+              } else if (nargs == 1) {
+                if (e->args[0]->type->kind == TypeKind::Int) {
+                  variant = "hex";
+                } else {
+                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int");
+                }
+              } else {
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0 or 1, found " + std::to_string(nargs));
+              }
+            } else if (cd->c_sym == "farm_AmbientLight" || cd->c_sym == "farm_DirectionalLight" || cd->c_sym == "farm_PointLight") {
+              if (nargs == 0) {
+                variant = "";
+              } else if (nargs == 1) {
+                if (e->args[0]->type->kind == TypeKind::Int) {
+                  variant = "hex";
+                } else {
+                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int");
+                }
+              } else if (nargs == 2) {
+                // Check first arg type
+                if (e->args[0]->type->kind == TypeKind::Int) {
+                  variant = "hex_i";
+                } else if (e->args[0]->type->kind == TypeKind::Struct && e->args[0]->type->name.find("Color") != std::string::npos) {
+                  variant = "color_i";
+                } else {
+                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int or Color");
+                }
+                // Check second arg is float/int
+                if (e->args[1]->type->kind == TypeKind::Int) {
+                  e->args[1] = try_coerce_int_to_float(e->args[1]);
+                } else if (e->args[1]->type->kind != TypeKind::Float) {
+                  error_at(path, e->args[1]->loc, "E0408", "type mismatch: expected float");
+                }
+              } else {
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0, 1, or 2, found " + std::to_string(nargs));
+              }
+            } else if (cd->c_sym == "farm_Mesh") {
+              if (nargs != 2) {
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 2, found " + std::to_string(nargs));
+              }
+              // Mesh constructor accepts (geometry, material) - no variant needed
+              variant = "";
+            } else if (cd->c_sym == "farm_BoxGeometry") {
+              if (nargs == 0) {
+                variant = "";
+              } else if (nargs == 3) {
+                variant = "whd";
+                for (int i = 0; i < 3; ++i) {
+                  if (e->args[i]->type->kind == TypeKind::Int) {
+                    e->args[i] = try_coerce_int_to_float(e->args[i]);
+                  } else if (e->args[i]->type->kind != TypeKind::Float) {
+                    error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected float");
+                  }
+                }
+              } else {
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0 or 3, found " + std::to_string(nargs));
+              }
+            } else if (cd->c_sym == "farm_SphereGeometry") {
+              if (nargs == 0) {
+                variant = "";
+              } else if (nargs == 1) {
+                variant = "r";
+                if (e->args[0]->type->kind == TypeKind::Int) {
+                  e->args[0] = try_coerce_int_to_float(e->args[0]);
+                } else if (e->args[0]->type->kind != TypeKind::Float) {
+                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected float");
+                }
+              } else if (nargs == 3) {
+                variant = "full";
+                for (int i = 0; i < 3; ++i) {
+                  if (e->args[i]->type->kind == TypeKind::Int) {
+                    e->args[i] = try_coerce_int_to_float(e->args[i]);
+                  } else if (e->args[i]->type->kind != TypeKind::Float) {
+                    error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected float");
+                  }
+                }
+              } else {
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0, 1, or 3, found " + std::to_string(nargs));
+              }
+            } else if (cd->c_sym == "farm_PlaneGeometry") {
+              if (nargs == 0) {
+                variant = "";
+              } else if (nargs == 2) {
+                variant = "wh";
+                for (int i = 0; i < 2; ++i) {
+                  if (e->args[i]->type->kind == TypeKind::Int) {
+                    e->args[i] = try_coerce_int_to_float(e->args[i]);
+                  } else if (e->args[i]->type->kind != TypeKind::Float) {
+                    error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected float");
+                  }
+                }
+              } else {
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0 or 2, found " + std::to_string(nargs));
+              }
+            } else if (cd->c_sym == "farm_Renderer") {
+              if (nargs == 2) {
+                variant = "wh";
+                for (int i = 0; i < 2; ++i) {
+                  if (e->args[i]->type->kind != TypeKind::Int) {
+                    error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected int");
+                  }
+                }
+              } else {
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 2, found " + std::to_string(nargs));
+              }
             }
-            if (!types_assignable(e->args[i]->type, ctor.params[i].type))
-              error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+            // Other scene classes (Scene, PerspectiveCamera, etc.) use default constructors
+            
+            e->ctor_variant = variant;
+            e->type = Type::ty_class(cd->c_sym);
+            e->mangled = cd->c_sym;
+          } else {
+            // User classes: use __constructor
+            if (cd->ctor_index < 0) { e->type=Type::ty_error(); break; }
+            auto& ctor = cd->methods[cd->ctor_index];
+            if (e->args.size()!=ctor.params.size())
+              error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(ctor.params.size()) + ", found " + std::to_string(e->args.size()));
+            else for (size_t i=0;i<e->args.size();++i) {
+              // M3: Try int→float coercion (same as struct constructors)
+              if (!types_assignable(e->args[i]->type, ctor.params[i].type) &&
+                  ctor.params[i].type->kind == TypeKind::Float &&
+                  e->args[i]->type->kind == TypeKind::Int) {
+                e->args[i] = try_coerce_int_to_float(e->args[i]);
+              }
+              if (!types_assignable(e->args[i]->type, ctor.params[i].type))
+                error_at(path, e->args[i]->loc, "E0408", "type mismatch");
+            }
+            e->type = Type::ty_class(cd->c_sym);
+            e->mangled = cd->c_sym;
           }
-          e->type = Type::ty_class(cd->c_sym);
-          e->mangled = cd->c_sym;
         } else if (auto* sd = find_struct(e->type_name)) {
           // M2: Allow custom constructors for specific types
           bool valid_ctor = false;
