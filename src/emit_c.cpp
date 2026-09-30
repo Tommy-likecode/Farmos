@@ -268,7 +268,24 @@ struct Emitter {
       case ExprKind::Field: {
         auto base = emit_expr(e->lhs);
         if (e->lhs->type->kind == TypeKind::Class) {
-          return "(" + base + ")->f_" + e->name;
+          std::string field_access = "(" + base + ")->f_" + e->name;
+          
+          // M3: Mesh geometry and material fields are stored as void* in C runtime
+          // but typed specifically in sema. Cast them when accessed.
+          if (e->lhs->type->name == "farm_Mesh") {
+            if (e->name == "material") {
+              // Cast void* to the actual material type (c_type already returns pointer for classes)
+              std::string mat_type = c_type(e->type);
+              return "(" + mat_type + ")" + field_access;
+            }
+            if (e->name == "geometry") {
+              // Cast void* to the actual geometry type (c_type already returns pointer for classes)
+              std::string geom_type = c_type(e->type);
+              return "(" + geom_type + ")" + field_access;
+            }
+          }
+          
+          return field_access;
         }
         // M2/M3: Math module structs have inconsistent field naming in runtime
         if (e->lhs->type->kind == TypeKind::Struct && e->lhs->type->name.find("m1_") == 0) {
@@ -404,6 +421,26 @@ struct Emitter {
             is_math_method = true;
           }
           
+          
+          // M3: Special handling for Color.setHex and Color.getHex (static-style functions)
+          if (e->mangled == "farm_Color_setHex") {
+            // setHex(hex) - no receiver argument, just the hex value
+            std::string hex_val = emit_expr(e->args[0]);
+            std::string call = "farm_Color_setHex(" + hex_val + ")";
+            // If receiver is an lvalue, assign result back
+            if (e->lhs->lhs->is_lvalue) {
+              emit_assign(e->lhs->lhs, call);
+              return "0";
+            }
+            return call;
+          }
+          
+          if (e->mangled == "farm_Color_getHex") {
+            // getHex() - takes receiver by value
+            std::string recv = emit_expr(e->lhs->lhs);
+            return "farm_Color_getHex(" + recv + ")";
+          }
+          
           // For struct methods, pass &receiver; for class methods, pass receiver (already a pointer)
           // Exception: math struct methods pass receiver by value and return a new value
           std::string recv;
@@ -520,10 +557,14 @@ struct Emitter {
           }
           call += ")";
           
-          // M3: For math methods that return a value and the receiver is an lvalue,
-          // we need to assign the result back to the receiver
-          if (is_math_method && e->lhs->lhs->is_lvalue && e->type->kind != TypeKind::Void) {
-            // Method returns a value, assign it back to the receiver
+          // M3: For math methods, only assign back if:
+          // 1. The receiver is an lvalue
+          // 2. The return type matches the receiver type (not void, not a different type like int)
+          // This prevents assigning int results from getHex() back to Color
+          if (is_math_method && e->lhs->lhs->is_lvalue && 
+              e->type->kind == TypeKind::Struct && 
+              e->type->name == e->lhs->lhs->type->name) {
+            // Method returns the same struct type as receiver, assign it back
             emit_assign(e->lhs->lhs, call);
             return "0"; // Expression value doesn't matter since we wrapped in (void) at statement level
           }
