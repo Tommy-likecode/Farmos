@@ -1271,8 +1271,8 @@ void farm_Renderer_savePNG(farm_Renderer* self, FarmString path) {
            self->width * 3);
   }
   
-  // Zlib wrapper with no compression (stored blocks)
-  uint32_t idat_size = 2 + raw_size + 5 * ((raw_size + 65534) / 65535) + 4;
+  // Zlib wrapper with no compression (stored blocks of 65531 bytes each)
+  uint32_t idat_size = 2 + raw_size + 5 * ((raw_size + 65530) / 65531) + 4;
   uint8_t* idat_data = (uint8_t*)farm_arena_alloc(idat_size);
   uint32_t idat_pos = 0;
   
@@ -1280,11 +1280,11 @@ void farm_Renderer_savePNG(farm_Renderer* self, FarmString path) {
   idat_data[idat_pos++] = 0x78;
   idat_data[idat_pos++] = 0x01;
   
-  // Split into blocks of up to 65535 bytes
+  // Split into blocks of up to 65531 bytes (Python zlib level=0 uses 65531, not 65535)
   uint32_t remaining = raw_size;
   uint32_t offset = 0;
   while (remaining > 0) {
-    uint32_t block_size = (remaining > 65535) ? 65535 : remaining;
+    uint32_t block_size = (remaining > 65531) ? 65531 : remaining;
     bool is_final = (remaining == block_size);
     
     idat_data[idat_pos++] = is_final ? 0x01 : 0x00;
