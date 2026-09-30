@@ -594,8 +594,9 @@ struct Emitter {
                                  class_name == "farm_DirectionalLight" || class_name == "farm_PointLight" ||
                                  class_name == "farm_Renderer");
           bool is_operator = (call_name.find("__farm_op_") != std::string::npos);
+          bool is_stdlib = (class_name.find("m1_") == 0 || class_name.find("m0_") == 0);
           
-          if (!is_scene_class && !is_operator && e->lhs->lhs->type->kind == TypeKind::Class && call_name.find("_") != std::string::npos) {
+          if (!is_scene_class && !is_operator && !is_stdlib && e->lhs->lhs->type->kind == TypeKind::Class && call_name.find("_") != std::string::npos) {
             // Replace single underscore with double underscore for user-defined class methods
             size_t pos = call_name.find("_");
             // Find the last single underscore before the method name
