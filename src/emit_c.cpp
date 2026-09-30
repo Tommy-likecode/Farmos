@@ -519,6 +519,26 @@ struct Emitter {
             bool is_quat_set = struct_name.find("Quaternion") != std::string::npos && e->args.size() == 4;
             
             if (is_vector3_set || is_quat_set) {
+              // Check if this is setting rotation or quaternion on an Object3D
+              bool is_rotation_field = false;
+              bool is_quaternion_field = false;
+              std::string obj_ptr;
+              
+              if (e->lhs->lhs->kind == ExprKind::Field && e->lhs->lhs->lhs->type->kind == TypeKind::Class) {
+                std::string class_name = e->lhs->lhs->lhs->type->name;
+                bool is_object3d_subclass = (class_name == "farm_Object3D" || class_name == "farm_Scene" || 
+                                             class_name == "farm_PerspectiveCamera" || class_name == "farm_Mesh" ||
+                                             class_name == "farm_AmbientLight" || class_name == "farm_DirectionalLight" || 
+                                             class_name == "farm_PointLight");
+                if (is_object3d_subclass && e->lhs->lhs->name == "rotation") {
+                  is_rotation_field = true;
+                  obj_ptr = emit_expr(e->lhs->lhs->lhs);
+                } else if (is_object3d_subclass && e->lhs->lhs->name == "quaternion") {
+                  is_quaternion_field = true;
+                  obj_ptr = emit_expr(e->lhs->lhs->lhs);
+                }
+              }
+              
               // Emit inline assignment
               std::string ptr;
               if (e->lhs->lhs->is_lvalue) {
@@ -546,6 +566,13 @@ struct Emitter {
                 out << "(" << ptr << ")->f_y = " << y << ";\n";
                 out << "(" << ptr << ")->f_z = " << z << ";\n";
                 out << "(" << ptr << ")->w = " << w << ";\n";  // w has no f_ prefix
+              }
+              
+              // M3: Set dirty flag if this is rotation/quaternion on Object3D
+              if (is_rotation_field) {
+                out << "(" << obj_ptr << ")->rotation_dirty = true;\n";
+              } else if (is_quaternion_field) {
+                out << "(" << obj_ptr << ")->quaternion_dirty = true;\n";
               }
               
               // Return dereferenced value (set returns the struct)
@@ -605,16 +632,30 @@ struct Emitter {
           }
           call += ")";
           
-          // M3: For math methods, only assign back if:
-          // 1. The receiver is an lvalue
-          // 2. The return type matches the receiver type (not void, not a different type like int)
-          // This prevents assigning int results from getHex() back to Color
+          // M3: For math methods on Object3D fields (position, scale), assign result back
+          // But NOT for standalone math values (M2 tests) or chained calls
+          bool should_assign_back = false;
           if (is_math_method && e->lhs->lhs->is_lvalue && 
               e->type->kind == TypeKind::Struct && 
               e->type->name == e->lhs->lhs->type->name) {
-            // Method returns the same struct type as receiver, assign it back
+            // Check if receiver is a field of an Object3D subclass
+            if (e->lhs->lhs->kind == ExprKind::Field && e->lhs->lhs->lhs->type->kind == TypeKind::Class) {
+              std::string class_name = e->lhs->lhs->lhs->type->name;
+              bool is_object3d_subclass = (class_name == "farm_Object3D" || class_name == "farm_Scene" || 
+                                           class_name == "farm_PerspectiveCamera" || class_name == "farm_Mesh" ||
+                                           class_name == "farm_AmbientLight" || class_name == "farm_DirectionalLight" || 
+                                           class_name == "farm_PointLight");
+              std::string field_name = e->lhs->lhs->name;
+              // Only assign back for Object3D fields like position, scale (not rotation/quaternion which have dirty flags)
+              if (is_object3d_subclass && (field_name == "position" || field_name == "scale")) {
+                should_assign_back = true;
+              }
+            }
+          }
+          
+          if (should_assign_back) {
             emit_assign(e->lhs->lhs, call);
-            return "0"; // Expression value doesn't matter since we wrapped in (void) at statement level
+            return "0";
           }
           
           return call;
@@ -720,17 +761,17 @@ struct Emitter {
           // M2: Default constructor - special handling for math types
           if (sd->name == "Matrix4") {
             // Identity matrix: diagonal = 1, rest = 0
-            out << "  for (int i = 0; i < 16; i++) " << v << ".f_elements.data[i] = 0.0;\n";
-            out << "  " << v << ".f_elements.data[0] = 1.0;\n";   // [0,0]
-            out << "  " << v << ".f_elements.data[5] = 1.0;\n";   // [1,1]
-            out << "  " << v << ".f_elements.data[10] = 1.0;\n";  // [2,2]
-            out << "  " << v << ".f_elements.data[15] = 1.0;\n";  // [3,3]
+            out << "  for (int i = 0; i < 16; i++) " << v << ".elements[i] = 0.0;\n";
+            out << "  " << v << ".elements[0] = 1.0;\n";   // [0,0]
+            out << "  " << v << ".elements[5] = 1.0;\n";   // [1,1]
+            out << "  " << v << ".elements[10] = 1.0;\n";  // [2,2]
+            out << "  " << v << ".elements[15] = 1.0;\n";  // [3,3]
           } else if (sd->name == "Matrix3") {
             // Identity matrix: diagonal = 1, rest = 0
-            out << "  for (int i = 0; i < 9; i++) " << v << ".f_elements.data[i] = 0.0;\n";
-            out << "  " << v << ".f_elements.data[0] = 1.0;\n";   // [0,0]
-            out << "  " << v << ".f_elements.data[4] = 1.0;\n";   // [1,1]
-            out << "  " << v << ".f_elements.data[8] = 1.0;\n";   // [2,2]
+            out << "  for (int i = 0; i < 9; i++) " << v << ".elements[i] = 0.0;\n";
+            out << "  " << v << ".elements[0] = 1.0;\n";   // [0,0]
+            out << "  " << v << ".elements[4] = 1.0;\n";   // [1,1]
+            out << "  " << v << ".elements[8] = 1.0;\n";   // [2,2]
           } else if (sd->name == "Quaternion") {
             // Identity quaternion: (0, 0, 0, 1)
             out << "  " << v << ".f_x = 0.0;\n";
