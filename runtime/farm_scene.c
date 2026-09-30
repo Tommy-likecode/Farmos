@@ -49,8 +49,11 @@ static void init_Object3D_fields(farm_Object3D* obj, farm_Object3DType type) {
   obj->quaternion_dirty = false;
 }
 
-// Helper: sync rotation/quaternion
-static void sync_quaternion_from_rotation(farm_Object3D* self) {
+// Helper: sync rotation/quaternion (exposed for generated code)
+void sync_quaternion_from_rotation(farm_Object3D* self);
+void sync_rotation_from_quaternion(farm_Object3D* self);
+
+void sync_quaternion_from_rotation(farm_Object3D* self) {
   if (self->rotation_dirty) {
     self->f_quaternion = farm_Quaternion_setFromEuler(self->f_rotation);
     self->rotation_dirty = false;
@@ -58,7 +61,7 @@ static void sync_quaternion_from_rotation(farm_Object3D* self) {
   }
 }
 
-static void sync_rotation_from_quaternion(farm_Object3D* self) {
+void sync_rotation_from_quaternion(farm_Object3D* self) {
   if (self->quaternion_dirty) {
     self->f_rotation = farm_Euler_setFromQuaternion(self->f_quaternion, self->f_rotation.order);
     self->quaternion_dirty = false;
@@ -75,7 +78,7 @@ farm_Object3D* farm_Object3D_new() {
 
 farm_Object3D* farm_Object3D_add(farm_Object3D* self, farm_Object3D* child) {
   if (child == self || is_ancestor_of(child, self)) {
-    farm_trap(106, "runtime error: Object3D hierarchy cycle");
+    farm_trap(106, "Object3D hierarchy cycle");
   }
   
   // Remove from current parent
@@ -116,11 +119,11 @@ farm_Object3D* farm_Object3D_remove(farm_Object3D* self, farm_Object3D* child) {
 
 farm_Object3D* farm_Object3D_addAt(farm_Object3D* self, farm_Object3D* child, int64_t index) {
   if (index < 0 || index > self->children.count) {
-    farm_trap(102, "runtime error: index out of bounds");
+    farm_trap(102, "index out of bounds");
   }
   
   if (child == self || is_ancestor_of(child, self)) {
-    farm_trap(106, "runtime error: Object3D hierarchy cycle");
+    farm_trap(106, "Object3D hierarchy cycle");
   }
   
   // Remove from current parent
@@ -156,7 +159,7 @@ int64_t farm_Object3D_childCount(farm_Object3D* self) {
 
 farm_Object3D* farm_Object3D_getChild(farm_Object3D* self, int64_t index) {
   if (index < 0 || index >= self->children.count) {
-    farm_trap(102, "runtime error: index out of bounds");
+    farm_trap(102, "index out of bounds");
   }
   return self->children.items[index];
 }
@@ -732,7 +735,7 @@ farm_Renderer* farm_Renderer_new_wh(int64_t width, int64_t height) {
 
 void farm_Renderer_setSize(farm_Renderer* self, int64_t width, int64_t height) {
   if (width <= 0 || height <= 0) {
-    farm_trap(107, "runtime error: invalid renderer size");
+    farm_trap(107, "invalid renderer size");
   }
   
   self->width = (int32_t)width;
@@ -953,7 +956,7 @@ static void rasterize_mesh(
   }
   
   if (geom_data->disposed) {
-    farm_trap(105, "runtime error: use after dispose");
+    farm_trap(105, "use after dispose");
   }
   
   bool mat_disposed = false;
@@ -963,7 +966,7 @@ static void rasterize_mesh(
     mat_disposed = ((farm_MeshStandardMaterial*)mesh->f_material)->disposed;
   }
   if (mat_disposed) {
-    farm_trap(105, "runtime error: use after dispose");
+    farm_trap(105, "use after dispose");
   }
   
   farm_Matrix4 mvp = farm_Matrix4_multiplyMatrices(
@@ -1154,11 +1157,11 @@ static void traverse_render(
 
 void farm_Renderer_render(farm_Renderer* self, farm_Scene* scene, farm_PerspectiveCamera* camera) {
   if (self->disposed) {
-    farm_trap(105, "runtime error: use after dispose");
+    farm_trap(105, "use after dispose");
   }
   
   if (self->width <= 0 || self->height <= 0) {
-    farm_trap(107, "runtime error: invalid renderer size");
+    farm_trap(107, "invalid renderer size");
   }
   
   // Update matrices
@@ -1229,7 +1232,7 @@ static void write_png_chunk(FILE* f, const char* type, uint8_t* data, uint32_t l
 
 void farm_Renderer_savePNG(farm_Renderer* self, FarmString path) {
   if (self->disposed) {
-    farm_trap(105, "runtime error: use after dispose");
+    farm_trap(105, "use after dispose");
   }
   
   // Convert FarmString to C string
@@ -1239,7 +1242,7 @@ void farm_Renderer_savePNG(farm_Renderer* self, FarmString path) {
   
   FILE* f = fopen(path_cstr, "wb");
   if (!f) {
-    farm_trap(108, "runtime error: PNG write failed");
+    farm_trap(108, "PNG write failed");
   }
   
   // PNG signature

@@ -152,7 +152,7 @@ $p = Invoke-FarmcBuild
 if ($p.ExitCode -ne 0) { Write-Host "FAIL ${Name}: compile failed ($($p.ExitCode))"; Write-Host (Read-Text $errFile); exit 1 }
 
 Remove-Item -Force $outFile,$errFile -ErrorAction SilentlyContinue
-$p2 = Start-Process -FilePath $tmp -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+$p2 = Start-Process -FilePath $tmp -WorkingDirectory $TestsDir -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
 $ec = $p2.ExitCode
 $stdoutGot = Norm-Newlines (Read-Text $outFile)
 $stderrGot = Norm-Newlines (Read-Text $errFile)

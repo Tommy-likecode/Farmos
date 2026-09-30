@@ -23,6 +23,10 @@ typedef struct farm_DirectionalLight farm_DirectionalLight;
 typedef struct farm_PointLight farm_PointLight;
 typedef struct farm_Renderer farm_Renderer;
 
+// Forward declarations for sync functions (used by generated code)
+void sync_quaternion_from_rotation(farm_Object3D* self);
+void sync_rotation_from_quaternion(farm_Object3D* self);
+
 // Internal structures for hierarchy and geometry
 typedef enum {
   FARM_OBJECT3D_TYPE_OBJECT3D = 0,

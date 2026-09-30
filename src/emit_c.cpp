@@ -270,6 +270,23 @@ struct Emitter {
         if (e->lhs->type->kind == TypeKind::Class) {
           std::string field_access = "(" + base + ")->f_" + e->name;
           
+          // M3: Object3D rotation/quaternion fields need sync before read
+          if (e->lhs->type->name.find("farm_Object3D") == 0 || 
+              e->lhs->type->name.find("farm_Scene") == 0 ||
+              e->lhs->type->name.find("farm_PerspectiveCamera") == 0 ||
+              e->lhs->type->name.find("farm_Mesh") == 0 ||
+              e->lhs->type->name.find("farm_AmbientLight") == 0 ||
+              e->lhs->type->name.find("farm_DirectionalLight") == 0 ||
+              e->lhs->type->name.find("farm_PointLight") == 0) {
+            if (e->name == "rotation") {
+              // Reading rotation: sync from quaternion if needed
+              return "({ sync_rotation_from_quaternion(" + base + "); " + field_access + "; })";
+            } else if (e->name == "quaternion") {
+              // Reading quaternion: sync from rotation if needed  
+              return "({ sync_quaternion_from_rotation(" + base + "); " + field_access + "; })";
+            }
+          }
+          
           // M3: Mesh geometry and material fields are stored as void* in C runtime
           // but typed specifically in sema. Cast them when accessed.
           if (e->lhs->type->name == "farm_Mesh") {
@@ -536,7 +553,38 @@ struct Emitter {
             }
           }
           
-          std::string call = e->mangled + "(" + recv;
+          std::string call_name = e->mangled;
+          // M1: User-defined class methods use double underscore: ClassName__methodName
+          // but M3 scene classes in runtime use single underscore
+          // Operators already have correct underscores, don't modify them
+          // If mangled has single underscore and lhs->lhs is a non-scene Class (and not an operator), fix it
+          std::string class_name = e->lhs->lhs->type->name;
+          bool is_scene_class = (class_name == "farm_Scene" || class_name == "farm_Object3D" ||
+                                 class_name == "farm_PerspectiveCamera" || class_name == "farm_Mesh" ||
+                                 class_name == "farm_BoxGeometry" || class_name == "farm_SphereGeometry" ||
+                                 class_name == "farm_PlaneGeometry" || class_name == "farm_MeshBasicMaterial" ||
+                                 class_name == "farm_MeshStandardMaterial" || class_name == "farm_AmbientLight" ||
+                                 class_name == "farm_DirectionalLight" || class_name == "farm_PointLight" ||
+                                 class_name == "farm_Renderer");
+          bool is_operator = (call_name.find("__farm_op_") != std::string::npos);
+          
+          if (!is_scene_class && !is_operator && e->lhs->lhs->type->kind == TypeKind::Class && call_name.find("_") != std::string::npos) {
+            // Replace single underscore with double underscore for user-defined class methods
+            size_t pos = call_name.find("_");
+            // Find the last single underscore before the method name
+            size_t last_single = std::string::npos;
+            for (size_t i = 0; i < call_name.length() - 1; i++) {
+              if (call_name[i] == '_' && call_name[i+1] != '_') {
+                last_single = i;
+              }
+            }
+            if (last_single != std::string::npos && call_name[last_single+1] != '_') {
+              // Insert another underscore to make it double
+              call_name.insert(last_single+1, "_");
+            }
+          }
+          
+          std::string call = call_name + "(" + recv;
           for (auto& a : e->args) { 
             call += ", ";
             std::string arg_val = emit_expr(a);
@@ -655,7 +703,7 @@ struct Emitter {
             }
           } else {
             // Original class constructor logic
-            out << "struct Farm_" << e->mangled << "* " << v << " = (struct Farm_" << e->mangled << "*)farm_arena_alloc(sizeof(struct Farm_" << e->mangled << "));\n";
+            out << "struct " << e->mangled << "* " << v << " = (struct " << e->mangled << "*)farm_arena_alloc(sizeof(struct " << e->mangled << "));\n";
             out << e->mangled << "__constructor(" << v;
             for (auto& a : e->args) out << ", " << emit_expr(a);
             out << ");\n";
@@ -975,6 +1023,24 @@ struct Emitter {
     out << "#include <stdio.h>\n";
     out << "#include <math.h>\n";
     out << "#include \"farm_rt.h\"\n";
+    // M2: Check if any math types are used
+    bool uses_math = false;
+    for (auto& m : prog.modules) {
+      if (m.path == "farmos:math") {
+        uses_math = true;
+        break;
+      }
+      for (auto& imp : m.imports) {
+        if (imp.path == "farmos:math") {
+          uses_math = true;
+          break;
+        }
+      }
+      if (uses_math) break;
+    }
+    if (uses_math) {
+      out << "#include \"farm_math.h\"\n";
+    }
     // M3: Check if any scene classes are used
     bool uses_scene = false;
     for (auto& m : prog.modules) {
