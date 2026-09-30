@@ -41,8 +41,8 @@ typedef struct {
 } farm_ChildList;
 
 typedef struct {
-  float* positions;   // 3 floats per vertex
-  float* normals;     // 3 floats per vertex
+  double* positions;  // 3 doubles per vertex
+  double* normals;    // 3 doubles per vertex
   int32_t* indices;   // triangle indices
   int32_t vertex_count;
   int32_t index_count;

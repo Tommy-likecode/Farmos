@@ -290,10 +290,10 @@ static void build_box_geometry(farm_GeometryData* data, double width, double hei
   
   // 24 vertices (4 per face, unique normals)
   data->vertex_count = 24;
-  data->positions = (float*)farm_arena_alloc(24 * 3 * sizeof(float));
-  data->normals = (float*)farm_arena_alloc(24 * 3 * sizeof(float));
+  data->positions = (double*)farm_arena_alloc(24 * 3 * sizeof(double));
+  data->normals = (double*)farm_arena_alloc(24 * 3 * sizeof(double));
   
-  float positions[] = {
+  double positions[] = {
     // Front face (+Z)
     -w, -h,  d,   w, -h,  d,   w,  h,  d,  -w,  h,  d,
     // Back face (-Z)
@@ -308,10 +308,10 @@ static void build_box_geometry(farm_GeometryData* data, double width, double hei
     -w, -h, -d,   w, -h, -d,   w, -h,  d,  -w, -h,  d
   };
   
-  memcpy(data->positions, positions, 24 * 3 * sizeof(float));
+  memcpy(data->positions, positions, 24 * 3 * sizeof(double));
   
   // Normals (each face has same normal for all 4 vertices)
-  float normals[] = {
+  double normals[] = {
     0,0,1, 0,0,1, 0,0,1, 0,0,1,     // Front
     0,0,-1, 0,0,-1, 0,0,-1, 0,0,-1, // Back
     1,0,0, 1,0,0, 1,0,0, 1,0,0,     // Right
@@ -320,7 +320,7 @@ static void build_box_geometry(farm_GeometryData* data, double width, double hei
     0,-1,0, 0,-1,0, 0,-1,0, 0,-1,0  // Bottom
   };
   
-  memcpy(data->normals, normals, 24 * 3 * sizeof(float));
+  memcpy(data->normals, normals, 24 * 3 * sizeof(double));
   
   // 12 triangles (2 per face)
   data->index_count = 36;
@@ -344,24 +344,24 @@ static void build_plane_geometry(farm_GeometryData* data, double width, double h
   
   // 4 vertices, facing +Z
   data->vertex_count = 4;
-  data->positions = (float*)farm_arena_alloc(4 * 3 * sizeof(float));
-  data->normals = (float*)farm_arena_alloc(4 * 3 * sizeof(float));
+  data->positions = (double*)farm_arena_alloc(4 * 3 * sizeof(double));
+  data->normals = (double*)farm_arena_alloc(4 * 3 * sizeof(double));
   
-  float positions[] = {
+  double positions[] = {
     -w, -h, 0,
      w, -h, 0,
      w,  h, 0,
     -w,  h, 0
   };
-  memcpy(data->positions, positions, 4 * 3 * sizeof(float));
+  memcpy(data->positions, positions, 4 * 3 * sizeof(double));
   
-  float normals[] = {
+  double normals[] = {
     0, 0, 1,
     0, 0, 1,
     0, 0, 1,
     0, 0, 1
   };
-  memcpy(data->normals, normals, 4 * 3 * sizeof(float));
+  memcpy(data->normals, normals, 4 * 3 * sizeof(double));
   
   // 2 triangles, CCW from +Z
   data->index_count = 6;
@@ -377,8 +377,8 @@ static void build_sphere_geometry(farm_GeometryData* data, double radius, int32_
   
   int32_t vc = (ws + 1) * (hs + 1);
   data->vertex_count = vc;
-  data->positions = (float*)farm_arena_alloc(vc * 3 * sizeof(float));
-  data->normals = (float*)farm_arena_alloc(vc * 3 * sizeof(float));
+  data->positions = (double*)farm_arena_alloc(vc * 3 * sizeof(double));
+  data->normals = (double*)farm_arena_alloc(vc * 3 * sizeof(double));
   
   // Generate vertices
   int32_t idx = 0;
@@ -1049,10 +1049,10 @@ static void rasterize_mesh(
     if (area <= 0) continue;
     
     // Bounding box
-    int32_t minX = (int32_t)fmax(0, fmin(fmin(sx0, sx1), sx2));
-    int32_t maxX = (int32_t)fmin(renderer->width - 1, fmax(fmax(sx0, sx1), sx2));
-    int32_t minY = (int32_t)fmax(0, fmin(fmin(sy0, sy1), sy2));
-    int32_t maxY = (int32_t)fmin(renderer->height - 1, fmax(fmax(sy0, sy1), sy2));
+    int32_t minX = (int32_t)fmax(0, floor(fmin(fmin(sx0, sx1), sx2)));
+    int32_t maxX = (int32_t)fmin(renderer->width - 1, ceil(fmax(fmax(sx0, sx1), sx2)));
+    int32_t minY = (int32_t)fmax(0, floor(fmin(fmin(sy0, sy1), sy2)));
+    int32_t maxY = (int32_t)fmin(renderer->height - 1, ceil(fmax(fmax(sy0, sy1), sy2)));
     
     // Rasterize pixels
     for (int32_t py = minY; py <= maxY; py++) {
@@ -1060,12 +1060,18 @@ static void rasterize_mesh(
         double sample_x = px + 0.5;
         double sample_y = py + 0.5;
         
-        // Barycentric coordinates
-        double w0 = edge_function(sx1, sy1, sx2, sy2, sample_x, sample_y) / area;
-        double w1 = edge_function(sx2, sy2, sx0, sy0, sample_x, sample_y) / area;
-        double w2 = edge_function(sx0, sy0, sx1, sy1, sample_x, sample_y) / area;
+        // Barycentric coordinates (raw edge function values)
+        double w0_raw = edge_function(sx1, sy1, sx2, sy2, sample_x, sample_y);
+        double w1_raw = edge_function(sx2, sy2, sx0, sy0, sample_x, sample_y);
+        double w2_raw = edge_function(sx0, sy0, sx1, sy1, sample_x, sample_y);
         
-        if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+        if (w0_raw < 0 || w1_raw < 0 || w2_raw < 0) continue;
+        
+        // Normalize
+        double inv_area = 1.0 / area;
+        double w0 = w0_raw * inv_area;
+        double w1 = w1_raw * inv_area;
+        double w2 = w2_raw * inv_area;
         
         // Interpolate depth (NDC z)
         double z = w0 * ndc0_z + w1 * ndc1_z + w2 * ndc2_z;

@@ -2250,7 +2250,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   fs::path rt_scene_c = rt_h_dir / "farm_scene.c";
   
   std::ostringstream cmd;
-  cmd << cc << " -std=c11 -Os -flto -ffunction-sections -fdata-sections "
+  cmd << cc << " -std=c11 -Os -flto -ffunction-sections -fdata-sections -ffp-contract=off "
       << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
       << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
   
@@ -2265,7 +2265,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   if (rc != 0) {
     // retry without LTO
     std::ostringstream cmd2;
-    cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections "
+    cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections -ffp-contract=off "
          << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
          << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
     
