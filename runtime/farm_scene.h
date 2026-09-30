@@ -133,11 +133,13 @@ struct farm_PlaneGeometry {
 
 // Materials
 struct farm_MeshBasicMaterial {
+  uint8_t material_type; // 0 for Basic
   farm_Color f_color;
   bool disposed;
 };
 
 struct farm_MeshStandardMaterial {
+  uint8_t material_type; // 1 for Standard
   farm_Color f_color;
   double roughness;
   double metalness;

@@ -492,6 +492,7 @@ void farm_PlaneGeometry_dispose(farm_PlaneGeometry* self) {
 // MeshBasicMaterial
 farm_MeshBasicMaterial* farm_MeshBasicMaterial_new() {
   farm_MeshBasicMaterial* mat = (farm_MeshBasicMaterial*)farm_arena_alloc(sizeof(farm_MeshBasicMaterial));
+  mat->material_type = 0;
   mat->f_color = farm_Color_new(1, 1, 1);
   mat->disposed = false;
   return mat;
@@ -516,6 +517,7 @@ void farm_MeshBasicMaterial_dispose(farm_MeshBasicMaterial* self) {
 // MeshStandardMaterial
 farm_MeshStandardMaterial* farm_MeshStandardMaterial_new() {
   farm_MeshStandardMaterial* mat = (farm_MeshStandardMaterial*)farm_arena_alloc(sizeof(farm_MeshStandardMaterial));
+  mat->material_type = 1;
   mat->f_color = farm_Color_new(1, 1, 1);
   mat->roughness = 1.0;
   mat->metalness = 0.0;
@@ -608,11 +610,10 @@ farm_Mesh* farm_Mesh_new(void* geometry, void* material) {
     mesh->geometry_type = 1; // Sphere (or other)
   }
   
-  // Material type detection: Basic vs Standard
-  // Check if the struct size suggests Standard (has roughness/metalness)
-  // For now, assume MeshBasicMaterial if color is the only field
-  // This is a simplification - in production we'd use proper type tags
-  mesh->material_type = 0; // Assume Basic for now, will refine
+  // Material type detection: Basic (0) vs Standard (1)
+  // Check the material_type field that all materials now have
+  uint8_t* mat_type_ptr = (uint8_t*)material;
+  mesh->material_type = *mat_type_ptr;
   
   return mesh;
 }
