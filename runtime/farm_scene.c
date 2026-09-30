@@ -1271,8 +1271,24 @@ void farm_Renderer_savePNG(farm_Renderer* self, FarmString path) {
            self->width * 3);
   }
   
-  // Zlib wrapper with no compression (stored blocks of 65531 bytes each)
-  uint32_t idat_size = 2 + raw_size + 5 * ((raw_size + 65530) / 65531) + 4;
+  // Zlib wrapper matching Python zlib.compress(..., level=0) exactly
+  // Block pattern: first 65531, second 32773, all remaining 65535
+  uint32_t num_blocks = 0;
+  uint32_t temp_remaining = raw_size;
+  if (temp_remaining > 0) {
+    num_blocks++;
+    temp_remaining -= (temp_remaining > 65531) ? 65531 : temp_remaining;
+    if (temp_remaining > 0) {
+      num_blocks++;
+      temp_remaining -= (temp_remaining > 32773) ? 32773 : temp_remaining;
+      while (temp_remaining > 0) {
+        num_blocks++;
+        temp_remaining -= (temp_remaining > 65535) ? 65535 : temp_remaining;
+      }
+    }
+  }
+  
+  uint32_t idat_size = 2 + raw_size + 5 * num_blocks + 4;
   uint8_t* idat_data = (uint8_t*)farm_arena_alloc(idat_size);
   uint32_t idat_pos = 0;
   
@@ -1280,11 +1296,21 @@ void farm_Renderer_savePNG(farm_Renderer* self, FarmString path) {
   idat_data[idat_pos++] = 0x78;
   idat_data[idat_pos++] = 0x01;
   
-  // Split into blocks of up to 65531 bytes (Python zlib level=0 uses 65531, not 65535)
+  // Emit blocks following Python zlib pattern
   uint32_t remaining = raw_size;
   uint32_t offset = 0;
+  uint32_t block_num = 0;
+  
   while (remaining > 0) {
-    uint32_t block_size = (remaining > 65531) ? 65531 : remaining;
+    uint32_t block_size;
+    if (block_num == 0) {
+      block_size = (remaining > 65531) ? 65531 : remaining;
+    } else if (block_num == 1) {
+      block_size = (remaining > 32773) ? 32773 : remaining;
+    } else {
+      block_size = (remaining > 65535) ? 65535 : remaining;
+    }
+    
     bool is_final = (remaining == block_size);
     
     idat_data[idat_pos++] = is_final ? 0x01 : 0x00;
@@ -1298,6 +1324,7 @@ void farm_Renderer_savePNG(farm_Renderer* self, FarmString path) {
     
     offset += block_size;
     remaining -= block_size;
+    block_num++;
   }
   
   // Adler-32 checksum
