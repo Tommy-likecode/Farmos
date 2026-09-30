@@ -816,6 +816,33 @@ struct Emitter {
   void emit_assign(ExprPtr lv, const std::string& rval) {
     std::string ptr = emit_lvalue_ptr(lv);
     out << "*(" << ptr << ") = " << rval << ";\n";
+    
+    // M3: Track dirty flags for Euler/Quaternion sync on Object3D
+    // When assigning to rotation.x/y/z or quaternion.x/y/z/w on Object3D subclasses,
+    // mark the appropriate dirty flag
+    if (lv->kind == ExprKind::Field && lv->lhs && lv->lhs->kind == ExprKind::Field) {
+      // Check if this is obj.rotation.x or obj.quaternion.x pattern
+      std::string parent_field = lv->lhs->name;
+      std::string child_field = lv->name;
+      
+      // Check if the grandparent is an Object3D subclass
+      if (lv->lhs->lhs && lv->lhs->lhs->type && lv->lhs->lhs->type->kind == TypeKind::Class) {
+        std::string class_name = lv->lhs->lhs->type->name;
+        bool is_object3d = (class_name == "farm_Object3D" || class_name == "farm_Scene" || 
+                           class_name == "farm_PerspectiveCamera" || class_name == "farm_Mesh" ||
+                           class_name == "farm_AmbientLight" || class_name == "farm_DirectionalLight" || 
+                           class_name == "farm_PointLight");
+        
+        if (is_object3d) {
+          std::string obj_expr = emit_expr(lv->lhs->lhs);
+          if (parent_field == "rotation" && (child_field == "x" || child_field == "y" || child_field == "z" || child_field == "order")) {
+            out << "(" << obj_expr << ")->rotation_dirty = 1;\n";
+          } else if (parent_field == "quaternion" && (child_field == "x" || child_field == "y" || child_field == "z" || child_field == "w")) {
+            out << "(" << obj_expr << ")->quaternion_dirty = 1;\n";
+          }
+        }
+      }
+    }
   }
 
   void emit_compound_assign(ExprPtr lv, TokKind op, ExprPtr rhs) {
