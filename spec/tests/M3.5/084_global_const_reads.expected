@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+## Top-level consts are the only globals (M1 3.1) and are immutable: always readable from tasks (4.2).
+# stdout:
+30
+110
+# end

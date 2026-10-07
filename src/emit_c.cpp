@@ -114,7 +114,22 @@ struct Emitter {
 
   // M3: Set at the start of emit_all(). Non-scene programs MUST match master codegen.
   bool uses_scene = false;
+  bool uses_parallel = false;
   bool user_imports_math = false;
+  std::unordered_map<std::string, std::string> cap_val;
+  std::unordered_map<std::string, std::string> cap_ptr;
+  std::string this_c = "this";
+
+  std::string ident_val(const std::string& n) {
+    auto it = cap_val.find(n);
+    if (it != cap_val.end()) return it->second;
+    return "v_" + n;
+  }
+  std::string ident_ptr(const std::string& n) {
+    auto it = cap_ptr.find(n);
+    if (it != cap_ptr.end()) return it->second;
+    return "&v_" + n;
+  }
 
   static bool is_object3d_sym(const std::string& n) {
     return n == "farm_Object3D" || n == "farm_Scene" || n == "farm_PerspectiveCamera" ||
@@ -218,6 +233,24 @@ struct Emitter {
         walk(f.ret);
       }
       for (auto& c : m.consts) walk(c.type);
+      std::function<void(ExprPtr)> we = [&](ExprPtr e) {
+        if (!e) return;
+        walk(e->type);
+        we(e->lhs); we(e->rhs);
+        for (auto& a : e->args) we(a);
+        for (auto& fv : e->fields) we(fv.second);
+      };
+      std::function<void(StmtPtr)> wse = [&](StmtPtr s) {
+        if (!s) return;
+        walk(s->decl_type);
+        we(s->init); we(s->cond); we(s->lhs); we(s->rhs); we(s->for_cond); we(s->ret);
+        wse(s->then_b); wse(s->else_b); wse(s->for_init); wse(s->for_update);
+        for (auto& x : s->stmts) wse(x);
+      };
+      for (auto& f : m.functions) wse(f.body);
+      for (auto& op : m.operators) wse(op.body);
+      for (auto& c : m.classes) for (auto& md : c.methods) wse(md.body);
+      for (auto& s : m.structs) for (auto& md : s.methods) wse(md.body);
     }
     walk(Type::ty_fixed(Type::ty_int(), 2));
     walk(Type::ty_fixed(Type::ty_int(), 3));
@@ -235,8 +268,8 @@ struct Emitter {
       }
       case ExprKind::BoolLit: return e->bool_val ? "((int8_t)1)" : "((int8_t)0)";
       case ExprKind::StringLit: return c_string_value(e->str_val);
-      case ExprKind::Ident: return !e->mangled.empty() ? e->mangled : ("v_" + e->name);
-      case ExprKind::This: return "this";
+      case ExprKind::Ident: return !e->mangled.empty() ? e->mangled : ident_val(e->name);
+      case ExprKind::This: return this_c;
       case ExprKind::Unary: {
         // M2: Check for unary operator overload
         if (!e->mangled.empty()) {
@@ -376,6 +409,8 @@ struct Emitter {
             is_math_type_name(e->lhs->type->name) && math_base(e->lhs->type->name) == "Euler") {
           return "({ farm_Euler __eo = (" + base + "); farm_euler_order_string(&__eo); })";
         }
+        if (e->lhs->kind == ExprKind::This)
+          return "(" + base + ")->" + struct_field_access(e->name, e->lhs->type);
         return "(" + base + ")." + struct_field_access(e->name, e->lhs->type);
       }
       case ExprKind::Call: {
@@ -535,16 +570,19 @@ struct Emitter {
           std::string v = fresh("da");
           out << "FarmDynArray " << v << "; farm_dyn_init(&" << v << ", (int64_t)sizeof(" << c_type(e->type->elem) << "));\n";
           for (auto& a : e->args) {
+            std::string elv = emit_expr(a);
             std::string el = fresh("el");
-            out << c_type(e->type->elem) << " " << el << " = " << emit_expr(a) << "; farm_dyn_push(&" << v << ", &" << el << ");\n";
+            out << c_type(e->type->elem) << " " << el << " = " << elv << "; farm_dyn_push(&" << v << ", &" << el << ");\n";
           }
           return v;
         }
         std::string ty = c_type(e->type);
         std::string v = fresh("fa");
         out << ty << " " << v << ";\n";
-        for (size_t i=0;i<e->args.size();++i)
-          out << v << ".data[" << i << "] = " << emit_expr(e->args[i]) << ";\n";
+        for (size_t i=0;i<e->args.size();++i) {
+          std::string elv = emit_expr(e->args[i]);
+          out << v << ".data[" << i << "] = " << elv << ";\n";
+        }
         return v;
       }
       case ExprKind::StructLit: {
@@ -714,7 +752,10 @@ struct Emitter {
   /* Pointer to lvalue storage; base/index evaluated exactly once (temps written to `out`). */
   std::string emit_lvalue_ptr(ExprPtr lv) {
     if (lv->kind == ExprKind::Ident) {
-      return "&v_" + lv->name;
+      return ident_ptr(lv->name);
+    }
+    if (lv->kind == ExprKind::This) {
+      return this_c;
     }
     if (lv->kind == ExprKind::Field) {
       if (lv->lhs->type->kind == TypeKind::Class) {
@@ -742,8 +783,9 @@ struct Emitter {
         return "&((" + ap + ")->data[" + ip + "])";
       }
       if (lv->lhs->kind == ExprKind::Ident) {
-        out << "farm_bounds_check(" << ip << ", v_" << lv->lhs->name << ".len);\n";
-        return "((" + c_type(lv->type) + "*)v_" + lv->lhs->name + ".data) + " + ip;
+        std::string an = ident_val(lv->lhs->name);
+        out << "farm_bounds_check(" << ip << ", " << an << ".len);\n";
+        return "((" + c_type(lv->type) + "*)" + an + ".data) + " + ip;
       }
       if (lv->lhs->kind == ExprKind::Field) {
         std::string dp = emit_lvalue_ptr(lv->lhs);
@@ -855,6 +897,136 @@ struct Emitter {
     out << "*" << pv << " = " << result << ";\n";
   }
 
+  static void collect_parallels(StmtPtr s, std::vector<StmtPtr>& outp) {
+    if (!s) return;
+    if (s->kind == StmtKind::Parallel) {
+      outp.push_back(s);
+      for (auto& t : s->stmts) collect_parallels(t->then_b, outp);
+      return;
+    }
+    collect_parallels(s->then_b, outp);
+    collect_parallels(s->else_b, outp);
+    collect_parallels(s->for_init, outp);
+    collect_parallels(s->for_update, outp);
+    for (auto& x : s->stmts) collect_parallels(x, outp);
+  }
+
+  struct ParEnvField {
+    std::string name;
+    TypePtr type;
+    bool is_this = false;
+  };
+
+  std::vector<ParEnvField> parallel_env_fields(StmtPtr par) {
+    std::vector<ParEnvField> fs;
+    std::unordered_set<std::string> seen;
+    for (auto& t : par->stmts) {
+      for (size_t i = 0; i < t->captures.size(); ++i) {
+        if (seen.count(t->captures[i])) continue;
+        seen.insert(t->captures[i]);
+        TypePtr ty = i < t->capture_types.size() ? t->capture_types[i] : Type::ty_int();
+        fs.push_back(ParEnvField{t->captures[i], ty, false});
+      }
+      if (t->capture_this && !seen.count("\x01this")) {
+        seen.insert("\x01this");
+        fs.push_back(ParEnvField{"this", t->this_cap_type, true});
+      }
+    }
+    return fs;
+  }
+
+  std::string env_struct_name(int pid) {
+    return "FarmEnv_P" + std::to_string(pid);
+  }
+  std::string task_fn_name(int pid, int tidx) {
+    return "farm_task_P" + std::to_string(pid) + "_T" + std::to_string(tidx);
+  }
+  std::string cap_field(const std::string& n) { return "c_" + sanitize(n); }
+
+  void emit_task_function(StmtPtr par, StmtPtr task) {
+    int pid = par->parallel_id;
+    auto fields = parallel_env_fields(par);
+    out << "static void " << task_fn_name(pid, task->task_index) << "(void *env_) {\n";
+    if (!fields.empty()) {
+      out << "  struct " << env_struct_name(pid) << " *env = (struct " << env_struct_name(pid) << " *)env_;\n";
+      out << "  (void)env;\n";
+    } else {
+      out << "  (void)env_;\n";
+    }
+    auto saved_val = cap_val;
+    auto saved_ptr = cap_ptr;
+    auto saved_this = this_c;
+    cap_val.clear();
+    cap_ptr.clear();
+    this_c = "this";
+    for (size_t i = 0; i < task->captures.size(); ++i) {
+      std::string f = cap_field(task->captures[i]);
+      cap_val[task->captures[i]] = "(*(env->" + f + "))";
+      cap_ptr[task->captures[i]] = "(env->" + f + ")";
+    }
+    if (task->capture_this) this_c = "env->this_";
+    emit_stmt(task->then_b);
+    cap_val = saved_val;
+    cap_ptr = saved_ptr;
+    this_c = saved_this;
+    out << "}\n";
+  }
+
+  void emit_all_task_functions() {
+    std::vector<StmtPtr> pars;
+    for (auto& m : prog.modules) {
+      if (m.path == "farmos:math" || m.path == "farmos:scene") continue;
+      for (auto& f : m.functions) collect_parallels(f.body, pars);
+      for (auto& op : m.operators) collect_parallels(op.body, pars);
+      for (auto& c : m.classes) for (auto& md : c.methods) collect_parallels(md.body, pars);
+      for (auto& s : m.structs) for (auto& md : s.methods) collect_parallels(md.body, pars);
+    }
+    std::unordered_set<int> seen_env;
+    for (auto& par : pars) {
+      if (seen_env.count(par->parallel_id)) continue;
+      seen_env.insert(par->parallel_id);
+      auto fields = parallel_env_fields(par);
+      if (fields.empty()) continue;
+      out << "struct " << env_struct_name(par->parallel_id) << " {\n";
+      for (auto& f : fields) {
+        if (f.is_this) out << "  " << c_type(f.type) << " this_;\n";
+        else out << "  " << c_type(f.type) << " *" << cap_field(f.name) << ";\n";
+      }
+      out << "};\n";
+    }
+    for (auto& par : pars) {
+      for (auto& t : par->stmts)
+        out << "static void " << task_fn_name(par->parallel_id, t->task_index) << "(void *env_);\n";
+    }
+    for (auto& par : pars) {
+      for (auto& t : par->stmts) emit_task_function(par, t);
+    }
+  }
+
+  void emit_parallel_stmt(StmtPtr s) {
+    int pid = s->parallel_id;
+    auto fields = parallel_env_fields(s);
+    std::string envv = fresh("penv");
+    if (!fields.empty()) {
+      out << "struct " << env_struct_name(pid) << " " << envv << ";\n";
+      for (auto& f : fields) {
+        if (f.is_this) out << envv << ".this_ = " << this_c << ";\n";
+        else out << envv << "." << cap_field(f.name) << " = " << ident_ptr(f.name) << ";\n";
+      }
+    }
+    std::string ta = fresh("ptasks");
+    out << "FarmParTask " << ta << "[" << s->stmts.size() << "];\n";
+    for (size_t i = 0; i < s->stmts.size(); ++i) {
+      auto& t = s->stmts[i];
+      out << ta << "[" << i << "].fn = " << task_fn_name(pid, t->task_index) << ";\n";
+      if (!fields.empty())
+        out << ta << "[" << i << "].env = (void*)&" << envv << ";\n";
+      else
+        out << ta << "[" << i << "].env = ((void*)0);\n";
+    }
+    out << "farm_par_run(" << ta << ", " << (int)s->stmts.size() << ");\n";
+  }
+
   void emit_stmt(StmtPtr s) {
     if (!s) return;
     switch (s->kind) {
@@ -899,10 +1071,39 @@ struct Emitter {
         out << "{\n";
         if (s->for_init) emit_stmt(s->for_init);
         std::string fc = s->for_cond ? emit_expr(s->for_cond) : "1";
-        out << "for (; " << fc << "; ) {\n";
-        emit_stmt(s->then_b);
-        if (s->for_update) emit_stmt(s->for_update);
-        out << "}\n}\n";
+        // Put the update in the C `for` increment so `continue` still runs it.
+        std::string inc = "";
+        if (s->for_update && s->for_update->kind == StmtKind::Assign &&
+            s->for_update->lhs && s->for_update->lhs->kind == ExprKind::Ident) {
+          std::string lv = ident_val(s->for_update->lhs->name);
+          if (s->for_update->assign_op == TokKind::Assign) {
+            inc = lv + " = " + emit_expr(s->for_update->rhs);
+          } else {
+            std::string rv = emit_expr(s->for_update->rhs);
+            TokKind bop = s->for_update->assign_op==TokKind::PlusEq?TokKind::Plus:
+              s->for_update->assign_op==TokKind::MinusEq?TokKind::Minus:
+              s->for_update->assign_op==TokKind::StarEq?TokKind::Star:
+              s->for_update->assign_op==TokKind::SlashEq?TokKind::Slash:TokKind::Percent;
+            if (bop == TokKind::Plus)
+              inc = lv + " = ((int64_t)((uint64_t)(" + lv + ")+(uint64_t)(" + rv + ")))";
+            else if (bop == TokKind::Minus)
+              inc = lv + " = ((int64_t)((uint64_t)(" + lv + ")-(uint64_t)(" + rv + ")))";
+            else if (bop == TokKind::Star)
+              inc = lv + " = ((int64_t)((uint64_t)(" + lv + ")*(uint64_t)(" + rv + ")))";
+            else
+              inc = "";
+          }
+        }
+        if (!inc.empty()) {
+          out << "for (; " << fc << "; " << inc << ") {\n";
+          emit_stmt(s->then_b);
+          out << "}\n}\n";
+        } else {
+          out << "for (; " << fc << "; ) {\n";
+          emit_stmt(s->then_b);
+          if (s->for_update) emit_stmt(s->for_update);
+          out << "}\n}\n";
+        }
         break;
       }
       case StmtKind::Break: out << "break;\n"; break;
@@ -913,11 +1114,18 @@ struct Emitter {
           out << "return " << v << ";\n";
         } else out << "return;\n";
         break;
+      case StmtKind::Parallel:
+        emit_parallel_stmt(s);
+        break;
+      case StmtKind::Task:
+        emit_stmt(s->then_b);
+        break;
     }
   }
 
   std::string emit_all() {
     uses_scene = program_uses_scene(prog);
+    uses_parallel = program_uses_parallel(prog);
     user_imports_math = false;
     for (auto& m : prog.modules) {
       if (m.path == "farmos:math" || m.path == "farmos:scene") continue;
@@ -938,6 +1146,9 @@ struct Emitter {
     if (uses_scene) {
       out << "#include \"farm_math.h\"\n";
       out << "#include \"farm_scene.h\"\n";
+    }
+    if (uses_parallel) {
+      out << "#include \"farm_par.h\"\n";
     }
     out << "\n";
     // Emit fixed array typedefs first (structs may reference them)
@@ -1038,6 +1249,8 @@ struct Emitter {
       for (auto& c : m.consts)
         out << "static " << c_type(c.type) << " " << c.c_sym << ";\n";
     }
+
+    if (uses_parallel) emit_all_task_functions();
 
     out << "static void farm_init_globals(void) {\n";
     for (auto& m : prog.modules) {

@@ -18,6 +18,7 @@ add_executable(farmc
   src/parser.cpp
   src/sema.cpp
   src/emit_c.cpp
+  src/conflict.cpp
 )
 target_include_directories(farmc PRIVATE src runtime)
 
@@ -29,6 +30,7 @@ add_executable(farmc_testhooks
   src/parser.cpp
   src/sema.cpp
   src/emit_c.cpp
+  src/conflict.cpp
 )
 target_include_directories(farmc_testhooks PRIVATE src runtime)
 target_compile_definitions(farmc_testhooks PRIVATE FARMC_ENABLE_TEST_HOOKS=1)
@@ -93,6 +95,15 @@ foreach(exp ${M3_EXPECTED})
   get_filename_component(name ${exp} NAME_WE)
   farmc_add_one_test(m3_${name} "${FARMC_M3_TESTS_DIR}" "${name}")
   set_tests_properties(m3_${name} PROPERTIES LABELS "spec")
+endforeach()
+
+# ---- M3.5 Spec fixtures (spec/tests/M3.5) ----
+set(FARMC_M35_TESTS_DIR "${CMAKE_SOURCE_DIR}/spec/tests/M3.5")
+file(GLOB M35_EXPECTED "${FARMC_M35_TESTS_DIR}/*.expected")
+foreach(exp ${M35_EXPECTED})
+  get_filename_component(name ${exp} NAME_WE)
+  farmc_add_one_test(m35_${name} "${FARMC_M35_TESTS_DIR}" "${name}")
+  set_tests_properties(m35_${name} PROPERTIES LABELS "spec")
 endforeach()
 
 # AC-M3-01 / AC-M3-11: unused farmos:scene import DCE + M1/M2 link flags vs master.

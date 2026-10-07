@@ -1,0 +1,4 @@
+# kind: compile_error
+# exit: 1
+## Only `task { ... }` items may appear directly inside `parallel { ... }` (3.3).
+# error: 3:5: E0202

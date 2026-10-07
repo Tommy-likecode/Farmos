@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## render writes renderer.#frame (8.3): the same renderer from two tasks is a conflict.
+# error: 14:7: E0801
+# note: 11:7

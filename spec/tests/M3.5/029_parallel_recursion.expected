@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+# repeat: 5
+# threads: 1,2,4,8
+## Recursive fork/join. MUST NOT deadlock for any worker count, including 1 (11.3). `return` is legal outside task bodies.
+# stdout:
+17711
+# end

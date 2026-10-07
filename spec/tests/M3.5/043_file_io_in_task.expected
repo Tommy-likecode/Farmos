@@ -1,0 +1,4 @@
+# kind: compile_error
+# exit: 1
+## File output is forbidden inside tasks in M3.5 (7.5, OQ-M35-03).
+# error: 7:7: E0805

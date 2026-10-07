@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+## Same invariant symbol `i` with different constant offsets: provably different elements (5.4). `i` is written by no task of the block.
+# stdout:
+1
+2
+# end

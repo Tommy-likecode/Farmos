@@ -1,0 +1,18 @@
+const SCALE: int = 3;
+const TABLE: int[3] = [10, 20, 30];
+
+function main(): int {
+  let a: int = 0;
+  let b: int = 0;
+  parallel {
+    task {
+      a = TABLE[0] * SCALE;
+    }
+    task {
+      b = TABLE[2] * SCALE + TABLE[1];
+    }
+  }
+  println(a);
+  println(b);
+  return 0;
+}

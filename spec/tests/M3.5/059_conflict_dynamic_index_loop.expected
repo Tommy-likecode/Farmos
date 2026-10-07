@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Indices from `let` bindings have no interval (5.4): possible overlap + different values = error, even though this program would only clash at round 1.
+# error: 11:9: E0801
+# note: 8:9

@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+# repeat: 10
+# threads: 1,2
+## `make` is a fresh-return function (5.3): every call site is its own allocation site, so a and b are provably distinct objects.
+# stdout:
+2
+3
+# end

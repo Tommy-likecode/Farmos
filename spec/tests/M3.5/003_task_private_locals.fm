@@ -1,0 +1,27 @@
+function main(): int {
+  let out0: int = 0;
+  let out1: int = 0;
+  let t: int = 1000;
+  parallel {
+    task {
+      let t: int = 1;
+      let s: int = 0;
+      for (let i = 0; i < 10; i += 1) {
+        s += i * t;
+      }
+      out0 = s;
+    }
+    task {
+      let t: int = 2;
+      let s: int = 0;
+      for (let i = 0; i < 10; i += 1) {
+        s += i * t;
+      }
+      out1 = s;
+    }
+  }
+  println(out0);
+  println(out1);
+  println(t);
+  return 0;
+}

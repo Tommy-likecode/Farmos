@@ -1,0 +1,38 @@
+function collatz(n: int): int {
+  let steps: int = 0;
+  let v: int = n;
+  while (v != 1) {
+    if (v % 2 == 0) {
+      v = v / 2;
+    } else {
+      v = v * 3 + 1;
+    }
+    steps += 1;
+  }
+  return steps;
+}
+
+function main(): int {
+  let checksum: int = 0;
+  let r: int[4] = [0, 0, 0, 0];
+  for (let iter = 1; iter <= 200; iter += 1) {
+    parallel {
+      task {
+        r[0] = collatz(iter);
+      }
+      task {
+        r[1] = collatz(iter + 1000);
+      }
+      task {
+        r[2] = collatz(iter * 3);
+      }
+      task {
+        r[3] = collatz(iter + 7);
+      }
+    }
+    checksum = (checksum * 31 + r[0] + r[1] * 2 + r[2] * 3 + r[3] * 4) % 1000003;
+  }
+  println(checksum);
+  println(r[0] + r[1] + r[2] + r[3]);
+  return 0;
+}

@@ -1,0 +1,28 @@
+struct Point {
+  x: int;
+  y: int;
+}
+
+function shift(p: Point): int {
+  let q: Point = p;
+  q.x = q.x + 100;
+  return q.x;
+}
+
+function main(): int {
+  const pt: Point = new Point(1, 2);
+  let r1: int = 0;
+  let r2: int = 0;
+  parallel {
+    task {
+      r1 = shift(pt);
+    }
+    task {
+      r2 = shift(pt);
+    }
+  }
+  println(r1);
+  println(r2);
+  println(pt.x);
+  return 0;
+}

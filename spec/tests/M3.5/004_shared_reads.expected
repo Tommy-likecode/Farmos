@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+## Read-only sharing of an array, a struct and a class field is always legal (6.1 class 1).
+# stdout:
+103
+244
+# end

@@ -1,0 +1,12 @@
+# kind: run
+# exit: 0
+# repeat: 5
+# threads: 1,4
+## More than two tasks: one diagnostic per statement of the later task, paired with the lowest-numbered conflicting earlier task (6.10).
+# warning: 8:7: W0801
+# note: 5:7
+# warning: 11:7: W0801
+# note: 5:7
+# stdout:
+7
+# end

@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## add/remove/addAt write the abstract location #graph (8.3) because add also detaches the child from its previous parent: any two hierarchy mutations in different tasks conflict, even on different scenes.
+# error: 13:7: E0801
+# note: 10:7

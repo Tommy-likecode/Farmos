@@ -1,0 +1,20 @@
+function main(): int {
+  let xs: int[] = [];
+  let ys: int[] = [];
+  parallel {
+    task {
+      for (let i = 0; i < 3; i += 1) {
+        push(xs, i);
+      }
+    }
+    task {
+      for (let i = 0; i < 4; i += 1) {
+        push(ys, i * 2);
+      }
+    }
+  }
+  println(len(xs));
+  println(len(ys));
+  println(xs[2] + ys[3]);
+  return 0;
+}

@@ -1,0 +1,11 @@
+export class Counter {
+  n: int;
+
+  constructor(n: int) {
+    this.n = n;
+  }
+}
+
+export function bump(c: Counter): void {
+  c.n = c.n + 1;
+}

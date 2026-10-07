@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+# repeat: 10
+# threads: 1,2
+## Objects allocated inside a task are task-private until published through a (checked) write (4.8, 5.3).
+# stdout:
+3
+11
+# end

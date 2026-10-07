@@ -1,0 +1,23 @@
+function main(): int {
+  let a: int[8] = [0, 0, 0, 0, 0, 0, 0, 0];
+  parallel {
+    task {
+      for (let i = 0; i < 4; i += 1) {
+        a[i] = i * i;
+      }
+    }
+    task {
+      for (let i = 4; i < 8; i += 1) {
+        a[i] = i * i;
+      }
+    }
+  }
+  let total: int = 0;
+  for (let k = 0; k < 8; k += 1) {
+    total += a[k];
+  }
+  println(total);
+  println(a[3]);
+  println(a[7]);
+  return 0;
+}

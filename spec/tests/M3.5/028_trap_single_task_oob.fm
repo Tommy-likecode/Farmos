@@ -1,0 +1,13 @@
+function main(): int {
+  let k: int = 2;
+  parallel {
+    task {
+      println("ok");
+    }
+    task {
+      let a: int[2] = [1, 2];
+      println(a[k]);
+    }
+  }
+  return 0;
+}

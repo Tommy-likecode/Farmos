@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## No constant propagation through `let` (5.4): a[i] vs a[j] may overlap -> error (OQ-M35-02 A). Contrast 066 (equal constants -> warning).
+# error: 10:7: E0801
+# note: 7:7

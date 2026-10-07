@@ -1,0 +1,4 @@
+# kind: compile_error
+# exit: 1
+## Limit: 256 tasks per parallel block; the 257th is reported (3.3).
+# error: 259:5: E0807

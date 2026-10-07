@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+# repeat: 10
+# threads: 1,2
+## Summary of get = {read Formal0.n}: two read-only calls on one object are legal (7.1).
+# stdout:
+42
+43
+# end

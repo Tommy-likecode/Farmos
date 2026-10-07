@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## A struct copy declared inside a task is task-private (4.3, M1 4.6).
+# stdout:
+101
+3
+1
+# end

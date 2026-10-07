@@ -1,0 +1,13 @@
+# kind: runtime_trap
+# exit: 101
+# repeat: 20
+# threads: 1,2,4
+## Task 2 (101) and task 3 (OOB 102) both trap; lowest index wins. Stdout = output before the block + task 1 in full + task 2 up to the trap; task 3 dropped (10.2).
+# stdout:
+start
+A
+B
+# end
+# stderr:
+runtime error: division by zero
+# end

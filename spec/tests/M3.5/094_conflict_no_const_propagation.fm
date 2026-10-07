@@ -1,0 +1,25 @@
+class Flag {
+  on: int;
+
+  constructor() {
+    this.on = 0;
+  }
+}
+
+function set(f: Flag, v: int): void {
+  f.on = v;
+}
+
+function main(): int {
+  const f: Flag = new Flag();
+  parallel {
+    task {
+      set(f, 1);
+    }
+    task {
+      set(f, 1);
+    }
+  }
+  println(f.on);
+  return 0;
+}

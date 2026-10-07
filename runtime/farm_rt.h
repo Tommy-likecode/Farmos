@@ -55,6 +55,23 @@ int64_t farm_dyn_len(FarmDynArray *a);
 void farm_bounds_check(int64_t i, int64_t len);
 void farm_div0_check(int64_t denom);
 
+#ifdef FARM_ENABLE_THREADS
+#include <setjmp.h>
+void farm_rt_task_enter(void (*w)(const char *, size_t, void *), void *ctx,
+                        jmp_buf *jmp, int *code, const char **msg);
+void farm_rt_task_leave(void);
+typedef struct FarmRtSnap {
+  void (*w)(const char *, size_t, void *);
+  void *ctx;
+  jmp_buf *jmp;
+  int *code;
+  const char **msg;
+} FarmRtSnap;
+FarmRtSnap farm_rt_task_save(void);
+void farm_rt_task_restore(FarmRtSnap s);
+void farm_rt_emit(const char *buf, size_t n);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

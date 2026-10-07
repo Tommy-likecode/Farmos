@@ -1,0 +1,7 @@
+# kind: compile_error
+# exit: 1
+# flags: --werror
+# diag_exact: true
+## With --werror the warning is reported with severity `error` (code unchanged) and farmc exits 1 (12.3).
+# error: 8:7: W0801
+# note: 5:7

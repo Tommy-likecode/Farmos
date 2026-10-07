@@ -1,0 +1,27 @@
+struct Acc {
+  total: int;
+
+  add(v: int): void {
+    this.total = this.total + v;
+  }
+}
+
+function main(): int {
+  let a: Acc = new Acc(0);
+  let b: Acc = new Acc(0);
+  parallel {
+    task {
+      for (let i = 0; i < 5; i += 1) {
+        a.add(i);
+      }
+    }
+    task {
+      for (let i = 0; i < 5; i += 1) {
+        b.add(i * 10);
+      }
+    }
+  }
+  println(a.total);
+  println(b.total);
+  return 0;
+}

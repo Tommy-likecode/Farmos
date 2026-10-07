@@ -1,0 +1,18 @@
+import { Scene, PerspectiveCamera, Renderer } from "farmos:scene";
+
+function main(): int {
+  const sceneA: Scene = new Scene();
+  const sceneB: Scene = new Scene();
+  const cameraA: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);
+  const cameraB: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);
+  const renderer: Renderer = new Renderer(16, 16);
+  parallel {
+    task {
+      renderer.render(sceneA, cameraA);
+    }
+    task {
+      renderer.render(sceneB, cameraB);
+    }
+  }
+  return 0;
+}

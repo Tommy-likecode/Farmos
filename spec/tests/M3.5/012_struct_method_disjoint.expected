@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+## Struct methods take `this` by reference (M2 3.2): the effect lands on the receiver path a.total / b.total; distinct value variables never alias (5.3).
+# stdout:
+10
+100
+# end

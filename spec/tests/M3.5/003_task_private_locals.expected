@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## Locals declared inside a task are task-private (4.3) even when they shadow an outer name.
+# stdout:
+45
+90
+1000
+# end

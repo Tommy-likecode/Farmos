@@ -1,0 +1,8 @@
+# kind: compile_error
+# exit: 1
+# diag_exact: true
+## Equal-value writes stay a warning; the third task's READ of a is an independent error (a read never inherits the same-value leniency, 6.4).
+# warning: 9:7: W0801
+# note: 6:7
+# error: 12:11: E0802
+# note: 6:7

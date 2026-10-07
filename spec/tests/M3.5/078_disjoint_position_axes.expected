@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+## Field granularity down to leaf components of inline struct fields: position.x / position.y / scale.z are three locations of one object (5.1, 8.3).
+# stdout:
+1
+2
+0
+3
+# end

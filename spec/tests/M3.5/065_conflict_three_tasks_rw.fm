@@ -1,0 +1,21 @@
+function main(): int {
+  let a: int[3] = [1, 2, 3];
+  let i: int = 0;
+  let j: int = 0;
+  let k: int = 0;
+  let o1: int = 0;
+  let o2: int = 0;
+  parallel {
+    task {
+      o1 = a[i];
+    }
+    task {
+      o2 = a[j];
+    }
+    task {
+      a[k] = 9;
+    }
+  }
+  println(o1 + o2);
+  return 0;
+}

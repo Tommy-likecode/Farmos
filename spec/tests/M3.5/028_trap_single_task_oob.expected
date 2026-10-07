@@ -1,0 +1,11 @@
+# kind: runtime_trap
+# exit: 102
+# repeat: 10
+# threads: 1,2
+## Existing traps 101-108 pass through unchanged from tasks (10.2, 13).
+# stdout:
+ok
+# end
+# stderr:
+runtime error: index out of bounds
+# end

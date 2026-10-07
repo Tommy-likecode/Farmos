@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## `let x` is not a constant expression (no constant propagation, 5.6): the same non-constant expression twice is an error.
+# error: 9:7: E0801
+# note: 6:7

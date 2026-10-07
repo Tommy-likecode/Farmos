@@ -1,0 +1,15 @@
+import { Counter, bump } from "./helper.fm";
+
+function main(): int {
+  const c: Counter = new Counter(0);
+  parallel {
+    task {
+      bump(c);
+    }
+    task {
+      bump(c);
+    }
+  }
+  println(c.n);
+  return 0;
+}

@@ -8,5 +8,6 @@ struct Program {
 };
 
 bool analyze_program(Program& prog);
+void analyze_conflicts(Program& prog);
 
 } // namespace farm

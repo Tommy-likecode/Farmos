@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+# repeat: 20
+# threads: 1,2,3,8
+# stdout:
+1
+64
+204
+# end

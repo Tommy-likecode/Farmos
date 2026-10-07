@@ -7,11 +7,20 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#ifdef FARM_ENABLE_THREADS
+static void farm_write_raw(const char *buf, size_t n) {
+  HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+  DWORD w = 0;
+  WriteFile(h, buf, (DWORD)n, &w, NULL);
+}
+static void farm_write(const char *buf, size_t n);
+#else
 static void farm_write(const char *buf, size_t n) {
   HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
   DWORD w = 0;
   WriteFile(h, buf, (DWORD)n, &w, NULL);
 }
+#endif
 static void farm_write_err(const char *buf, size_t n) {
   HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
   DWORD w = 0;
@@ -19,8 +28,76 @@ static void farm_write_err(const char *buf, size_t n) {
 }
 #else
 #include <unistd.h>
+#ifdef FARM_ENABLE_THREADS
+static void farm_write_raw(const char *buf, size_t n) { (void)!write(STDOUT_FILENO, buf, n); }
+static void farm_write(const char *buf, size_t n);
+#else
 static void farm_write(const char *buf, size_t n) { (void)!write(STDOUT_FILENO, buf, n); }
+#endif
 static void farm_write_err(const char *buf, size_t n) { (void)!write(STDERR_FILENO, buf, n); }
+#endif
+
+#ifdef FARM_ENABLE_THREADS
+#include <setjmp.h>
+#ifdef _WIN32
+static CRITICAL_SECTION farm_alloc_mu;
+static int farm_alloc_mu_ok = 0;
+static void farm_alloc_lock(void) {
+  if (!farm_alloc_mu_ok) { InitializeCriticalSection(&farm_alloc_mu); farm_alloc_mu_ok = 1; }
+  EnterCriticalSection(&farm_alloc_mu);
+}
+static void farm_alloc_unlock(void) { LeaveCriticalSection(&farm_alloc_mu); }
+#else
+#include <pthread.h>
+static pthread_mutex_t farm_alloc_mu = PTHREAD_MUTEX_INITIALIZER;
+static void farm_alloc_lock(void) { pthread_mutex_lock(&farm_alloc_mu); }
+static void farm_alloc_unlock(void) { pthread_mutex_unlock(&farm_alloc_mu); }
+#endif
+static _Thread_local void (*farm_tls_write)(const char *, size_t, void *) = NULL;
+static _Thread_local void *farm_tls_write_ctx = NULL;
+static _Thread_local jmp_buf *farm_tls_jmp = NULL;
+static _Thread_local int *farm_tls_trap_code = NULL;
+static _Thread_local const char **farm_tls_trap_msg = NULL;
+
+void farm_rt_task_enter(void (*w)(const char *, size_t, void *), void *ctx,
+                        jmp_buf *jmp, int *code, const char **msg) {
+  farm_tls_write = w;
+  farm_tls_write_ctx = ctx;
+  farm_tls_jmp = jmp;
+  farm_tls_trap_code = code;
+  farm_tls_trap_msg = msg;
+}
+void farm_rt_task_leave(void) {
+  farm_tls_write = NULL;
+  farm_tls_write_ctx = NULL;
+  farm_tls_jmp = NULL;
+  farm_tls_trap_code = NULL;
+  farm_tls_trap_msg = NULL;
+}
+FarmRtSnap farm_rt_task_save(void) {
+  FarmRtSnap s;
+  s.w = farm_tls_write;
+  s.ctx = farm_tls_write_ctx;
+  s.jmp = farm_tls_jmp;
+  s.code = farm_tls_trap_code;
+  s.msg = farm_tls_trap_msg;
+  return s;
+}
+void farm_rt_task_restore(FarmRtSnap s) {
+  farm_tls_write = s.w;
+  farm_tls_write_ctx = s.ctx;
+  farm_tls_jmp = s.jmp;
+  farm_tls_trap_code = s.code;
+  farm_tls_trap_msg = s.msg;
+}
+void farm_rt_emit(const char *buf, size_t n) {
+  if (farm_tls_write) farm_tls_write(buf, n, farm_tls_write_ctx);
+  else farm_write_raw(buf, n);
+}
+static void farm_write(const char *buf, size_t n) {
+  if (farm_tls_write) { farm_tls_write(buf, n, farm_tls_write_ctx); return; }
+  farm_write_raw(buf, n);
+}
 #endif
 
 typedef struct ArenaChunk {
@@ -33,6 +110,13 @@ typedef struct ArenaChunk {
 static ArenaChunk *g_arena = NULL;
 
 void farm_trap(int code, const char *msg) {
+#ifdef FARM_ENABLE_THREADS
+  if (farm_tls_jmp) {
+    if (farm_tls_trap_code) *farm_tls_trap_code = code;
+    if (farm_tls_trap_msg) *farm_tls_trap_msg = msg;
+    longjmp(*farm_tls_jmp, 1);
+  }
+#endif
   char buf[256];
   int n = snprintf(buf, sizeof(buf), "runtime error: %s\n", msg);
   if (n > 0) farm_write_err(buf, (size_t)n);
@@ -40,6 +124,9 @@ void farm_trap(int code, const char *msg) {
 }
 
 void *farm_arena_alloc(size_t size) {
+#ifdef FARM_ENABLE_THREADS
+  farm_alloc_lock();
+#endif
   size_t align = 16;
   size = (size + align - 1) & ~(align - 1);
   if (!g_arena || g_arena->used + size > g_arena->cap) {
@@ -53,6 +140,9 @@ void *farm_arena_alloc(size_t size) {
   }
   void *p = g_arena->data + g_arena->used;
   g_arena->used += size;
+#ifdef FARM_ENABLE_THREADS
+  farm_alloc_unlock();
+#endif
   return p;
 }
 
@@ -250,6 +340,9 @@ void farm_dyn_init(FarmDynArray *a, int64_t elem_size) {
 }
 
 void farm_dyn_push(FarmDynArray *a, const void *elem) {
+#ifdef FARM_ENABLE_THREADS
+  farm_alloc_lock();
+#endif
   if (a->len >= a->cap) {
     int64_t ncap = a->cap == 0 ? 4 : a->cap * 2;
     void *nd = realloc(a->data, (size_t)(ncap * a->elem_size));
@@ -259,6 +352,9 @@ void farm_dyn_push(FarmDynArray *a, const void *elem) {
   }
   memcpy((char *)a->data + a->len * a->elem_size, elem, (size_t)a->elem_size);
   a->len++;
+#ifdef FARM_ENABLE_THREADS
+  farm_alloc_unlock();
+#endif
 }
 
 void *farm_dyn_index(FarmDynArray *a, int64_t i) {

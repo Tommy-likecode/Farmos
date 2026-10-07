@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## x and y are opaque parameters of the same class: the callee cannot know they differ -> 'may alias' error (5.3, OQ-M35-02 A), although this caller passes distinct objects.
+# error: 15:7: E0801
+# note: 12:7

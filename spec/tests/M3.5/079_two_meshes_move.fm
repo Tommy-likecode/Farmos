@@ -1,0 +1,17 @@
+import { Mesh, BoxGeometry, MeshBasicMaterial } from "farmos:scene";
+
+function main(): int {
+  const m1: Mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(0xff0000));
+  const m2: Mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(0xff0000));
+  parallel {
+    task {
+      m1.position.x = 1;
+    }
+    task {
+      m2.position.x = 2;
+    }
+  }
+  println(m1.position.x);
+  println(m2.position.x);
+  return 0;
+}

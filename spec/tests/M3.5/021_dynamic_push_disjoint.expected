@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## push writes its array (6.7): two different arrays are independent; many pushes inside one task are fine.
+# stdout:
+3
+4
+8
+# end

@@ -1,0 +1,17 @@
+import { Scene, Object3D } from "farmos:scene";
+
+function main(): int {
+  const s1: Scene = new Scene();
+  const s2: Scene = new Scene();
+  const a: Object3D = new Object3D();
+  const b: Object3D = new Object3D();
+  parallel {
+    task {
+      s1.add(a);
+    }
+    task {
+      s2.add(b);
+    }
+  }
+  return 0;
+}

@@ -1,0 +1,22 @@
+class Counter {
+  n: int;
+
+  constructor(n: int) {
+    this.n = n;
+  }
+}
+
+function main(): int {
+  const p: Counter = new Counter(0);
+  const q: Counter = p;
+  parallel {
+    task {
+      p.n = 1;
+    }
+    task {
+      q.n = 2;
+    }
+  }
+  println(p.n);
+  return 0;
+}

@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+# repeat: 10
+# threads: 1,2
+## q is an alias of p (same origin, 5.3) but the fields differ: Disjoint.
+# stdout:
+1
+2
+# end

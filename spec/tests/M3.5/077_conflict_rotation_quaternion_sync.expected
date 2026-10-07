@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## M3 4.2 sync: writing rotation also writes quaternion and vice versa (8.3): both sides write both fields with derived (unknown) values.
+# error: 10:7: E0801
+# note: 7:7

@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+## Different constant indices are disjoint (5.4); more than two tasks.
+# stdout:
+100
+30
+# end

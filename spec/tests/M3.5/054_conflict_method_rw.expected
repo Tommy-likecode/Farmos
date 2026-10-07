@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Summaries: inc reads+writes this.n; get reads this.n (7.1). Read of c.n in task 2 vs write in task 1. Position = start of call expression.
+# error: 24:15: E0802
+# note: 21:7

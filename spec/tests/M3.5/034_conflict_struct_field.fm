@@ -1,0 +1,18 @@
+struct Point {
+  x: int;
+  y: int;
+}
+
+function main(): int {
+  let p: Point = new Point(0, 0);
+  parallel {
+    task {
+      p.x = 1;
+    }
+    task {
+      p.x = 2;
+    }
+  }
+  println(p.x);
+  return 0;
+}

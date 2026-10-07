@@ -1,0 +1,39 @@
+struct Point {
+  x: int;
+  y: int;
+}
+
+class Config {
+  scale: int;
+
+  constructor(scale: int) {
+    this.scale = scale;
+  }
+}
+
+function main(): int {
+  const data: int[4] = [1, 2, 3, 4];
+  const p: Point = new Point(3, 4);
+  const cfg: Config = new Config(10);
+  let sum: int = 0;
+  let prod: int = 0;
+  parallel {
+    task {
+      let s: int = 0;
+      for (let i = 0; i < 4; i += 1) {
+        s += data[i] * cfg.scale;
+      }
+      sum = s + p.x;
+    }
+    task {
+      let m: int = 1;
+      for (let i = 0; i < 4; i += 1) {
+        m *= data[i];
+      }
+      prod = m * cfg.scale + p.y;
+    }
+  }
+  println(sum);
+  println(prod);
+  return 0;
+}

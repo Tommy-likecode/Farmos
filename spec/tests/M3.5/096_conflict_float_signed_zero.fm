@@ -1,0 +1,13 @@
+function main(): int {
+  let x: float = 1.0;
+  parallel {
+    task {
+      x = 0.0;
+    }
+    task {
+      x = -0.0;
+    }
+  }
+  println(x);
+  return 0;
+}

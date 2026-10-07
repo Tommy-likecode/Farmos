@@ -12,8 +12,11 @@ public:
 private:
   Lexer& lex_;
   Token cur_, prev_;
+  Token peek_tok_;
+  bool have_peek_ = false;
 
   void advance();
+  Token peek_token();
   bool check(TokKind k) const { return cur_.kind == k; }
   bool match(TokKind k);
   bool match_any(std::initializer_list<TokKind> ks);
@@ -39,6 +42,8 @@ private:
   StmtPtr parse_block();
   StmtPtr parse_let_like(bool is_const);
   StmtPtr parse_assign_or_expr();
+  StmtPtr parse_parallel();
+  StmtPtr parse_task_outside();
 
   void parse_import(Module& m);
   void parse_export_or_decl(Module& m, bool exported);

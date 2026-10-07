@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Constant index folding covers + - * over consts: r[k + 1] is r[2] (5.4).
+# error: 9:7: E0801
+# note: 6:7

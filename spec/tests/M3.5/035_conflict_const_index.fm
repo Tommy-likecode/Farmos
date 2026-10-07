@@ -1,0 +1,14 @@
+function main(): int {
+  const k: int = 0;
+  let r: int[2] = [0, 0];
+  parallel {
+    task {
+      r[0] = 1;
+    }
+    task {
+      r[k] = 2;
+    }
+  }
+  println(r[0]);
+  return 0;
+}

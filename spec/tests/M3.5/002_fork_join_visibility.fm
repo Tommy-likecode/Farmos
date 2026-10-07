@@ -1,0 +1,27 @@
+function main(): int {
+  let x: int = 5;
+  let y: int = 0;
+  let z: int = 0;
+  parallel {
+    task {
+      y = x * 2;
+    }
+    task {
+      z = x + 100;
+    }
+  }
+  println(y);
+  println(z);
+  x = y + z;
+  parallel {
+    task {
+      y = x + 1;
+    }
+    task {
+      z = x + 2;
+    }
+  }
+  println(y);
+  println(z);
+  return 0;
+}

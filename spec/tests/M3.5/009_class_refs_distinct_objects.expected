@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+# repeat: 20
+# threads: 1,2,4
+## a and b come from two different `new` sites, hence provably different objects (5.3); the summary of bump (7.1) instantiated at both call sites is disjoint.
+# stdout:
+5
+107
+# end

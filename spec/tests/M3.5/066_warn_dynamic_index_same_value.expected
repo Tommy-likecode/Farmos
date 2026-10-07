@@ -1,0 +1,10 @@
+# kind: run
+# exit: 0
+# repeat: 10
+# threads: 1,2
+## Possible overlap (i, j unknown), but both write the same constant: warning ('may write'), never an error (6.2). Both values equal, so the result is the same whether or not i == j.
+# warning: 10:7: W0801
+# note: 7:7
+# stdout:
+1
+# end

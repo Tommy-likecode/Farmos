@@ -1,0 +1,16 @@
+# kind: run
+# exit: 0
+# repeat: 20
+# threads: 1,2,3,8
+## Task 1 is slowest but its output is first: per-task output flushed in task-index order at join (9).
+# stdout:
+before
+t1 start
+19999900000
+t1 end
+t2 start
+45
+t2 end
+t3 only
+after
+# end

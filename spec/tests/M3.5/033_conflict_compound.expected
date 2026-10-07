@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Compound assignment = read+write of a value that depends on the read: never a known constant, so write/write with unknown values (6.5).
+# error: 8:7: E0801
+# note: 5:7

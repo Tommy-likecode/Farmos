@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## render writes matrix/matrixWorld of every node of the scene tree (M3 4.5; 8.3). Same scene, different renderers and cameras: still E0801 (write/write outranks the read/write also present at that call).
+# error: 14:7: E0801
+# note: 11:7

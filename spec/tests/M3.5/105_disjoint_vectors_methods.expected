@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+## Mutating math methods write only their own receiver (8.2); two different value variables never alias.
+# stdout:
+Vector3(2, 3, 4)
+Vector3(2, 4, 6)
+# end

@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## Floats compare by IEEE bit pattern (5.6).
+# warning: 8:7: W0801
+# note: 5:7
+# stdout:
+0.5
+# end

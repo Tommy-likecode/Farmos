@@ -1,0 +1,4 @@
+# kind: compile_error
+# exit: 1
+## `task` items are legal only directly inside a `parallel` block (3.5).
+# error: 4:7: E0806

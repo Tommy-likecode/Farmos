@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Aliased scene through two bindings (same origin, 5.3): definite conflict, found statically.
+# error: 16:7: E0801
+# note: 13:7

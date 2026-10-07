@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## Struct arguments are copies (M1 4.6): the callee's writes are callee-private and absent from its summary (7.1).
+# stdout:
+101
+101
+1
+# end

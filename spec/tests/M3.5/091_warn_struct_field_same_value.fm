@@ -1,0 +1,20 @@
+struct Pair {
+  left: int;
+  right: int;
+}
+
+function main(): int {
+  let p: Pair = new Pair(0, 0);
+  parallel {
+    task {
+      p.left = 5;
+    }
+    task {
+      p.left = 5;
+      p.right = 6;
+    }
+  }
+  println(p.left);
+  println(p.right);
+  return 0;
+}

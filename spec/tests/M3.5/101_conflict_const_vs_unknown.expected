@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## A constant against a non-constant is 'not provably equal' -> error (OQ-M35-02 option A, 6.3).
+# error: 9:7: E0801
+# note: 6:7

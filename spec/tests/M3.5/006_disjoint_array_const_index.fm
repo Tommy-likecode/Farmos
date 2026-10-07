@@ -1,0 +1,20 @@
+function main(): int {
+  let r: int[4] = [0, 0, 0, 0];
+  parallel {
+    task {
+      r[0] = 10;
+    }
+    task {
+      r[1] = 20;
+    }
+    task {
+      r[2] = 30;
+    }
+    task {
+      r[3] = 40;
+    }
+  }
+  println(r[0] + r[1] + r[2] + r[3]);
+  println(r[2]);
+  return 0;
+}

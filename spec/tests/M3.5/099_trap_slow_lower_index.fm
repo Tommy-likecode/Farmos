@@ -1,0 +1,25 @@
+function spin(n: int): int {
+  let s: int = 0;
+  for (let i = 0; i < n; i += 1) {
+    s += i;
+  }
+  return s;
+}
+
+function main(): int {
+  let z: int = 0;
+  let k: int = 3;
+  parallel {
+    task {
+      println("T1 begin");
+      println(spin(300000));
+      println(1 / z);
+    }
+    task {
+      println("T2 begin");
+      let a: int[1] = [0];
+      println(a[k]);
+    }
+  }
+  return 0;
+}

@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## render writes the camera's matrixWorld / matrixWorldInverse / projectionMatrix (8.3).
+# error: 14:7: E0801
+# note: 11:7

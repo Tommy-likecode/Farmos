@@ -1,0 +1,35 @@
+class Sim {
+  a: int;
+  b: int;
+
+  constructor() {
+    this.a = 1;
+    this.b = 1;
+  }
+
+  step(): void {
+    parallel {
+      task {
+        this.a = this.a * 2;
+      }
+      task {
+        this.b = this.b * 3;
+      }
+    }
+  }
+
+  sum(): int {
+    return this.a + this.b;
+  }
+}
+
+function main(): int {
+  const s: Sim = new Sim();
+  for (let k = 0; k < 4; k += 1) {
+    s.step();
+  }
+  println(s.a);
+  println(s.b);
+  println(s.sum());
+  return 0;
+}

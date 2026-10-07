@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Accesses of a nested block count as accesses of the enclosing outer task (6.9).
+# error: 16:7: E0801
+# note: 8:11

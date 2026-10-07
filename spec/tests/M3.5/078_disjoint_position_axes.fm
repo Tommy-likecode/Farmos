@@ -1,0 +1,21 @@
+import { Mesh, BoxGeometry, MeshBasicMaterial } from "farmos:scene";
+
+function main(): int {
+  const cube: Mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(0xff0000));
+  parallel {
+    task {
+      cube.position.x = 1;
+    }
+    task {
+      cube.position.y = 2;
+    }
+    task {
+      cube.scale.z = 3;
+    }
+  }
+  println(cube.position.x);
+  println(cube.position.y);
+  println(cube.position.z);
+  println(cube.scale.z);
+  return 0;
+}

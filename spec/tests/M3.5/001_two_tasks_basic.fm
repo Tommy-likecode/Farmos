@@ -1,0 +1,23 @@
+function fib(n: int): int {
+  if (n < 2) {
+    return n;
+  }
+  return fib(n - 1) + fib(n - 2);
+}
+
+function main(): int {
+  let a: int = 0;
+  let b: int = 0;
+  parallel {
+    task {
+      a = fib(20);
+    }
+    task {
+      b = fib(21);
+    }
+  }
+  println(a);
+  println(b);
+  println(a + b);
+  return 0;
+}

@@ -1,0 +1,19 @@
+import { Scene, PerspectiveCamera, Mesh, BoxGeometry, MeshBasicMaterial, Renderer } from "farmos:scene";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  const camera: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);
+  const mesh: Mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(0xff0000));
+  scene.add(mesh);
+  const renderer: Renderer = new Renderer(16, 16);
+  parallel {
+    task {
+      renderer.render(scene, camera);
+    }
+    task {
+      mesh.position.x = 5;
+    }
+  }
+  println("done");
+  return 0;
+}

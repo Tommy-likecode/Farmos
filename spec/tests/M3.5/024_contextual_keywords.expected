@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## `parallel` / `task` are contextual (3.4): still legal identifiers; syntax only at statement start followed by `{`.
+# stdout:
+4
+5
+8
+# end

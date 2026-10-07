@@ -1,0 +1,4 @@
+# kind: compile_error
+# exit: 1
+## A task's locals are invisible to sibling tasks (4.3).
+# error: 8:15: E0505

@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## push writes the whole array (incl. its length); len(xs) reads xs.#len: prefix overlap (6.7, 5.1).
+# error: 9:11: E0802
+# note: 6:7

@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+# repeat: 10
+# threads: 1,2
+## Two `new` sites: provably different objects (5.3).
+# stdout:
+1
+2
+# end

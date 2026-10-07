@@ -1,0 +1,15 @@
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  let v: Vector3 = new Vector3(1.0, 2.0, 3.0);
+  parallel {
+    task {
+      v.add(new Vector3(1.0, 1.0, 1.0));
+    }
+    task {
+      v.multiplyScalar(2.0);
+    }
+  }
+  println(v);
+  return 0;
+}

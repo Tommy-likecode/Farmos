@@ -1,0 +1,41 @@
+function sq(n: int): int {
+  return n * n;
+}
+
+function main(): int {
+  let r: int[8] = [0, 0, 0, 0, 0, 0, 0, 0];
+  parallel {
+    task {
+      r[0] = sq(1);
+    }
+    task {
+      r[1] = sq(2);
+    }
+    task {
+      r[2] = sq(3);
+    }
+    task {
+      r[3] = sq(4);
+    }
+    task {
+      r[4] = sq(5);
+    }
+    task {
+      r[5] = sq(6);
+    }
+    task {
+      r[6] = sq(7);
+    }
+    task {
+      r[7] = sq(8);
+    }
+  }
+  let sum: int = 0;
+  for (let i = 0; i < 8; i += 1) {
+    sum += r[i];
+  }
+  println(r[0]);
+  println(r[7]);
+  println(sum);
+  return 0;
+}

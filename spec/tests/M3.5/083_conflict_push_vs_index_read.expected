@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Element access implicitly reads xs.#len (bounds check, 5.2); push may reallocate storage: no dynamic index can hide it.
+# error: 10:13: E0802
+# note: 7:7

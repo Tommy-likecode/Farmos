@@ -1,0 +1,22 @@
+function main(): int {
+  let z: int = 0;
+  let r: int[2] = [0, 0];
+  println("start");
+  parallel {
+    task {
+      println("A");
+      r[0] = 1;
+    }
+    task {
+      println("B");
+      r[1] = 10 / z;
+      println("B2");
+    }
+    task {
+      println("C");
+      r[5] = 1;
+    }
+  }
+  println("unreachable");
+  return 0;
+}

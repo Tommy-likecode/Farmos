@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Mutating math methods write the whole receiver with an unknown value (8.2).
+# error: 10:7: E0801
+# note: 7:7

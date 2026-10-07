@@ -1,0 +1,25 @@
+class Counter {
+  n: int;
+
+  constructor(n: int) {
+    this.n = n;
+  }
+}
+
+function bump(c: Counter): void {
+  c.n = c.n + 1;
+}
+
+function main(): int {
+  const c: Counter = new Counter(0);
+  parallel {
+    task {
+      bump(c);
+    }
+    task {
+      bump(c);
+    }
+  }
+  println(c.n);
+  return 0;
+}

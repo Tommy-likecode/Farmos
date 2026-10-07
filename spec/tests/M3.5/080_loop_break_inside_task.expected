@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+## break/continue are fine when their target loop is inside the same task (contrast 041, 056).
+# stdout:
+8
+5
+# end

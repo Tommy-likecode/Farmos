@@ -1,0 +1,4 @@
+# kind: compile_error
+# exit: 1
+## The nearest enclosing loop-or-task boundary of `break` is a task: E0804 (not E0510, although a loop exists outside) (10.1).
+# error: 5:9: E0804

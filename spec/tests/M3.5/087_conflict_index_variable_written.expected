@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Evaluating an index reads the variable (5.2): task 1 reads i, task 2 writes i. Note = the `i` inside the index.
+# error: 9:7: E0802
+# note: 6:9

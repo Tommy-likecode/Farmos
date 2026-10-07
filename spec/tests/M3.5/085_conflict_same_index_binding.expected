@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## The same outer identifier as index in both tasks is statically the same index: DEFINITE conflict (5.4).
+# error: 9:7: E0801
+# note: 6:7
