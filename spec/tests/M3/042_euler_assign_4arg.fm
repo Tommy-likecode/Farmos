@@ -1,0 +1,13 @@
+import { Object3D } from "farmos:scene";
+import { Euler } from "farmos:math";
+
+function main(): int {
+  const o: Object3D = new Object3D();
+  o.rotation = new Euler(0.7, -1.1, 0.4, "YXZ");
+  println(o.quaternion.x);
+  println(o.quaternion.y);
+  println(o.quaternion.z);
+  println(o.quaternion.w);
+  println(o.rotation.order);
+  return 0;
+}

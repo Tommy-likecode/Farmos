@@ -9,5 +9,12 @@ function main(): int {
   println(o.rotation.x);
   println(o.rotation.y);
   println(o.rotation.z);
+  println(o.rotation.order);
+  o.rotation.order = "YXZ";
+  o.setRotationFromQuaternion(q);
+  println(o.rotation.x);
+  println(o.rotation.y);
+  println(o.rotation.z);
+  println(o.rotation.order);
   return 0;
 }

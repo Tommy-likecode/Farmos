@@ -310,6 +310,7 @@ void farm_PerspectiveCamera_lookAt_v(farm_PerspectiveCamera* self, farm_Vector3 
 
 void farm_PerspectiveCamera_updateMatrixWorld(farm_PerspectiveCamera* self, bool force) {
   farm_Object3D_updateMatrixWorld((farm_Object3D*)self, force);
+  self->matrixWorldInverse = farm_Matrix4_invert(self->f_matrixWorld);
 }
 
 // Geometry builders

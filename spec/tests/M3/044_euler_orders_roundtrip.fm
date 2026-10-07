@@ -1,0 +1,46 @@
+import { Object3D } from "farmos:scene";
+import { Euler } from "farmos:math";
+
+function make_euler(order: string): Euler {
+  return new Euler(0.3, 0.4, 0.5, order);
+}
+
+function dump_quat_euler(o: Object3D): int {
+  println(o.quaternion.x);
+  println(o.quaternion.y);
+  println(o.quaternion.z);
+  println(o.quaternion.w);
+  o.setRotationFromQuaternion(o.quaternion);
+  println(o.rotation.x);
+  println(o.rotation.y);
+  println(o.rotation.z);
+  println(o.rotation.order);
+  return 0;
+}
+
+function dump_set(o: Object3D, order: string): int {
+  o.setRotationFromEuler(make_euler(order));
+  return dump_quat_euler(o);
+}
+
+function dump_assign(o: Object3D, order: string): int {
+  o.rotation = make_euler(order);
+  return dump_quat_euler(o);
+}
+
+function main(): int {
+  const o: Object3D = new Object3D();
+  dump_set(o, "XYZ");
+  dump_assign(o, "XYZ");
+  dump_set(o, "YXZ");
+  dump_assign(o, "YXZ");
+  dump_set(o, "ZXY");
+  dump_assign(o, "ZXY");
+  dump_set(o, "ZYX");
+  dump_assign(o, "ZYX");
+  dump_set(o, "YZX");
+  dump_assign(o, "YZX");
+  dump_set(o, "XZY");
+  dump_assign(o, "XZY");
+  return 0;
+}

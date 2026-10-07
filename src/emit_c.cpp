@@ -551,8 +551,18 @@ struct Emitter {
         std::string ty = c_type(e->type);
         std::string v = fresh("st");
         out << ty << " " << v << ";\n";
-        for (auto& fv : e->fields)
-          out << v << ".f_" << fv.first << " = " << emit_expr(fv.second) << ";\n";
+        StructDecl* lit_sd = nullptr;
+        for (auto& mm : prog.modules) for (auto& ss : mm.structs) if (ss.c_sym == e->mangled) { lit_sd = &ss; break; }
+        for (auto& fv : e->fields) {
+          std::string arg_val = emit_expr(fv.second);
+          if (uses_scene && lit_sd && lit_sd->name == "Euler" && fv.first == "order") {
+            out << "farm_euler_set_order(&" << v << ", " << arg_val << ");\n";
+            continue;
+          }
+          std::string fn = (uses_scene && lit_sd)
+            ? runtime_field_name(fv.first, lit_sd->name) : ("f_" + fv.first);
+          out << v << "." << fn << " = " << arg_val << ";\n";
+        }
         return v;
       }
       case ExprKind::New: {
@@ -686,6 +696,11 @@ struct Emitter {
           // Explicit constructor with all arguments
           for (size_t i=0;i<e->args.size();++i) {
             std::string arg_val = emit_expr(e->args[i]);
+            // Scene farm_Euler.order is char[4]; FarmString is not assignable (clang error).
+            if (uses_scene && sd->name == "Euler" && sd->fields[i].name == "order") {
+              out << "farm_euler_set_order(&" << v << ", " << arg_val << ");\n";
+              continue;
+            }
             std::string fn = uses_scene ? runtime_field_name(sd->fields[i].name, sd->name) : ("f_" + sd->fields[i].name);
             out << v << "." << fn << " = " << arg_val << ";\n";
           }

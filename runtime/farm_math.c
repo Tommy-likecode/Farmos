@@ -288,40 +288,92 @@ farm_Quaternion farm_Quaternion_setFromRotationMatrix(farm_Matrix4 m) {
   return q;
 }
 
-// Euler setFromQuaternion
+// Euler setFromQuaternion — Three.js Euler.setFromRotationMatrix (all 6 orders).
 farm_Euler farm_Euler_setFromQuaternion(farm_Quaternion q, const char* order) {
   farm_Euler e;
+  if (!order || order[0] == 0) order = "XYZ";
   strncpy(e.order, order, 3);
   e.order[3] = '\0';
-  
+
   double x = q.f_x, y = q.f_y, z = q.f_z, w = q.w;
   double x2 = x * x, y2 = y * y, z2 = z * z;
-  
+
   // Three.js Matrix4.makeRotationFromQuaternion (column-major):
   //   te[0]=m11, te[4]=m12, te[8]=m13, te[1]=m21, te[5]=m22, te[9]=m23, ...
-  double m11 = 1 - 2*y2 - 2*z2;
-  double m12 = 2*x*y - 2*w*z;
-  double m13 = 2*x*z + 2*w*y;
-  double m22 = 1 - 2*x2 - 2*z2;
-  double m23 = 2*y*z - 2*w*x;
-  double m32 = 2*y*z + 2*w*x;
-  double m33 = 1 - 2*x2 - 2*y2;
-  
-  // Extract Euler angles (XYZ order as default)
-  if (strcmp(order, "XYZ") == 0 || order[0] == 0) {
-    e.f_y = asin(fmax(-1.0, fmin(1.0, m13)));
-    if (fabs(m13) < 0.9999999) {
+  double m11 = 1 - 2 * y2 - 2 * z2;
+  double m12 = 2 * x * y - 2 * w * z;
+  double m13 = 2 * x * z + 2 * w * y;
+  double m21 = 2 * x * y + 2 * w * z;
+  double m22 = 1 - 2 * x2 - 2 * z2;
+  double m23 = 2 * y * z - 2 * w * x;
+  double m31 = 2 * x * z - 2 * w * y;
+  double m32 = 2 * y * z + 2 * w * x;
+  double m33 = 1 - 2 * x2 - 2 * y2;
+
+  const double gimbal = 0.9999999;
+  #define FARM_CLAMP1(v) fmax(-1.0, fmin(1.0, (v)))
+
+  if (strcmp(e.order, "XYZ") == 0) {
+    e.f_y = asin(FARM_CLAMP1(m13));
+    if (fabs(m13) < gimbal) {
       e.f_x = atan2(-m23, m33);
       e.f_z = atan2(-m12, m11);
     } else {
       e.f_x = atan2(m32, m22);
       e.f_z = 0;
     }
+  } else if (strcmp(e.order, "YXZ") == 0) {
+    e.f_x = asin(-FARM_CLAMP1(m23));
+    if (fabs(m23) < gimbal) {
+      e.f_y = atan2(m13, m33);
+      e.f_z = atan2(m21, m22);
+    } else {
+      e.f_y = atan2(-m31, m11);
+      e.f_z = 0;
+    }
+  } else if (strcmp(e.order, "ZXY") == 0) {
+    e.f_x = asin(FARM_CLAMP1(m32));
+    if (fabs(m32) < gimbal) {
+      e.f_y = atan2(-m31, m33);
+      e.f_z = atan2(-m12, m22);
+    } else {
+      e.f_y = 0;
+      e.f_z = atan2(m21, m11);
+    }
+  } else if (strcmp(e.order, "ZYX") == 0) {
+    e.f_y = asin(-FARM_CLAMP1(m31));
+    if (fabs(m31) < gimbal) {
+      e.f_x = atan2(m32, m33);
+      e.f_z = atan2(m21, m11);
+    } else {
+      e.f_x = 0;
+      e.f_z = atan2(-m12, m22);
+    }
+  } else if (strcmp(e.order, "YZX") == 0) {
+    e.f_z = asin(FARM_CLAMP1(m21));
+    if (fabs(m21) < gimbal) {
+      e.f_x = atan2(-m23, m22);
+      e.f_y = atan2(-m31, m11);
+    } else {
+      e.f_x = 0;
+      e.f_y = atan2(m13, m33);
+    }
+  } else if (strcmp(e.order, "XZY") == 0) {
+    e.f_z = asin(-FARM_CLAMP1(m12));
+    if (fabs(m12) < gimbal) {
+      e.f_x = atan2(m32, m22);
+      e.f_y = atan2(m13, m11);
+    } else {
+      e.f_x = atan2(-m23, m33);
+      e.f_y = 0;
+    }
   } else {
-    // Simplified - only support XYZ for now
-    e.f_x = 0; e.f_y = 0; e.f_z = 0;
+    e.f_x = 0;
+    e.f_y = 0;
+    e.f_z = 0;
+    e.order[0] = 'X'; e.order[1] = 'Y'; e.order[2] = 'Z'; e.order[3] = 0;
   }
-  
+  #undef FARM_CLAMP1
   return e;
 }
 

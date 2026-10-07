@@ -1,7 +1,10 @@
-# kind: run
+# kind: run_png
 # exit: 0
+# png: out.png
+# sha256: 7868595416fb4664220e4479e73982e6c25fc89afa2de3a580d2af5a4cde0884
+## PointLight(color, intensity, distance, decay) rendered 128x128
 # stdout:
-0.5
-10
+1
+8
 1
 # end

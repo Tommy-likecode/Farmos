@@ -13,6 +13,15 @@ if (-not (Test-Path (Join-Path $env:FARM_RUNTIME "farm_rt.c"))) {
 
 function Same([string]$a, [string]$b) { return [string]::Equals($a, $b, [StringComparison]::Ordinal) }
 
+$script:PngScratch = $null
+function Exit-Farmc([int]$code) {
+  if ($null -ne $script:PngScratch) {
+    Remove-Item -Recurse -Force $script:PngScratch -ErrorAction SilentlyContinue
+    $script:PngScratch = $null
+  }
+  exit $code
+}
+
 function Norm-DiagPath([string]$p) {
   if ([string]::IsNullOrEmpty($p)) { return "" }
   $n = $p.Replace('\', '/').Trim()
@@ -89,13 +98,13 @@ function Parse-Expected([string]$path) {
 }
 
 $expPath = Join-Path $TestsDir "$Name.expected"
-if (-not (Test-Path -LiteralPath $expPath)) { Write-Host "FAIL ${Name}: missing $expPath"; exit 1 }
-try { $exp = Parse-Expected $expPath } catch { Write-Host "FAIL ${Name}: bad expected file: $_"; exit 1 }
+if (-not (Test-Path -LiteralPath $expPath)) { Write-Host "FAIL ${Name}: missing $expPath"; Exit-Farmc 1 }
+try { $exp = Parse-Expected $expPath } catch { Write-Host "FAIL ${Name}: bad expected file: $_"; Exit-Farmc 1 }
 
 # README: multi-file tests use <dir>/main.fm; paths are as given to farmc (relative to the tests dir).
 $mainRel = "$Name.fm"
 if (Test-Path -LiteralPath (Join-Path (Join-Path $TestsDir $Name) "main.fm")) { $mainRel = "$Name/main.fm" }
-elseif (-not (Test-Path -LiteralPath (Join-Path $TestsDir $mainRel))) { Write-Host "FAIL ${Name}: missing source"; exit 1 }
+elseif (-not (Test-Path -LiteralPath (Join-Path $TestsDir $mainRel))) { Write-Host "FAIL ${Name}: missing source"; Exit-Farmc 1 }
 $mainArg = $mainRel
 
 $tmp = Join-Path $env:TEMP ("farmc_test_" + $Name + ".exe")
@@ -119,8 +128,8 @@ if (Same $exp.kind 'compile_error') {
   $p = Invoke-FarmcBuild
   $errText = Read-Text $errFile
   # README: `farmc build` fails with exit code 1.
-  if ($p.ExitCode -ne 1) { Write-Host "FAIL ${Name}: expected farmc exit 1, got $($p.ExitCode)"; Write-Host $errText; exit 1 }
-  if ($exp.errors.Count -eq 0) { Write-Host "FAIL ${Name}: compile_error fixture lists no # error: lines"; exit 1 }
+  if ($p.ExitCode -ne 1) { Write-Host "FAIL ${Name}: expected farmc exit 1, got $($p.ExitCode)"; Write-Host $errText; Exit-Farmc 1 }
+  if ($exp.errors.Count -eq 0) { Write-Host "FAIL ${Name}: compile_error fixture lists no # error: lines"; Exit-Farmc 1 }
   $diags = @()
   foreach ($ln in ($errText -split "`r?`n")) {
     if ($ln -cmatch '^(.*):(\d+):(\d+): error\[(E\d{4})\]:') {
@@ -138,26 +147,26 @@ if (Same $exp.kind 'compile_error') {
     if (-not $found) {
       Write-Host ("FAIL {0}: missing diagnostic {1}:{2}:{3}: error[{4}]" -f $Name, $wantPath, $e.line, $e.col, $e.code)
       Write-Host $errText
-      exit 1
+      Exit-Farmc 1
     }
   }
   Write-Host "PASS ${Name}"
-  exit 0
+  Exit-Farmc 0
 }
 
-if (-not ((Same $exp.kind 'run') -or (Same $exp.kind 'run_approx') -or (Same $exp.kind 'run_png') -or (Same $exp.kind 'runtime_trap'))) { Write-Host "FAIL ${Name}: unknown kind '$($exp.kind)'"; exit 1 }
+if (-not ((Same $exp.kind 'run') -or (Same $exp.kind 'run_approx') -or (Same $exp.kind 'run_png') -or (Same $exp.kind 'runtime_trap'))) { Write-Host "FAIL ${Name}: unknown kind '$($exp.kind)'"; Exit-Farmc 1 }
 
 # README harness contract: build must succeed (exit 0) for run/runtime_trap.
 $p = Invoke-FarmcBuild
-if ($p.ExitCode -ne 0) { Write-Host "FAIL ${Name}: compile failed ($($p.ExitCode))"; Write-Host (Read-Text $errFile); exit 1 }
+if ($p.ExitCode -ne 0) { Write-Host "FAIL ${Name}: compile failed ($($p.ExitCode))"; Write-Host (Read-Text $errFile); Exit-Farmc 1 }
 
 Remove-Item -Force $outFile,$errFile -ErrorAction SilentlyContinue
 $runCwd = $TestsDir
-$pngScratch = $null
+$script:PngScratch = $null
 if (Same $exp.kind 'run_png') {
-  $pngScratch = Join-Path $env:TEMP ("farmc_png_" + $Name + "_" + [guid]::NewGuid().ToString("N"))
-  New-Item -ItemType Directory -Force -Path $pngScratch | Out-Null
-  $runCwd = $pngScratch
+  $script:PngScratch = Join-Path $env:TEMP ("farmc_png_" + $Name + "_" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Force -Path $script:PngScratch | Out-Null
+  $runCwd = $script:PngScratch
 }
 $p2 = Start-Process -FilePath $tmp -WorkingDirectory $runCwd -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
 $ec = $p2.ExitCode
@@ -167,28 +176,28 @@ $stderrGot = Norm-Newlines (Read-Text $errFile)
 if ($ec -ne $exp.exit) {
   Write-Host "FAIL ${Name}: exit $ec expected $($exp.exit)"
   Write-Host "stdout: $stdoutGot"; Write-Host "stderr: $stderrGot"
-  exit 1
+  Exit-Farmc 1
 }
 
 if (Same $exp.kind 'run') {
-  if (-not $exp.hasStdout) { Write-Host "FAIL ${Name}: run fixture missing # stdout: block"; exit 1 }
+  if (-not $exp.hasStdout) { Write-Host "FAIL ${Name}: run fixture missing # stdout: block"; Exit-Farmc 1 }
   $wantOut = Norm-Newlines $exp.stdout
   if (-not (Same $stdoutGot $wantOut)) {
     Write-Host "FAIL ${Name}: stdout mismatch"
     Write-Host "GOT:<<<$stdoutGot>>>"; Write-Host "WANT:<<<$wantOut>>>"
-    exit 1
+    Exit-Farmc 1
   }
   # README: stderr MUST be empty for run.
   if ($stderrGot.Length -ne 0) {
     Write-Host "FAIL ${Name}: unexpected stderr (run fixtures require empty stderr)"
     Write-Host "GOT_STDERR:<<<$stderrGot>>>"
-    exit 1
+    Exit-Farmc 1
   }
 }
 
 if (Same $exp.kind 'run_approx') {
   # Approximate float comparison with epsilon tolerance
-  if (-not $exp.hasStdout) { Write-Host "FAIL ${Name}: run_approx fixture missing # stdout: block"; exit 1 }
+  if (-not $exp.hasStdout) { Write-Host "FAIL ${Name}: run_approx fixture missing # stdout: block"; Exit-Farmc 1 }
   $wantOut = Norm-Newlines $exp.stdout
   $gotLines = $stdoutGot -split "`n"
   $wantLines = $wantOut -split "`n"
@@ -196,7 +205,7 @@ if (Same $exp.kind 'run_approx') {
   if ($gotLines.Count -ne $wantLines.Count) {
     Write-Host "FAIL ${Name}: line count mismatch (got $($gotLines.Count), want $($wantLines.Count))"
     Write-Host "GOT:<<<$stdoutGot>>>"; Write-Host "WANT:<<<$wantOut>>>"
-    exit 1
+    Exit-Farmc 1
   }
   
   $epsilon = 1e-10
@@ -213,14 +222,14 @@ if (Same $exp.kind 'run_approx') {
       $diff = [Math]::Abs($gotNum - $wantNum)
       if ($diff -gt $epsilon) {
         Write-Host "FAIL ${Name}: float mismatch at line $($i+1): got $gotNum, want $wantNum (diff $diff > epsilon $epsilon)"
-        exit 1
+        Exit-Farmc 1
       }
     } catch {
       # Not a float, compare as strings
       if (-not (Same $gotLine $wantLine)) {
         Write-Host "FAIL ${Name}: stdout mismatch at line $($i+1)"
         Write-Host "GOT:<<<$gotLine>>>"; Write-Host "WANT:<<<$wantLine>>>"
-        exit 1
+        Exit-Farmc 1
       }
     }
   }
@@ -229,25 +238,25 @@ if (Same $exp.kind 'run_approx') {
   if ($stderrGot.Length -ne 0) {
     Write-Host "FAIL ${Name}: unexpected stderr (run_approx fixtures require empty stderr)"
     Write-Host "GOT_STDERR:<<<$stderrGot>>>"
-    exit 1
+    Exit-Farmc 1
   }
 }
 
 if (Same $exp.kind 'runtime_trap') {
-  if (-not $exp.hasStderr) { Write-Host "FAIL ${Name}: runtime_trap fixture missing # stderr: block"; exit 1 }
+  if (-not $exp.hasStderr) { Write-Host "FAIL ${Name}: runtime_trap fixture missing # stderr: block"; Exit-Farmc 1 }
   $wantErr = Norm-Newlines $exp.stderr
   if ($exp.stderrExact) {
     if (-not (Same $stderrGot $wantErr)) {
       Write-Host "FAIL ${Name}: stderr mismatch"
       Write-Host "GOT:<<<$stderrGot>>>"; Write-Host "WANT:<<<$wantErr>>>"
-      exit 1
+      Exit-Farmc 1
     }
   } else {
     # stderr_exact: false -> expected trap line(s) must appear (ordinal substring).
     if ($stderrGot.IndexOf($wantErr, [StringComparison]::Ordinal) -lt 0) {
       Write-Host "FAIL ${Name}: stderr mismatch (substring)"
       Write-Host "GOT:<<<$stderrGot>>>"; Write-Host "WANT:<<<$wantErr>>>"
-      exit 1
+      Exit-Farmc 1
     }
   }
   if ($exp.hasStdout) {
@@ -255,36 +264,36 @@ if (Same $exp.kind 'runtime_trap') {
     if (-not (Same $stdoutGot $wantOut)) {
       Write-Host "FAIL ${Name}: stdout mismatch"
       Write-Host "GOT:<<<$stdoutGot>>>"; Write-Host "WANT:<<<$wantOut>>>"
-      exit 1
+      Exit-Farmc 1
     }
   }
 }
 
 if (Same $exp.kind 'run_png') {
   # M3 PNG fixture: check stdout, stderr, and PNG hash
-  if (-not $exp.hasStdout) { Write-Host "FAIL ${Name}: run_png fixture missing # stdout: block"; exit 1 }
+  if (-not $exp.hasStdout) { Write-Host "FAIL ${Name}: run_png fixture missing # stdout: block"; Exit-Farmc 1 }
   $wantOut = Norm-Newlines $exp.stdout
   if (-not (Same $stdoutGot $wantOut)) {
     Write-Host "FAIL ${Name}: stdout mismatch"
     Write-Host "GOT:<<<$stdoutGot>>>"; Write-Host "WANT:<<<$wantOut>>>"
-    exit 1
+    Exit-Farmc 1
   }
   
   # README: stderr MUST be empty for run_png.
   if ($stderrGot.Length -ne 0) {
     Write-Host "FAIL ${Name}: unexpected stderr (run_png fixtures require empty stderr)"
     Write-Host "GOT_STDERR:<<<$stderrGot>>>"
-    exit 1
+    Exit-Farmc 1
   }
   
-  if ($null -eq $exp.pngPath) { Write-Host "FAIL ${Name}: run_png fixture missing # png: path"; exit 1 }
-  if ($null -eq $exp.sha256) { Write-Host "FAIL ${Name}: run_png fixture missing # sha256: hash"; exit 1 }
+  if ($null -eq $exp.pngPath) { Write-Host "FAIL ${Name}: run_png fixture missing # png: path"; Exit-Farmc 1 }
+  if ($null -eq $exp.sha256) { Write-Host "FAIL ${Name}: run_png fixture missing # sha256: hash"; Exit-Farmc 1 }
   
   # run_png CWD is a scratch dir so fixtures do not write out.png into spec/tests/M3.
   $pngFile = Join-Path $runCwd $exp.pngPath
   if (-not (Test-Path -LiteralPath $pngFile)) {
     Write-Host "FAIL ${Name}: PNG file not found: $pngFile"
-    exit 1
+    Exit-Farmc 1
   }
   
   # Compute SHA-256 of the PNG file
@@ -293,7 +302,7 @@ if (Same $exp.kind 'run_png') {
     Write-Host "FAIL ${Name}: PNG SHA-256 mismatch"
     Write-Host "GOT:  $hash"
     Write-Host "WANT: $($exp.sha256)"
-    exit 1
+    Exit-Farmc 1
   }
   
   # Optional: byte-compare with golden PNG if it exists
@@ -303,7 +312,7 @@ if (Same $exp.kind 'run_png') {
     $goldenBytes = [System.IO.File]::ReadAllBytes($goldenPng)
     if ($gotBytes.Length -ne $goldenBytes.Length) {
       Write-Host "FAIL ${Name}: PNG size mismatch with golden (got $($gotBytes.Length) bytes, golden $($goldenBytes.Length) bytes)"
-      exit 1
+      Exit-Farmc 1
     }
     $match = $true
     for ($i = 0; $i -lt $gotBytes.Length; $i++) {
@@ -314,17 +323,12 @@ if (Same $exp.kind 'run_png') {
     }
     if (-not $match) {
       Write-Host "FAIL ${Name}: PNG bytes differ from golden at byte $i"
-      exit 1
+      Exit-Farmc 1
     }
   }
   
-  # Clean up PNG scratch (or the PNG file if we ran in TestsDir)
-  if ($null -ne $pngScratch) {
-    Remove-Item -Recurse -Force $pngScratch -ErrorAction SilentlyContinue
-  } else {
-    Remove-Item -Force $pngFile -ErrorAction SilentlyContinue
-  }
+  # Scratch dir is removed by Exit-Farmc (including on failure).
 }
 
 Write-Host "PASS ${Name}"
-exit 0
+Exit-Farmc 0

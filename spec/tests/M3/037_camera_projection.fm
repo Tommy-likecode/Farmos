@@ -2,13 +2,16 @@ import { PerspectiveCamera } from "farmos:scene";
 
 function main(): int {
   const cam: PerspectiveCamera = new PerspectiveCamera(90, 1, 1, 2);
-  cam.updateProjectionMatrix();
-  println(cam.projectionMatrix.elements[0]);
-  println(cam.projectionMatrix.elements[5]);
-  println(cam.projectionMatrix.elements[10]);
-  println(cam.projectionMatrix.elements[14]);
-  println(cam.projectionMatrix.elements[11]);
+  cam.position.set(2, 2, 4);
+  cam.lookAt(0, 0, 0);
   cam.updateMatrixWorld(true);
-  println(cam.matrixWorldInverse.elements[0]);
+  cam.updateProjectionMatrix();
+  let i: int = 0;
+  for (i = 0; i < 16; i += 1) {
+    println(cam.projectionMatrix.elements[i]);
+  }
+  for (i = 0; i < 16; i += 1) {
+    println(cam.matrixWorldInverse.elements[i]);
+  }
   return 0;
 }

@@ -570,6 +570,8 @@ struct Sema {
                   e->mangled = "farm_Object3D_lookAt_xyz";
                 else if (md->name == "lookAt" && e->args.size() == 1)
                   e->mangled = "farm_Object3D_lookAt_v";
+                else if (md->name == "updateMatrixWorld" && cd->c_sym == "farm_PerspectiveCamera")
+                  e->mangled = "farm_PerspectiveCamera_updateMatrixWorld";
                 else if (md->name == "add" || md->name == "remove" || md->name == "addAt" ||
                          md->name == "childCount" || md->name == "getChild" ||
                          md->name == "updateMatrix" || md->name == "updateMatrixWorld" ||

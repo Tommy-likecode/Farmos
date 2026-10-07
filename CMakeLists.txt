@@ -96,8 +96,14 @@ foreach(exp ${M3_EXPECTED})
 endforeach()
 
 # AC-M3-01 / AC-M3-11: unused farmos:scene import DCE + M1/M2 link flags vs master.
+# Windows: PowerShell (no python3 required). Unix: python3.
 find_program(FARMC_PYTHON3 python3)
-if(FARMC_PYTHON3)
+if(WIN32)
+  add_test(NAME local_unused_scene_dce
+    COMMAND ${PS} "${FARMC_SCRIPTS}/test_unused_scene_dce.ps1"
+            -Farmc $<TARGET_FILE:farmc> -RepoRoot "${CMAKE_SOURCE_DIR}")
+  set_tests_properties(local_unused_scene_dce PROPERTIES LABELS "local")
+elseif(FARMC_PYTHON3)
   add_test(NAME local_unused_scene_dce
     COMMAND ${FARMC_PYTHON3} "${FARMC_SCRIPTS}/test_unused_scene_dce.py"
             $<TARGET_FILE:farmc> "${CMAKE_SOURCE_DIR}")

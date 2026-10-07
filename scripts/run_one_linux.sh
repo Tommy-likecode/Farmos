@@ -81,7 +81,16 @@ def parse_expected(path):
     return dict(kind=kind, exit=exit_code, stdout=stdout, stderr=stderr,
                 errors=errors, png=png_path, sha256=sha256, stderr_exact=stderr_exact)
 
+png_scratch = None
+
+def cleanup_png_scratch():
+    global png_scratch
+    if png_scratch:
+        shutil.rmtree(png_scratch, ignore_errors=True)
+        png_scratch = None
+
 def fail(msg):
+    cleanup_png_scratch()
     print(f"FAIL {name}: {msg}")
     sys.exit(1)
 
@@ -124,7 +133,6 @@ if p.returncode != 0:
     fail(f"compile failed ({p.returncode})\n{decode(p.stderr)}")
 
 run_cwd = tests_dir
-png_scratch = None
 if exp["kind"] == "run_png":
     png_scratch = tempfile.mkdtemp(prefix=f"farmc_png_{name}_")
     run_cwd = png_scratch
@@ -184,17 +192,11 @@ elif exp["kind"] == "run_png":
         gold_b = open(golden, "rb").read()
         if got_b != gold_b:
             fail("PNG bytes differ from golden")
-    if png_scratch:
-        shutil.rmtree(png_scratch, ignore_errors=True)
-        png_scratch = None
-    else:
-        try:
-            os.remove(png)
-        except OSError:
-            pass
+    cleanup_png_scratch()
 else:
     fail(f"unknown kind '{exp['kind']}'")
 
+cleanup_png_scratch()
 print(f"PASS {name}")
 PY
 exit $?
