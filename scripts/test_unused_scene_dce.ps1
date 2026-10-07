@@ -12,10 +12,13 @@ function Fail-Dce([string]$msg) {
 }
 
 function Invoke-FarmcBuild {
-  param([string[]]$Args, [string]$Label)
+  param([Parameter(Mandatory=$true)][string[]]$FarmcArgs, [Parameter(Mandatory=$true)][string]$Label)
+  foreach ($a in $FarmcArgs) {
+    if ($null -eq $a) { Fail-Dce "null farmc argument for $Label" }
+  }
   $outFile = Join-Path $td ("build_" + $Label + ".out")
   $errFile = Join-Path $td ("build_" + $Label + ".err")
-  $p = Start-Process -FilePath $Farmc -ArgumentList $Args -NoNewWindow -Wait -PassThru `
+  $p = Start-Process -FilePath $Farmc -ArgumentList $FarmcArgs -NoNewWindow -Wait -PassThru `
     -RedirectStandardOutput $outFile -RedirectStandardError $errFile
   if ($p.ExitCode -ne 0) {
     $err = ""
@@ -26,10 +29,13 @@ function Invoke-FarmcBuild {
 }
 
 function Get-VerboseLog {
-  param([string[]]$Args, [string]$Label)
+  param([Parameter(Mandatory=$true)][string[]]$FarmcArgs, [Parameter(Mandatory=$true)][string]$Label)
+  foreach ($a in $FarmcArgs) {
+    if ($null -eq $a) { Fail-Dce "null farmc argument for $Label" }
+  }
   $outFile = Join-Path $td ("v_" + $Label + ".out")
   $errFile = Join-Path $td ("v_" + $Label + ".err")
-  $p = Start-Process -FilePath $Farmc -ArgumentList $Args -NoNewWindow -Wait -PassThru `
+  $p = Start-Process -FilePath $Farmc -ArgumentList $FarmcArgs -NoNewWindow -Wait -PassThru `
     -RedirectStandardOutput $outFile -RedirectStandardError $errFile
   if ($p.ExitCode -ne 0) {
     $err = ""
@@ -87,8 +93,8 @@ try {
   $m2Out = Join-Path $td "m2.exe"
   $m3Out = Join-Path $td "m3.exe"
 
-  Invoke-FarmcBuild @("build", $helloSrc, "-o", $hello, "--emit-c", $helloC) "hello" | Out-Null
-  Invoke-FarmcBuild @("build", $unusedSrc, "-o", $unused, "--emit-c", $unusedC) "unused" | Out-Null
+  Invoke-FarmcBuild -FarmcArgs @("build", $helloSrc, "-o", $hello, "--emit-c", $helloC) -Label "hello" | Out-Null
+  Invoke-FarmcBuild -FarmcArgs @("build", $unusedSrc, "-o", $unused, "--emit-c", $unusedC) -Label "unused" | Out-Null
 
   $hs = (Get-Item -LiteralPath $hello).Length
   $us = (Get-Item -LiteralPath $unused).Length
@@ -108,10 +114,10 @@ try {
     if ($hc[$i] -ne $uc[$i]) { Fail-Dce "generated C for unused scene import differs from hello" }
   }
 
-  $hlog = Get-VerboseLog @("build", $helloSrc, "-o", (Join-Path $td "hello_v.exe"), "-v") "hello_v"
-  $ulog = Get-VerboseLog @("build", $unusedSrc, "-o", (Join-Path $td "unused_v.exe"), "-v") "unused_v"
-  $m2log = Get-VerboseLog @("build", $m2Src, "-o", $m2Out, "-v") "m2"
-  $m3log = Get-VerboseLog @("build", $m3Src, "-o", $m3Out, "-v") "m3"
+  $hlog = Get-VerboseLog -FarmcArgs @("build", $helloSrc, "-o", (Join-Path $td "hello_v.exe"), "-v") -Label "hello_v"
+  $ulog = Get-VerboseLog -FarmcArgs @("build", $unusedSrc, "-o", (Join-Path $td "unused_v.exe"), "-v") -Label "unused_v"
+  $m2log = Get-VerboseLog -FarmcArgs @("build", $m2Src, "-o", $m2Out, "-v") -Label "m2"
+  $m3log = Get-VerboseLog -FarmcArgs @("build", $m3Src, "-o", $m3Out, "-v") -Label "m3"
 
   Assert-NonSceneLink "hello" $hlog
   Assert-NonSceneLink "unused scene import" $ulog
