@@ -329,6 +329,29 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       md.body = std::move(block);
       cd.methods.push_back(std::move(md));
     }
+
+    {
+      MethodDecl md;
+      md.name = "setRotationFromEuler";
+      md.params.push_back(Param{"e", Type::ty_struct("Euler"), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setRotationFromQuaternion";
+      md.params.push_back(Param{"q", Type::ty_struct("Quaternion"), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
     
     m.classes.push_back(std::move(cd));
   }
@@ -370,6 +393,16 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     }
     {
       MethodDecl md;
+      md.name = "clearBackground";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
       md.name = "add";
       md.params.push_back(Param{"child", Type::ty_class("Object3D"), SourceLoc{1,1}});
       md.ret = Type::ty_class("Object3D");
@@ -391,15 +424,12 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.exported = true;
     cd.loc = SourceLoc{1, 1};
     cd.base_class = "Object3D";  // M3: Camera is-a Object3D
-    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"rotation", Type::ty_struct("Euler"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"quaternion", Type::ty_struct("Quaternion"), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"scale", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"fov", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"aspect", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"near", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"far", Type::ty_float(), SourceLoc{1, 1}});
-    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"matrixWorldInverse", Type::ty_struct("Matrix4"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"projectionMatrix", Type::ty_struct("Matrix4"), SourceLoc{1, 1}});
     
     // Constructor - exactly one (fov, aspect, near, far)
     {
@@ -424,6 +454,16 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       md.params.push_back(Param{"x", Type::ty_float(), SourceLoc{1,1}});
       md.params.push_back(Param{"y", Type::ty_float(), SourceLoc{1,1}});
       md.params.push_back(Param{"z", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "updateProjectionMatrix";
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();
@@ -587,6 +627,17 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
       md.is_ctor = true;
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "set";
+      md.params.push_back(Param{"color", Type::ty_struct("Color"), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
       md.body = std::move(block);
@@ -2238,12 +2289,13 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   }
   cc = cc_command_prefix(cc);
   // Size-oriented flags; NO -ffast-math. GNU statement-expressions require clang/gcc.
-  // -ffp-contract=off: required for M3 PNG determinism; does not change generated C.
+  // -ffp-contract=off: M3 PNG determinism only. Non-scene programs match master flags.
   fs::path rt_math_c = rt_h_dir / "farm_math.c";
   fs::path rt_scene_c = rt_h_dir / "farm_scene.c";
+  const char* fp_contract = link_scene ? "-ffp-contract=off " : "";
 
   auto append_scene_rt = [&](std::ostringstream& o) {
-    // Link farm_math.c / farm_scene.c only for farmos:scene programs (M1/M2 match master).
+    // Link farm_math.c / farm_scene.c only when a scene type is actually used.
     if (link_scene) {
       if (fs::exists(rt_math_c)) o << "\"" << path_to_utf8(rt_math_c) << "\" ";
       if (fs::exists(rt_scene_c)) o << "\"" << path_to_utf8(rt_scene_c) << "\" ";
@@ -2251,7 +2303,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   };
 
   std::ostringstream cmd;
-  cmd << cc << " -std=c11 -Os -flto -ffunction-sections -fdata-sections -ffp-contract=off "
+  cmd << cc << " -std=c11 -Os -flto -ffunction-sections -fdata-sections " << fp_contract
       << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
       << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
   append_scene_rt(cmd);
@@ -2262,7 +2314,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   if (rc != 0) {
     // retry without LTO
     std::ostringstream cmd2;
-    cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections -ffp-contract=off "
+    cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections " << fp_contract
          << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
          << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
     append_scene_rt(cmd2);
@@ -2396,12 +2448,7 @@ static int cmd_build(std::vector<std::string> args) {
   // touches the destination or leaves partial files beside it.
   fs::path out_req(outfile);
   fs::path link_out = scratch().file("link_out.exe");
-  bool link_scene = false;
-  for (auto& m : loader.prog.modules) {
-    if (m.path == "farmos:scene") { link_scene = true; break; }
-    for (auto& imp : m.imports) if (imp.path == "farmos:scene") { link_scene = true; break; }
-    if (link_scene) break;
-  }
+  bool link_scene = program_uses_scene(loader.prog);
   int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene);
   if (rc == 0) {
     std::error_code ec;

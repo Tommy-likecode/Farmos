@@ -260,6 +260,10 @@ void farm_Object3D_lookAt_v(farm_Object3D* self, farm_Vector3 target);
 void farm_Object3D_setRotationFromEuler(farm_Object3D* self, farm_Euler e);
 void farm_Object3D_setRotationFromQuaternion(farm_Object3D* self, farm_Quaternion q);
 
+// Euler.order is char[4] in farm_Euler; generated code maps it to FarmString.
+void farm_euler_set_order(farm_Euler* e, FarmString s);
+FarmString farm_euler_order_string(const farm_Euler* e);
+
 // Scene methods
 farm_Scene* farm_Scene_new();
 void farm_Scene_setBackground(farm_Scene* self, farm_Color color);
@@ -344,6 +348,7 @@ farm_PointLight* farm_PointLight_new_hex(int64_t hex);
 farm_PointLight* farm_PointLight_new_hex_i(int64_t hex, double intensity);
 farm_PointLight* farm_PointLight_new_color_i(farm_Color color, double intensity);
 farm_PointLight* farm_PointLight_new_full(farm_Color color, double intensity, double distance, double decay);
+farm_PointLight* farm_PointLight_new_hex_full(int64_t hex, double intensity, double distance, double decay);
 
 // Renderer methods
 farm_Renderer* farm_Renderer_new();

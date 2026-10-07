@@ -1,0 +1,5 @@
+# kind: runtime_trap
+# exit: 104
+# stderr:
+runtime error: invalid Euler order
+# end

@@ -1,0 +1,14 @@
+import { PerspectiveCamera } from "farmos:scene";
+
+function main(): int {
+  const cam: PerspectiveCamera = new PerspectiveCamera(90, 1, 1, 2);
+  cam.updateProjectionMatrix();
+  println(cam.projectionMatrix.elements[0]);
+  println(cam.projectionMatrix.elements[5]);
+  println(cam.projectionMatrix.elements[10]);
+  println(cam.projectionMatrix.elements[14]);
+  println(cam.projectionMatrix.elements[11]);
+  cam.updateMatrixWorld(true);
+  println(cam.matrixWorldInverse.elements[0]);
+  return 0;
+}

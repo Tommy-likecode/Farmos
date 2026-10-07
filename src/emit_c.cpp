@@ -4,9 +4,77 @@
 #include <cstdio>
 #include <functional>
 #include <set>
+#include <unordered_set>
 #include <vector>
 
 namespace farm {
+
+static bool is_scene_class_sym(const std::string& n) {
+  return n == "farm_Scene" || n == "farm_Object3D" ||
+         n == "farm_PerspectiveCamera" || n == "farm_Mesh" ||
+         n == "farm_BoxGeometry" || n == "farm_SphereGeometry" ||
+         n == "farm_PlaneGeometry" || n == "farm_MeshBasicMaterial" ||
+         n == "farm_MeshStandardMaterial" || n == "farm_AmbientLight" ||
+         n == "farm_DirectionalLight" || n == "farm_PointLight" ||
+         n == "farm_Renderer";
+}
+
+static bool type_is_scene(const TypePtr& t) {
+  if (!t) return false;
+  if (t->kind == TypeKind::Class) return is_scene_class_sym(t->name);
+  if (t->kind == TypeKind::DynArray || t->kind == TypeKind::FixedArray) return type_is_scene(t->elem);
+  return false;
+}
+
+static bool expr_uses_scene(ExprPtr e);
+static bool stmt_uses_scene(StmtPtr s);
+
+static bool expr_uses_scene(ExprPtr e) {
+  if (!e) return false;
+  if (type_is_scene(e->type)) return true;
+  if (expr_uses_scene(e->lhs) || expr_uses_scene(e->rhs)) return true;
+  for (auto& a : e->args) if (expr_uses_scene(a)) return true;
+  for (auto& fv : e->fields) if (expr_uses_scene(fv.second)) return true;
+  return false;
+}
+
+static bool stmt_uses_scene(StmtPtr s) {
+  if (!s) return false;
+  if (type_is_scene(s->decl_type)) return true;
+  if (expr_uses_scene(s->init) || expr_uses_scene(s->cond) || expr_uses_scene(s->lhs) ||
+      expr_uses_scene(s->rhs) || expr_uses_scene(s->for_cond) || expr_uses_scene(s->ret))
+    return true;
+  if (stmt_uses_scene(s->then_b) || stmt_uses_scene(s->else_b) ||
+      stmt_uses_scene(s->for_init) || stmt_uses_scene(s->for_update))
+    return true;
+  for (auto& x : s->stmts) if (stmt_uses_scene(x)) return true;
+  return false;
+}
+
+bool program_uses_scene(Program& prog) {
+  for (auto& m : prog.modules) {
+    if (m.path == "farmos:math" || m.path == "farmos:scene") continue;
+    for (auto& f : m.functions) {
+      for (auto& p : f.params) if (type_is_scene(p.type)) return true;
+      if (type_is_scene(f.ret) || stmt_uses_scene(f.body)) return true;
+    }
+    for (auto& c : m.classes) {
+      if (is_scene_class_sym(c.c_sym)) return true;
+      for (auto& f : c.fields) if (type_is_scene(f.type)) return true;
+      for (auto& md : c.methods) {
+        for (auto& p : md.params) if (type_is_scene(p.type)) return true;
+        if (type_is_scene(md.ret) || stmt_uses_scene(md.body)) return true;
+      }
+    }
+    for (auto& s : m.structs) {
+      for (auto& f : s.fields) if (type_is_scene(f.type)) return true;
+    }
+    for (auto& k : m.consts) {
+      if (type_is_scene(k.type) || expr_uses_scene(k.init)) return true;
+    }
+  }
+  return false;
+}
 
 // C11 string literal body for arbitrary bytes. Printable ASCII passes through, except `\\`, `"`
 // and `?` (trigraph guard). Every other byte (controls, NUL, DEL, all non-ASCII UTF-8 bytes) is
@@ -46,16 +114,7 @@ struct Emitter {
 
   // M3: Set at the start of emit_all(). Non-scene programs MUST match master codegen.
   bool uses_scene = false;
-
-  static bool is_scene_class_sym(const std::string& n) {
-    return n == "farm_Scene" || n == "farm_Object3D" ||
-           n == "farm_PerspectiveCamera" || n == "farm_Mesh" ||
-           n == "farm_BoxGeometry" || n == "farm_SphereGeometry" ||
-           n == "farm_PlaneGeometry" || n == "farm_MeshBasicMaterial" ||
-           n == "farm_MeshStandardMaterial" || n == "farm_AmbientLight" ||
-           n == "farm_DirectionalLight" || n == "farm_PointLight" ||
-           n == "farm_Renderer";
-  }
+  bool user_imports_math = false;
 
   static bool is_object3d_sym(const std::string& n) {
     return n == "farm_Object3D" || n == "farm_Scene" || n == "farm_PerspectiveCamera" ||
@@ -147,6 +206,8 @@ struct Emitter {
       } else if (t->kind == TypeKind::DynArray) walk(t->elem);
     };
     for (auto& m : prog.modules) {
+      if (m.path == "farmos:scene") continue;
+      if (m.path == "farmos:math" && (uses_scene || !user_imports_math)) continue;
       for (auto& s : m.structs) for (auto& f : s.fields) walk(f.type);
       for (auto& c : m.classes) {
         for (auto& f : c.fields) walk(f.type);
@@ -310,6 +371,10 @@ struct Emitter {
             return field_access;
           }
           return "(" + base + ")->f_" + e->name;
+        }
+        if (uses_scene && e->name == "order" && e->lhs->type && e->lhs->type->kind == TypeKind::Struct &&
+            is_math_type_name(e->lhs->type->name) && math_base(e->lhs->type->name) == "Euler") {
+          return "({ farm_Euler __eo = (" + base + "); farm_euler_order_string(&__eo); })";
         }
         return "(" + base + ")." + struct_field_access(e->name, e->lhs->type);
       }
@@ -680,9 +745,25 @@ struct Emitter {
   }
 
   void emit_assign(ExprPtr lv, const std::string& rval) {
-    std::string ptr = emit_lvalue_ptr(lv);
-    out << "*(" << ptr << ") = " << rval << ";\n";
-    // M3: Object3D.rotation.x/y/z/order and .quaternion.x/y/z/w writes mark dirty flags.
+    // Scene Euler.order is char[4]; assign from FarmString via helper (validates, trap 104).
+    if (uses_scene && lv->kind == ExprKind::Field && lv->name == "order" &&
+        lv->lhs && lv->lhs->type && lv->lhs->type->kind == TypeKind::Struct &&
+        is_math_type_name(lv->lhs->type->name) && math_base(lv->lhs->type->name) == "Euler") {
+      std::string ep = emit_lvalue_ptr(lv->lhs);
+      out << "farm_euler_set_order(" << ep << ", " << rval << ");\n";
+    } else {
+      std::string ptr = emit_lvalue_ptr(lv);
+      out << "*(" << ptr << ") = " << rval << ";\n";
+    }
+    // M3: Object3D.rotation / .quaternion writes (whole field or x/y/z/order/w) mark dirty flags.
+    if (uses_scene && lv->kind == ExprKind::Field && lv->lhs && lv->lhs->type &&
+        lv->lhs->type->kind == TypeKind::Class && is_object3d_sym(lv->lhs->type->name)) {
+      std::string obj_expr = emit_expr(lv->lhs);
+      if (lv->name == "rotation")
+        out << "((farm_Object3D*)(" << obj_expr << "))->rotation_dirty = 1;\n";
+      else if (lv->name == "quaternion")
+        out << "((farm_Object3D*)(" << obj_expr << "))->quaternion_dirty = 1;\n";
+    }
     if (uses_scene && lv->kind == ExprKind::Field && lv->lhs && lv->lhs->kind == ExprKind::Field &&
         lv->lhs->lhs && lv->lhs->lhs->type && lv->lhs->lhs->type->kind == TypeKind::Class &&
         is_object3d_sym(lv->lhs->lhs->type->name)) {
@@ -821,12 +902,18 @@ struct Emitter {
   }
 
   std::string emit_all() {
-    uses_scene = false;
+    uses_scene = program_uses_scene(prog);
+    user_imports_math = false;
     for (auto& m : prog.modules) {
-      if (m.path == "farmos:scene") { uses_scene = true; break; }
-      for (auto& imp : m.imports) if (imp.path == "farmos:scene") { uses_scene = true; break; }
-      if (uses_scene) break;
+      if (m.path == "farmos:math" || m.path == "farmos:scene") continue;
+      for (auto& imp : m.imports) if (imp.path == "farmos:math") { user_imports_math = true; break; }
     }
+    auto skip_math_structs = [&](const Module& m) {
+      return m.path == "farmos:math" && (uses_scene || !user_imports_math);
+    };
+    auto skip_math_code = [&](const Module& m) {
+      return m.path == "farmos:math" && !uses_scene && !user_imports_math;
+    };
 
     out << "/* Generated by farmc */\n";
     out << "#include <stdint.h>\n";
@@ -843,7 +930,7 @@ struct Emitter {
     // Emit all structs first (so classes can reference them)
     for (auto& m : prog.modules) {
       for (auto& s : m.structs) {
-        if (uses_scene && m.path == "farmos:math") continue;
+        if (skip_math_structs(m)) continue;
         out << "struct Farm_" << s.c_sym << " {\n";
         for (auto& f : s.fields) out << "  " << c_type(f.type) << " f_" << f.name << ";\n";
         out << "};\n";
@@ -852,7 +939,7 @@ struct Emitter {
     // Then emit all classes
     for (auto& m : prog.modules) {
       for (auto& c : m.classes) {
-        if (uses_scene && is_scene_class_sym(c.c_sym)) continue;
+        if (is_scene_class_sym(c.c_sym)) continue;
         out << "struct Farm_" << c.c_sym << " {\n";
         for (auto& f : c.fields) out << "  " << c_type(f.type) << " f_" << f.name << ";\n";
         out << "};\n";
@@ -873,6 +960,7 @@ struct Emitter {
     // M2: Forward declare struct print helpers  
     out << "/* M2 struct print helpers forward declarations */\n";
     for (auto& m : prog.modules) {
+      if (skip_math_code(m)) continue;
       for (auto& s : m.structs) {
         out << "void farm_print_" << sanitize(s.name) << "(" << math_struct_c(s) << " v);\n";
         out << "void farm_print_" << sanitize(s.name) << "_ln(" << math_struct_c(s) << " v);\n";
@@ -881,6 +969,7 @@ struct Emitter {
     out << "/* End M2 forward declarations */\n";
     
     for (auto& m : prog.modules) {
+      if (skip_math_code(m)) continue;
       for (auto& f : m.functions) {
         out << c_type(f.ret) << " " << f.c_sym << "(";
         for (size_t i=0;i<f.params.size();++i) {
@@ -900,7 +989,7 @@ struct Emitter {
         out << ");\n";
       }
       for (auto& c : m.classes) {
-        if (uses_scene && is_scene_class_sym(c.c_sym)) continue;
+        if (is_scene_class_sym(c.c_sym)) continue;
         for (auto& md : c.methods) {
           std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
           out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.c_sym << "* this";
@@ -929,12 +1018,15 @@ struct Emitter {
         }
       }
     }
-    for (auto& m : prog.modules)
+    for (auto& m : prog.modules) {
+      if (skip_math_code(m) || m.path == "farmos:scene") continue;
       for (auto& c : m.consts)
         out << "static " << c_type(c.type) << " " << c.c_sym << ";\n";
+    }
 
     out << "static void farm_init_globals(void) {\n";
     for (auto& m : prog.modules) {
+      if (skip_math_code(m) || m.path == "farmos:scene") continue;
       for (auto& c : m.consts) {
         std::string v = emit_expr(c.init);
         out << "  " << c.c_sym << " = " << v << ";\n";
@@ -943,6 +1035,7 @@ struct Emitter {
     out << "}\n";
 
     for (auto& m : prog.modules) {
+      if (skip_math_code(m)) continue;
       for (auto& f : m.functions) {
         out << c_type(f.ret) << " " << f.c_sym << "(";
         for (size_t i=0;i<f.params.size();++i) {
@@ -966,7 +1059,7 @@ struct Emitter {
         out << "\n";
       }
       for (auto& c : m.classes) {
-        if (uses_scene && is_scene_class_sym(c.c_sym)) continue;
+        if (is_scene_class_sym(c.c_sym)) continue;
         for (auto& md : c.methods) {
           std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
           out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.c_sym << "* this";

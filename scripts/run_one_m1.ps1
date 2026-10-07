@@ -152,7 +152,14 @@ $p = Invoke-FarmcBuild
 if ($p.ExitCode -ne 0) { Write-Host "FAIL ${Name}: compile failed ($($p.ExitCode))"; Write-Host (Read-Text $errFile); exit 1 }
 
 Remove-Item -Force $outFile,$errFile -ErrorAction SilentlyContinue
-$p2 = Start-Process -FilePath $tmp -WorkingDirectory $TestsDir -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+$runCwd = $TestsDir
+$pngScratch = $null
+if (Same $exp.kind 'run_png') {
+  $pngScratch = Join-Path $env:TEMP ("farmc_png_" + $Name + "_" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Force -Path $pngScratch | Out-Null
+  $runCwd = $pngScratch
+}
+$p2 = Start-Process -FilePath $tmp -WorkingDirectory $runCwd -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
 $ec = $p2.ExitCode
 $stdoutGot = Norm-Newlines (Read-Text $outFile)
 $stderrGot = Norm-Newlines (Read-Text $errFile)
@@ -273,8 +280,8 @@ if (Same $exp.kind 'run_png') {
   if ($null -eq $exp.pngPath) { Write-Host "FAIL ${Name}: run_png fixture missing # png: path"; exit 1 }
   if ($null -eq $exp.sha256) { Write-Host "FAIL ${Name}: run_png fixture missing # sha256: hash"; exit 1 }
   
-  # The program was run from $TestsDir, so PNG path is relative to that
-  $pngFile = Join-Path $TestsDir $exp.pngPath
+  # run_png CWD is a scratch dir so fixtures do not write out.png into spec/tests/M3.
+  $pngFile = Join-Path $runCwd $exp.pngPath
   if (-not (Test-Path -LiteralPath $pngFile)) {
     Write-Host "FAIL ${Name}: PNG file not found: $pngFile"
     exit 1
@@ -311,8 +318,12 @@ if (Same $exp.kind 'run_png') {
     }
   }
   
-  # Clean up PNG file after test
-  Remove-Item -Force $pngFile -ErrorAction SilentlyContinue
+  # Clean up PNG scratch (or the PNG file if we ran in TestsDir)
+  if ($null -ne $pngScratch) {
+    Remove-Item -Recurse -Force $pngScratch -ErrorAction SilentlyContinue
+  } else {
+    Remove-Item -Force $pngFile -ErrorAction SilentlyContinue
+  }
 }
 
 Write-Host "PASS ${Name}"

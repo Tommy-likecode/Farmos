@@ -1,0 +1,10 @@
+import { PointLight } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const p: PointLight = new PointLight(new Color(0xffffff), 0.5, 10.0, 1.0);
+  println(p.intensity);
+  println(p.distance);
+  println(p.decay);
+  return 0;
+}

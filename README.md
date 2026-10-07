@@ -1,110 +1,54 @@
-# Farmos language test fixtures
+# Farmos
 
-Sources use the M1 TypeScript-style surface (`function`, `new`, `this`, `: Type`). See `spec/M1-core.md`.
+## M3 — `farmos:scene`
 
-M1 fixtures include hex integer literals and IEEE float `/0` (print `Infinity`/`-Infinity`/`NaN`); integer `/0` remains `runtime_trap` exit 101.
+Three.js-like scene graph and CPU rasterizer (`import { … } from "farmos:scene"`). Spec: `spec/M3-scene.md`. Fixtures: `spec/tests/M3/` (`run_png` goldens plus API tests).
 
-## Layout
+Unused `farmos:scene` imports are dead-code eliminated (AC-M3-01 / AC-M3-11): they must not change hello size or M1/M2 compile flags / linked runtime. Scene programs additionally pass `-ffp-contract=off` and link `farm_math.c` + `farm_scene.c`.
 
-```
-spec/tests/
-  README.md          (this file)
-  M1/
-    NNN_name.fm           source under test (single-file)
-    NNN_name.expected     expected result
-    NNN_name/             multi-file test directory (optional)
-      main.fm             entry (main module)
-      *.fm                other modules
-      NNN_name.expected   OR expected beside the directory as NNN_name.expected
-```
+Linux: `scripts/run_m3_linux.sh build/farmc` after a CMake build. DCE/size gate: `python3 scripts/test_unused_scene_dce.py build/farmc .`
 
-For multi-file tests (e.g. `022_modules`), the runner MUST use `022_modules/main.fm` as the main file, and the expected file is `022_modules.expected` next to the directory (i.e. `spec/tests/M1/022_modules.expected`).
+---
 
-## Expected file format
+# Farmos M1 — `farmc`
 
-Lines are UTF-8 text. A fixture begins with header fields, then optional body sections.
+C++17 compiler for the Farmos M1 core language. Pipeline: lexer → parser → AST → semantic check → emit portable C11 → invoke system C compiler.
 
-### Headers (required first lines)
+## Build (Windows)
 
-```
-# kind: run | compile_error | runtime_trap
-# exit: <integer>
+```powershell
+cd D:\Tommy\Farmos
+# Ensure clang/gcc (LLVM-MinGW) and CMake are on PATH
+.\scripts\build_and_test.ps1
 ```
 
-| kind | Meaning |
-|------|---------|
-| `run` | Program compiles, links, runs. Assert process exit code and stdout. stderr MUST be empty. |
-| `compile_error` | `farmc build` fails with exit code 1. Assert at least the listed diagnostic(s). stdout of the program is N/A. |
-| `runtime_trap` | Program compiles and runs; process exits with trap code; stderr matches trap line(s). |
+Or:
 
-Optional headers:
-
-```
-# stderr_exact: true
+```powershell
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
 ```
 
-When `stderr_exact` is true (default for `runtime_trap`), stderr must match the `# stderr:` block exactly. For `run`, stderr must be empty (no `# stderr:` block).
-
-### Body sections
-
-**Stdout** (`run` only):
+## CLI
 
 ```
-# stdout:
-<meta: empty line after header starts the block>
-literal lines...
-# end
+farmc build hello.fm -o hello.exe
+farmc run hello.fm
+farmc version
 ```
 
-Everything between `# stdout:` and `# end` is compared **exactly** to process stdout (including newlines). If the program prints nothing, use:
+Set `FARM_CC` to override the C compiler; set `FARM_RUNTIME` to the `runtime/` directory if needed.
 
-```
-# stdout:
-# end
-```
+## C backend requirement (important)
 
-**Stderr** (`runtime_trap`):
+The C code emitted by `farmc` uses **GNU statement-expressions** (`({ ... })`) and therefore requires **clang or gcc** (e.g. LLVM-MinGW on Windows) as the C backend.
 
-```
-# stderr:
-runtime error: division by zero
-# end
-```
+**MSVC `cl` is not supported** as the C backend for generated code. (You may still build the `farmc` compiler itself with other toolchains, but linking user programs goes through clang/gcc.)
 
-**Compile diagnostics** (`compile_error`):
+See `docs/NOTES.md` for more implementation notes.
 
-One or more of:
+## Tests
 
-```
-# error: <line>:<col>: E0xxx
-# error: <path>:<line>:<col>: E0xxx
-```
-
-The form with `<path>` is used for multi-file tests. `<path>` is the path string that appears in the diagnostic — the path of the file containing the error **as given to `farmc`** (for fixtures, the harness invokes `farmc build <dir>/main.fm`, so expect e.g. `048_import_non_export/main.fm`). The runner MUST verify path (when present), line, column, and code. Message text SHOULD match `M1-core.md` templates but is not required by fixtures.
-
-Single-file tests omit `<path>`; the implied file is the `.fm` under test.
-
-Column numbers are **1-based Unicode scalar values** (see M1-core.md §8).
-
-### Comments
-
-Lines starting with `##` (two hashes) are human comments and MUST be ignored by the harness **only when they appear outside** `# stdout:` / `# stderr:` blocks. Inside a stdout or stderr block (between the header and the matching `# end`), a line that begins with `##` is **literal expected output** and MUST be compared exactly. Harness metadata comments therefore MUST NOT be placed inside those blocks.
-
-### Example
-
-```
-# kind: run
-# exit: 0
-# stdout:
-Hello, Farmos
-# end
-```
-
-## Harness contract (informative)
-
-```
-farmc build <main.fm> -o <tmp_bin>   # expect exit 0 for run/runtime_trap; 1 for compile_error
-<tmp_bin>                             # capture exit, stdout, stderr
-```
-
-Compare against `.expected`. No implementation ships in this tree. On Windows, language tests are driven by `scripts\\build_and_test.ps1` (ctest) per PLAN.md; Linux is out of scope.
+- Spec conformance: `spec/tests/M1/` (49 fixtures) via ctest `m1_*`; umbrella `m1_conformance` is opt-in (`ctest -L conformance_bundle`)
+- Local regressions: `tests/local/` via ctest `local_*`

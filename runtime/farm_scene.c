@@ -231,6 +231,31 @@ void farm_Object3D_setRotationFromQuaternion(farm_Object3D* self, farm_Quaternio
   sync_rotation_from_quaternion(self);
 }
 
+static int euler_order_ok(const char* o) {
+  return strcmp(o, "XYZ") == 0 || strcmp(o, "YZX") == 0 || strcmp(o, "ZXY") == 0 ||
+         strcmp(o, "XZY") == 0 || strcmp(o, "YXZ") == 0 || strcmp(o, "ZYX") == 0;
+}
+
+void farm_euler_set_order(farm_Euler* e, FarmString s) {
+  if (!e || !s.ptr || s.len != 3) farm_trap(104, "invalid Euler order");
+  char buf[4] = {s.ptr[0], s.ptr[1], s.ptr[2], 0};
+  if (!euler_order_ok(buf)) farm_trap(104, "invalid Euler order");
+  e->order[0] = buf[0];
+  e->order[1] = buf[1];
+  e->order[2] = buf[2];
+  e->order[3] = 0;
+}
+
+FarmString farm_euler_order_string(const farm_Euler* e) {
+  if (!e) return (FarmString){"XYZ", 3};
+  if (strcmp(e->order, "YZX") == 0) return (FarmString){"YZX", 3};
+  if (strcmp(e->order, "ZXY") == 0) return (FarmString){"ZXY", 3};
+  if (strcmp(e->order, "XZY") == 0) return (FarmString){"XZY", 3};
+  if (strcmp(e->order, "YXZ") == 0) return (FarmString){"YXZ", 3};
+  if (strcmp(e->order, "ZYX") == 0) return (FarmString){"ZYX", 3};
+  return (FarmString){"XYZ", 3};
+}
+
 // Scene implementation
 farm_Scene* farm_Scene_new() {
   farm_Scene* scene = (farm_Scene*)farm_arena_alloc(sizeof(farm_Scene));
@@ -714,6 +739,10 @@ farm_PointLight* farm_PointLight_new_full(farm_Color color, double intensity, do
   light->f_distance = distance;
   light->f_decay = decay;
   return light;
+}
+
+farm_PointLight* farm_PointLight_new_hex_full(int64_t hex, double intensity, double distance, double decay) {
+  return farm_PointLight_new_full(farm_Color_setHex((int32_t)hex), intensity, distance, decay);
 }
 
 // Renderer - rasterizer and PNG writer

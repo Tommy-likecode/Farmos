@@ -689,7 +689,24 @@ struct Sema {
               } else if (nargs != 0) {
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0 or 1, found " + std::to_string(nargs));
               }
-            } else if (cd->c_sym == "farm_AmbientLight" || cd->c_sym == "farm_DirectionalLight" || cd->c_sym == "farm_PointLight") {
+            } else if (cd->c_sym == "farm_PointLight") {
+              if (nargs == 1) {
+                if (e->args[0]->type->kind == TypeKind::Int) variant = "hex";
+                else error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int");
+              } else if (nargs == 2) {
+                if (e->args[0]->type->kind == TypeKind::Int) variant = "hex_i";
+                else if (e->args[0]->type->kind == TypeKind::Struct && e->args[0]->type->name.find("Color") != std::string::npos) variant = "color_i";
+                else error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int or Color");
+                coerce_float(e->args[1]);
+              } else if (nargs == 4) {
+                if (e->args[0]->type->kind == TypeKind::Int) variant = "hex_full";
+                else if (e->args[0]->type->kind == TypeKind::Struct && e->args[0]->type->name.find("Color") != std::string::npos) variant = "full";
+                else error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int or Color");
+                for (int i = 1; i < 4; ++i) coerce_float(e->args[i]);
+              } else if (nargs != 0) {
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0, 1, 2, or 4, found " + std::to_string(nargs));
+              }
+            } else if (cd->c_sym == "farm_AmbientLight" || cd->c_sym == "farm_DirectionalLight") {
               if (nargs == 1) {
                 if (e->args[0]->type->kind == TypeKind::Int) variant = "hex";
                 else error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int");

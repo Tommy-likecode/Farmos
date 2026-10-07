@@ -1,0 +1,11 @@
+import { Scene } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const s: Scene = new Scene();
+  s.setBackground(new Color(0xff0000));
+  println(s.hasBackground);
+  s.clearBackground();
+  println(s.hasBackground);
+  return 0;
+}

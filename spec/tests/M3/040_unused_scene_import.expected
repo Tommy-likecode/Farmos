@@ -1,0 +1,6 @@
+# kind: run
+# exit: 0
+## Unused farmos:scene import must DCE; stdout matches M1 hello.
+# stdout:
+Hello, Farmos
+# end

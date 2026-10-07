@@ -23,7 +23,7 @@ if [ ! -f "$EXP" ]; then
 fi
 
 python3 - "$FARMC" "$TESTS_DIR" "$NAME" "$EXP" << 'PY'
-import os, sys, subprocess, re, hashlib, pathlib
+import os, sys, subprocess, re, hashlib, pathlib, tempfile, shutil
 
 farmc, tests_dir, name, exp_path = sys.argv[1:5]
 
@@ -123,7 +123,12 @@ if exp["kind"] == "compile_error":
 if p.returncode != 0:
     fail(f"compile failed ({p.returncode})\n{decode(p.stderr)}")
 
-r = subprocess.run([tmp], cwd=tests_dir, capture_output=True)
+run_cwd = tests_dir
+png_scratch = None
+if exp["kind"] == "run_png":
+    png_scratch = tempfile.mkdtemp(prefix=f"farmc_png_{name}_")
+    run_cwd = png_scratch
+r = subprocess.run([tmp], cwd=run_cwd, capture_output=True)
 out, err, rc = decode(r.stdout), decode(r.stderr), r.returncode
 if rc != exp["exit"]:
     fail(f"exit {rc} expected {exp['exit']}\nstdout: {out}\nstderr: {err}")
@@ -167,7 +172,7 @@ elif exp["kind"] == "run_png":
         fail(f"unexpected stderr (run_png fixtures require empty stderr)\nGOT_STDERR:<<<{err}>>>")
     if not exp["png"] or not exp["sha256"]:
         fail("run_png fixture missing # png: or # sha256:")
-    png = os.path.join(tests_dir, exp["png"])
+    png = os.path.join(run_cwd, exp["png"])
     if not os.path.isfile(png):
         fail(f"PNG file not found: {png}")
     h = hashlib.sha256(open(png, "rb").read()).hexdigest()
@@ -179,10 +184,14 @@ elif exp["kind"] == "run_png":
         gold_b = open(golden, "rb").read()
         if got_b != gold_b:
             fail("PNG bytes differ from golden")
-    try:
-        os.remove(png)
-    except OSError:
-        pass
+    if png_scratch:
+        shutil.rmtree(png_scratch, ignore_errors=True)
+        png_scratch = None
+    else:
+        try:
+            os.remove(png)
+        except OSError:
+            pass
 else:
     fail(f"unknown kind '{exp['kind']}'")
 

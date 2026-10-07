@@ -95,6 +95,15 @@ foreach(exp ${M3_EXPECTED})
   set_tests_properties(m3_${name} PROPERTIES LABELS "spec")
 endforeach()
 
+# AC-M3-01 / AC-M3-11: unused farmos:scene import DCE + M1/M2 link flags vs master.
+find_program(FARMC_PYTHON3 python3)
+if(FARMC_PYTHON3)
+  add_test(NAME local_unused_scene_dce
+    COMMAND ${FARMC_PYTHON3} "${FARMC_SCRIPTS}/test_unused_scene_dce.py"
+            $<TARGET_FILE:farmc> "${CMAKE_SOURCE_DIR}")
+  set_tests_properties(local_unused_scene_dce PROPERTIES LABELS "local")
+endif()
+
 # ---- Local positive fixtures (tests/local) ----
 set(FARMC_LOCAL_TESTS_DIR "${CMAKE_SOURCE_DIR}/tests/local")
 file(GLOB LOCAL_EXPECTED "${FARMC_LOCAL_TESTS_DIR}/*.expected")
