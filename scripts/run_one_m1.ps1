@@ -53,6 +53,11 @@ function Parse-Expected([string]$path) {
   $diagExact = $false
 
   foreach ($line in $lines) {
+    if ($null -eq $line) { $line = "" }
+    $line = [string]$line
+    # PS 5.1 Get-Content leaves CR on CRLF files and may keep a UTF-8 BOM on line 1.
+    if ($line.Length -gt 0 -and [int][char]$line[0] -eq 0xFEFF) { $line = $line.Substring(1) }
+    $line = $line.TrimEnd([char]13)
     if ($null -ne $mode) {
       # README: "Everything between `# stdout:` and `# end` is compared exactly".
       # Only a `# end` line terminates a block; any other line (including `#`/`##` lines) is literal.
@@ -143,9 +148,130 @@ $outFile = Join-Path $env:TEMP ("farmc_test_" + $Name + ".out.txt")
 $errFile = Join-Path $env:TEMP ("farmc_test_" + $Name + ".err.txt")
 
 function Read-Text([string]$f) {
-  $t = Get-Content -LiteralPath $f -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-  if ($null -eq $t) { return "" }
-  return $t
+  if ([string]::IsNullOrEmpty($f) -or -not (Test-Path -LiteralPath $f)) { return "" }
+  # Byte read: PS 5.1 Get-Content -Encoding UTF8 expects a BOM and Start-Process
+  # redirection may write UTF-16. Decode BOM-aware, then drop CR.
+  $bytes = [System.IO.File]::ReadAllBytes($f)
+  if ($null -eq $bytes -or $bytes.Length -eq 0) { return "" }
+  $text = $null
+  if ($bytes.Length -ge 2 -and $bytes[0] -eq 255 -and $bytes[1] -eq 254) {
+    $enc = New-Object System.Text.UnicodeEncoding $false, $false
+    $text = $enc.GetString($bytes, 2, $bytes.Length - 2)
+  } elseif ($bytes.Length -ge 2 -and $bytes[0] -eq 254 -and $bytes[1] -eq 255) {
+    $enc = New-Object System.Text.UnicodeEncoding $true, $false
+    $text = $enc.GetString($bytes, 2, $bytes.Length - 2)
+  } else {
+    # UTF-16 LE without BOM (odd bytes mostly NUL) — PS 5.1 Start-Process sometimes omits BOM.
+    $utf16le = $false
+    if ($bytes.Length -ge 4 -and ($bytes.Length % 2) -eq 0) {
+      $nuls = 0
+      $lim = $bytes.Length
+      if ($lim -gt 200) { $lim = 200 }
+      for ($i = 1; $i -lt $lim; $i += 2) { if ($bytes[$i] -eq 0) { $nuls++ } }
+      if (($nuls * 2) -ge ($lim / 2)) { $utf16le = $true }
+    }
+    if ($utf16le) {
+      $enc = New-Object System.Text.UnicodeEncoding $false, $false
+      $text = $enc.GetString($bytes)
+    } else {
+      $start = 0
+      if ($bytes.Length -ge 3 -and $bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191) { $start = 3 }
+      $enc = New-Object System.Text.UTF8Encoding $false, $false
+      $text = $enc.GetString($bytes, $start, $bytes.Length - $start)
+    }
+  }
+  if ($null -eq $text) { return "" }
+  if ($text.Length -gt 0 -and [int][char]$text[0] -eq 0xFEFF) { $text = $text.Substring(1) }
+  return $text
+}
+
+function Write-Utf8File([string]$f, [string]$text) {
+  if ($null -eq $text) { $text = "" }
+  $enc = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($f, $text, $enc)
+}
+
+function Quote-CmdArg([string]$s) {
+  if ($null -eq $s) { return '""' }
+  # cmd.exe: double a quote inside quoted args; quote if whitespace or cmd metacharacters.
+  if ($s -match '[ \t&<>^|()@!"]') {
+    return '"' + ($s.Replace('"','""')) + '"'
+  }
+  return $s
+}
+
+function Quote-ProcArg([string]$s) {
+  if ($null -eq $s) { return '""' }
+  if ($s -match '[ \t"]') {
+    return '"' + ($s.Replace('\','\\').Replace('"','\"')) + '"'
+  }
+  return $s
+}
+
+# Capture native stdout/stderr without PS wrapping them as ErrorRecords (PS 5.1).
+# Prefer cmd.exe 2> file (raw child bytes). Fallback: Process + UTF-8 StreamReader.
+function Invoke-Native {
+  param(
+    [string]$FilePath,
+    [string[]]$ArgumentList,
+    [string]$WorkingDirectory,
+    [string]$StdOutFile,
+    [string]$StdErrFile
+  )
+  Remove-Item -Force $StdOutFile,$StdErrFile -ErrorAction SilentlyContinue
+  $nativeArgs = @()
+  if ($null -ne $ArgumentList) { $nativeArgs = @($ArgumentList) }
+
+  $comspec = $env:ComSpec
+  if (-not [string]::IsNullOrEmpty($comspec) -and (Test-Path -LiteralPath $comspec)) {
+    $q = New-Object System.Collections.Generic.List[string]
+    [void]$q.Add((Quote-CmdArg $FilePath))
+    foreach ($a in $nativeArgs) { [void]$q.Add((Quote-CmdArg $a)) }
+    $exeLine = [string]::Join(' ', $q.ToArray())
+    # Single ArgumentList string avoids PS 5.1 array-join quoting. cmd 1>/2> captures raw child bytes.
+    $arg = '/c ' + $exeLine + ' 1> ' + (Quote-CmdArg $StdOutFile) + ' 2> ' + (Quote-CmdArg $StdErrFile)
+    $p = Start-Process -FilePath $comspec -ArgumentList $arg -WorkingDirectory $WorkingDirectory -Wait -PassThru -NoNewWindow
+    if (-not (Test-Path -LiteralPath $StdOutFile)) { Write-Utf8File $StdOutFile "" }
+    if (-not (Test-Path -LiteralPath $StdErrFile)) { Write-Utf8File $StdErrFile "" }
+    return @{ ExitCode = $p.ExitCode }
+  }
+
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $FilePath
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.RedirectStandardInput = $true
+  $psi.CreateNoWindow = $true
+  $psi.WorkingDirectory = $WorkingDirectory
+  $utf8 = New-Object System.Text.UTF8Encoding $false
+  try { $psi.StandardOutputEncoding = $utf8 } catch { }
+  try { $psi.StandardErrorEncoding = $utf8 } catch { }
+  $q = New-Object System.Collections.Generic.List[string]
+  foreach ($a in $nativeArgs) { [void]$q.Add((Quote-ProcArg $a)) }
+  $psi.Arguments = [string]::Join(' ', $q.ToArray())
+  $proc = New-Object System.Diagnostics.Process
+  $proc.StartInfo = $psi
+  [void]$proc.Start()
+  try { $proc.StandardInput.Close() } catch { }
+  $stdout = ""
+  $stderr = ""
+  try {
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    $proc.WaitForExit()
+    $stdout = $outTask.Result
+    $stderr = $errTask.Result
+  } catch {
+    $stderr = $proc.StandardError.ReadToEnd()
+    $stdout = $proc.StandardOutput.ReadToEnd()
+    $proc.WaitForExit()
+  }
+  if ($null -eq $stdout) { $stdout = "" }
+  if ($null -eq $stderr) { $stderr = "" }
+  Write-Utf8File $StdOutFile $stdout
+  Write-Utf8File $StdErrFile $stderr
+  return @{ ExitCode = $proc.ExitCode }
 }
 
 function Invoke-FarmcBuild {
@@ -158,27 +284,49 @@ function Invoke-FarmcBuild {
   if ($null -ne $exp.flags) {
     foreach ($f in $exp.flags) { [void]$al.Add($f) }
   }
-  return (Start-Process -FilePath $Farmc -ArgumentList $al.ToArray() `
-    -WorkingDirectory $TestsDir -NoNewWindow -Wait -PassThru `
-    -RedirectStandardOutput $outFile -RedirectStandardError $errFile)
+  return Invoke-Native $Farmc $al.ToArray() $TestsDir $outFile $errFile
+}
+
+function Sanitize-DiagLine([string]$ln) {
+  if ($null -eq $ln) { return "" }
+  $ln = [string]$ln
+  if ($ln.Length -gt 0 -and [int][char]$ln[0] -eq 0xFEFF) { $ln = $ln.Substring(1) }
+  $ln = $ln.TrimEnd([char]13).Trim()
+  # PS 5.1 NativeCommandError: "farmc : path:line:col: error[E0408]: ..."
+  if ($ln -cmatch '^[^\s:]+\.(exe|EXE) : (.*)$') { $ln = $Matches[2].Trim() }
+  elseif ($ln -cmatch '^[^\s:]+ : (.*)$') {
+    $rest = $Matches[1].Trim()
+    if ($rest -cmatch '\.fm:\d+:\d+:') { $ln = $rest }
+  }
+  return $ln
 }
 
 function Parse-FarmcDiags([string]$errText) {
   $got = New-Object System.Collections.Generic.List[object]
-  foreach ($ln in ($errText -split "`r?`n")) {
-    if ([string]::IsNullOrEmpty($ln)) { continue }
-    if ($ln -cmatch '^(.*):(\d+):(\d+): (error|warning)\[([EW]\d{4})\]:') {
+  if ($null -eq $errText) { $errText = "" }
+  $errText = Norm-Newlines $errText
+  if ($errText.Length -gt 0 -and [int][char]$errText[0] -eq 0xFEFF) { $errText = $errText.Substring(1) }
+  # @() keeps a single line from unwrapping to a char enumerable (PS 5.1).
+  foreach ($raw in @($errText -split "`n")) {
+    $ln = Sanitize-DiagLine $raw
+    if ($ln.Length -eq 0) { continue }
+    # Count only real farmc primaries. Notes and PS wrapper noise (CategoryInfo, etc.) are ignored.
+    if ($ln -cmatch '^((?:[A-Za-z]:)?[^\s:]+\.fm):(\d+):(\d+): (error|warning)\[([EW]\d{4})\]:') {
       $got.Add(@{ sev=$Matches[4]; path=(Norm-DiagPath $Matches[1]); line=[int]$Matches[2]; col=[int]$Matches[3]; code=$Matches[5]; note=$null })
       continue
     }
-    if ($ln -cmatch '^(.*):(\d+):(\d+): note:') {
+    if ($ln -cmatch '^((?:[A-Za-z]:)?[^\s:]+\.fm):(\d+):(\d+): note:') {
       if ($got.Count -gt 0) {
-        $got[$got.Count - 1].note = @{ path=(Norm-DiagPath $Matches[1]); line=[int]$Matches[2]; col=[int]$Matches[3] }
+        $last = $got[$got.Count - 1]
+        if ($null -eq $last.note) {
+          $last.note = @{ path=(Norm-DiagPath $Matches[1]); line=[int]$Matches[2]; col=[int]$Matches[3] }
+        }
       }
       continue
     }
   }
-  return $got
+  # Unary comma: a 1-element List must not unwrap to a hashtable (Count would be 6 keys).
+  return ,$got
 }
 
 function Want-Path([string]$p) {
@@ -309,7 +457,7 @@ foreach ($W in $threadCfgs) {
   else { $env:FARMOS_THREADS = [string]$W }
   for ($ri = 0; $ri -lt $exp.repeat; $ri++) {
     Remove-Item -Force $outFile,$errFile -ErrorAction SilentlyContinue
-    $p2 = Start-Process -FilePath $tmp -WorkingDirectory $runCwd -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+    $p2 = Invoke-Native $tmp @() $runCwd $outFile $errFile
     $ec = $p2.ExitCode
     $stdoutGot = Norm-Newlines (Read-Text $outFile)
     $stderrGot = Norm-Newlines (Read-Text $errFile)
