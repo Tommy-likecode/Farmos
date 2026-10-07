@@ -295,17 +295,16 @@ farm_Euler farm_Euler_setFromQuaternion(farm_Quaternion q, const char* order) {
   e.order[3] = '\0';
   
   double x = q.f_x, y = q.f_y, z = q.f_z, w = q.w;
-  double x2 = x * x, y2 = y * y, z2 = z * z, w2 = w * w;
+  double x2 = x * x, y2 = y * y, z2 = z * z;
   
-  // Build rotation matrix elements we need
+  // Three.js Matrix4.makeRotationFromQuaternion (column-major):
+  //   te[0]=m11, te[4]=m12, te[8]=m13, te[1]=m21, te[5]=m22, te[9]=m23, ...
   double m11 = 1 - 2*y2 - 2*z2;
-  double m12 = 2*x*y + 2*w*z;
-  double m13 = 2*x*z - 2*w*y;
-  double m21 = 2*x*y - 2*w*z;
+  double m12 = 2*x*y - 2*w*z;
+  double m13 = 2*x*z + 2*w*y;
   double m22 = 1 - 2*x2 - 2*z2;
-  double m23 = 2*y*z + 2*w*x;
-  double m31 = 2*x*z + 2*w*y;
-  double m32 = 2*y*z - 2*w*x;
+  double m23 = 2*y*z - 2*w*x;
+  double m32 = 2*y*z + 2*w*x;
   double m33 = 1 - 2*x2 - 2*y2;
   
   // Extract Euler angles (XYZ order as default)

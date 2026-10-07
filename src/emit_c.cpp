@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <functional>
 #include <set>
+#include <vector>
 
 namespace farm {
 
@@ -43,45 +44,72 @@ struct Emitter {
     return s;
   }
 
-  // M2/M3: Check if struct is from farmos:math module
-  bool is_math_struct(StructDecl* sd) {
-    if (!sd) return false;
-    static const std::set<std::string> math_structs = 
-      {"Vector2", "Vector3", "Vector4", "Matrix3", "Matrix4", 
-       "Quaternion", "Color", "Euler", "Ray", "Sphere", "Box3"};
-    return math_structs.count(sd->name) > 0;
+  // M3: Set at the start of emit_all(). Non-scene programs MUST match master codegen.
+  bool uses_scene = false;
+
+  static bool is_scene_class_sym(const std::string& n) {
+    return n == "farm_Scene" || n == "farm_Object3D" ||
+           n == "farm_PerspectiveCamera" || n == "farm_Mesh" ||
+           n == "farm_BoxGeometry" || n == "farm_SphereGeometry" ||
+           n == "farm_PlaneGeometry" || n == "farm_MeshBasicMaterial" ||
+           n == "farm_MeshStandardMaterial" || n == "farm_AmbientLight" ||
+           n == "farm_DirectionalLight" || n == "farm_PointLight" ||
+           n == "farm_Renderer";
   }
 
-  // M2/M3: Get runtime field name for math module structs (inconsistent f_ prefix usage)
-  std::string runtime_field_name(const std::string& field_name, const std::string& struct_name = "") {
-    // Vector2 uses x, y without prefix; most others use f_x, f_y
-    if (struct_name == "Vector2" && (field_name == "x" || field_name == "y")) {
-      return field_name;
+  static bool is_object3d_sym(const std::string& n) {
+    return n == "farm_Object3D" || n == "farm_Scene" || n == "farm_PerspectiveCamera" ||
+           n == "farm_Mesh" || n == "farm_AmbientLight" || n == "farm_DirectionalLight" ||
+           n == "farm_PointLight";
+  }
+
+  static bool is_math_type_name(const std::string& n) {
+    // Type::name is the c_sym, e.g. m1_Vector3
+    auto pos = n.rfind('_');
+    if (pos == std::string::npos) return false;
+    std::string base = n.substr(pos + 1);
+    return base == "Vector2" || base == "Vector3" || base == "Vector4" ||
+           base == "Matrix3" || base == "Matrix4" || base == "Quaternion" ||
+           base == "Color" || base == "Euler" || base == "Ray" ||
+           base == "Sphere" || base == "Box3" || base == "RayHit";
+  }
+
+  static std::string math_base(const std::string& c_sym) {
+    auto pos = c_sym.rfind('_');
+    return pos == std::string::npos ? c_sym : c_sym.substr(pos + 1);
+  }
+
+  // farm_math.h field names when emitting against runtime math types (scene programs only).
+  std::string runtime_field_name(const std::string& field, const std::string& struct_base) {
+    if (struct_base == "Vector2" && (field == "x" || field == "y")) return field;
+    if (struct_base == "Vector4" && field == "w") return "w";
+    if (struct_base == "Quaternion" && field == "w") return "w";
+    if (struct_base == "Color" && (field == "r" || field == "g" || field == "b")) return field;
+    if (struct_base == "Euler" && field == "order") return "order";
+    if (struct_base == "Matrix3" || struct_base == "Matrix4") {
+      if (field == "elements") return "elements";
     }
-    
-    // Fields that don't have f_ prefix in runtime (for all structs)
-    static const std::set<std::string> no_prefix_fields = 
-      {"r", "g", "b", "w", "elements", "origin", "direction", "min", "max", "order", "hit", "point", "distance", "center", "radius"};
-    return no_prefix_fields.count(field_name) ? field_name : ("f_" + field_name);
+    if (struct_base == "Ray" && (field == "origin" || field == "direction")) return field;
+    if (struct_base == "Box3" && (field == "min" || field == "max")) return field;
+    if (struct_base == "Sphere" && (field == "center" || field == "radius")) return field;
+    if (struct_base == "RayHit" && (field == "hit" || field == "point" || field == "distance")) return field;
+    return "f_" + field;
   }
 
-  // M3: Check if type is a scene class
-  bool is_scene_class(const TypePtr& t) {
-    if (t->kind != TypeKind::Class) return false;
-    static const std::set<std::string> scene_classes = 
-      {"farm_Scene", "farm_Object3D", "farm_PerspectiveCamera", "farm_Mesh",
-       "farm_BoxGeometry", "farm_SphereGeometry", "farm_PlaneGeometry",
-       "farm_MeshBasicMaterial", "farm_MeshStandardMaterial",
-       "farm_AmbientLight", "farm_DirectionalLight", "farm_PointLight", "farm_Renderer"};
-    return scene_classes.count(t->name) > 0;
+  std::string struct_field_access(const std::string& field, const TypePtr& st) {
+    if (uses_scene && st && st->kind == TypeKind::Struct && is_math_type_name(st->name))
+      return runtime_field_name(field, math_base(st->name));
+    return "f_" + field;
   }
 
-  // M3: Check if scene class inherits from Object3D
-  bool is_object3d_subclass(const std::string& class_name) {
-    static const std::set<std::string> subclasses = 
-      {"farm_Scene", "farm_PerspectiveCamera", "farm_Mesh",
-       "farm_AmbientLight", "farm_DirectionalLight", "farm_PointLight"};
-    return subclasses.count(class_name) > 0;
+  std::string scene_class_field(const std::string& field) {
+    if (field == "matrixAutoUpdate") return "matrixAutoUpdate";
+    if (field == "parent" || field == "children" || field == "type") return field;
+    if (field == "roughness" || field == "metalness") return field;
+    if (field == "disposed" || field == "width" || field == "height") return field;
+    if (field == "hasBackground" || field == "background") return field;
+    if (field == "matrixWorldInverse" || field == "projectionMatrix") return field;
+    return "f_" + field;
   }
 
   std::string c_type(const TypePtr& t) {
@@ -92,12 +120,13 @@ struct Emitter {
       case TypeKind::String: return "FarmString";
       case TypeKind::Void: return "void";
       case TypeKind::Struct:
-        // M2/M3: Math module structs use runtime typedefs (farm_Vector3, farm_Color, etc.)
-        if (t->name.find("m1_") == 0) {
-          return "farm_" + t->name.substr(3); // m1_Color -> farm_Color
-        }
+        if (uses_scene && is_math_type_name(t->name))
+          return "farm_" + math_base(t->name);
         return "struct Farm_" + t->name;
-      case TypeKind::Class: return "struct " + t->name + "*";  // M3: c_sym already includes prefix
+      case TypeKind::Class:
+        if (uses_scene && is_scene_class_sym(t->name))
+          return t->name + "*";
+        return "struct Farm_" + t->name + "*";
       case TypeKind::DynArray: return "FarmDynArray";
       case TypeKind::FixedArray: return "FarmFixed_" + sanitize(t->str());
       default: return "int64_t";
@@ -253,13 +282,13 @@ struct Emitter {
         auto arr = emit_expr(e->lhs);
         auto idx = emit_expr(e->rhs);
         if (e->lhs->type->kind == TypeKind::FixedArray) {
-          // Check if lhs is a direct field access to a fixed array (e.g., matrix.elements[i])
-          // In that case, the field is already a C array, so we don't need .data
-          if (e->lhs->kind == ExprKind::Field) {
+          // M3: farm_Matrix3/4.elements is a C array, not FarmFixed_{}.data.
+          bool scene_c_array = uses_scene && e->lhs->kind == ExprKind::Field &&
+            e->lhs->lhs && e->lhs->lhs->type && e->lhs->lhs->type->kind == TypeKind::Struct &&
+            is_math_type_name(e->lhs->lhs->type->name) && e->lhs->name == "elements";
+          if (scene_c_array)
             return "({ int64_t __i=(" + idx + "); farm_bounds_check(__i, (int64_t)" + std::to_string(e->lhs->type->fixed_len) + "); (" + arr + ")[__i]; })";
-          } else {
-            return "({ int64_t __i=(" + idx + "); farm_bounds_check(__i, (int64_t)" + std::to_string(e->lhs->type->fixed_len) + "); (" + arr + ").data[__i]; })";
-          }
+          return "({ int64_t __i=(" + idx + "); farm_bounds_check(__i, (int64_t)" + std::to_string(e->lhs->type->fixed_len) + "); (" + arr + ").data[__i]; })";
         } else {
           std::string et = c_type(e->lhs->type->elem);
           return "({ int64_t __i=(" + idx + "); *(" + et + "*)farm_dyn_index(&(" + arr + "), __i); })";
@@ -268,48 +297,21 @@ struct Emitter {
       case ExprKind::Field: {
         auto base = emit_expr(e->lhs);
         if (e->lhs->type->kind == TypeKind::Class) {
-          std::string field_access = "(" + base + ")->f_" + e->name;
-          
-          // M3: Object3D rotation/quaternion fields need sync before read
-          if (e->lhs->type->name.find("farm_Object3D") == 0 || 
-              e->lhs->type->name.find("farm_Scene") == 0 ||
-              e->lhs->type->name.find("farm_PerspectiveCamera") == 0 ||
-              e->lhs->type->name.find("farm_Mesh") == 0 ||
-              e->lhs->type->name.find("farm_AmbientLight") == 0 ||
-              e->lhs->type->name.find("farm_DirectionalLight") == 0 ||
-              e->lhs->type->name.find("farm_PointLight") == 0) {
-            if (e->name == "rotation") {
-              // Reading rotation: sync from quaternion if needed
-              return "({ sync_rotation_from_quaternion(" + base + "); " + field_access + "; })";
-            } else if (e->name == "quaternion") {
-              // Reading quaternion: sync from rotation if needed  
-              return "({ sync_quaternion_from_rotation(" + base + "); " + field_access + "; })";
+          if (uses_scene && is_scene_class_sym(e->lhs->type->name)) {
+            std::string field_access = "(" + base + ")->" + scene_class_field(e->name);
+            if (is_object3d_sym(e->lhs->type->name)) {
+              if (e->name == "rotation")
+                return "({ sync_rotation_from_quaternion((farm_Object3D*)(" + base + ")); " + field_access + "; })";
+              if (e->name == "quaternion")
+                return "({ sync_quaternion_from_rotation((farm_Object3D*)(" + base + ")); " + field_access + "; })";
             }
+            if (e->lhs->type->name == "farm_Mesh" && (e->name == "material" || e->name == "geometry"))
+              return "(" + c_type(e->type) + ")" + field_access;
+            return field_access;
           }
-          
-          // M3: Mesh geometry and material fields are stored as void* in C runtime
-          // but typed specifically in sema. Cast them when accessed.
-          if (e->lhs->type->name == "farm_Mesh") {
-            if (e->name == "material") {
-              // Cast void* to the actual material type (c_type already returns pointer for classes)
-              std::string mat_type = c_type(e->type);
-              return "(" + mat_type + ")" + field_access;
-            }
-            if (e->name == "geometry") {
-              // Cast void* to the actual geometry type (c_type already returns pointer for classes)
-              std::string geom_type = c_type(e->type);
-              return "(" + geom_type + ")" + field_access;
-            }
-          }
-          
-          return field_access;
+          return "(" + base + ")->f_" + e->name;
         }
-        // M2/M3: Math module structs have inconsistent field naming in runtime
-        if (e->lhs->type->kind == TypeKind::Struct && e->lhs->type->name.find("m1_") == 0) {
-          std::string struct_name = e->lhs->type->name.substr(3); // Remove "m1_" prefix
-          return "(" + base + ")." + runtime_field_name(e->name, struct_name);
-        }
-        return "(" + base + ").f_" + e->name;
+        return "(" + base + ")." + struct_field_access(e->name, e->lhs->type);
       }
       case ExprKind::Call: {
         if (e->lhs->kind==ExprKind::Ident) {
@@ -379,31 +381,10 @@ struct Emitter {
           }
           if (n=="float") return "farm_int_to_float(" + emit_expr(e->args[0]) + ")";
           if (!e->mangled.empty() && e->mangled != n) {
-            // M3: Special handling for lookAt(x, y, z) -> lookAt_v(Vector3)
-            if (e->mangled == "farm_PerspectiveCamera_lookAt" && e->args.size() == 3) {
-              std::string x = emit_expr(e->args[0]);
-              std::string y = emit_expr(e->args[1]);
-              std::string z = emit_expr(e->args[2]);
-              return "farm_PerspectiveCamera_lookAt_v(farm_Vector3_new(" + x + ", " + y + ", " + z + "))";
-            }
-            
             std::string call = e->mangled + "(";
             for (size_t i=0;i<e->args.size();++i) {
               if (i) call += ", ";
-              std::string arg_val = emit_expr(e->args[i]);
-              // M3: Auto-upcast Object3D subclasses for hierarchy methods
-              if (e->args[i]->type->kind == TypeKind::Class &&
-                  (e->mangled.find("add") != std::string::npos || 
-                   e->mangled.find("remove") != std::string::npos ||
-                   e->mangled.find("addAt") != std::string::npos)) {
-                std::string class_name = e->args[i]->type->name;
-                if (class_name == "farm_Scene" || class_name == "farm_PerspectiveCamera" || 
-                    class_name == "farm_Mesh" || class_name == "farm_AmbientLight" || 
-                    class_name == "farm_DirectionalLight" || class_name == "farm_PointLight") {
-                  arg_val = "(farm_Object3D*)" + arg_val;
-                }
-              }
-              call += arg_val;
+              call += emit_expr(e->args[i]);
             }
             call += ")";
             return call;
@@ -412,57 +393,17 @@ struct Emitter {
             std::string call = e->mangled + "(";
             for (size_t i=0;i<e->args.size();++i) {
               if (i) call += ", ";
-              std::string arg_val = emit_expr(e->args[i]);
-              // M3: Auto-upcast Object3D subclasses for hierarchy methods
-              if (e->args[i]->type->kind == TypeKind::Class &&
-                  (e->mangled.find("add") != std::string::npos || 
-                   e->mangled.find("remove") != std::string::npos ||
-                   e->mangled.find("addAt") != std::string::npos)) {
-                std::string class_name = e->args[i]->type->name;
-                if (class_name == "farm_Scene" || class_name == "farm_PerspectiveCamera" || 
-                    class_name == "farm_Mesh" || class_name == "farm_AmbientLight" || 
-                    class_name == "farm_DirectionalLight" || class_name == "farm_PointLight") {
-                  arg_val = "(farm_Object3D*)" + arg_val;
-                }
-              }
-              call += arg_val;
+              call += emit_expr(e->args[i]);
             }
             call += ")";
             return call;
           }
         }
         if (e->lhs->kind==ExprKind::Field) {
-          // Check if this is a math struct method (farmos:math)
-          bool is_math_method = false;
-          if (e->lhs->lhs->type->kind == TypeKind::Struct && e->lhs->lhs->type->name.find("m1_") == 0) {
-            is_math_method = true;
-          }
-          
-          
-          // M3: Special handling for Color.setHex and Color.getHex (static-style functions)
-          if (e->mangled == "farm_Color_setHex") {
-            // setHex(hex) - no receiver argument, just the hex value
-            std::string hex_val = emit_expr(e->args[0]);
-            std::string call = "farm_Color_setHex(" + hex_val + ")";
-            // If receiver is an lvalue, assign result back
-            if (e->lhs->lhs->is_lvalue) {
-              emit_assign(e->lhs->lhs, call);
-              return "0";
-            }
-            return call;
-          }
-          
-          if (e->mangled == "farm_Color_getHex") {
-            // getHex() - takes receiver by value
-            std::string recv = emit_expr(e->lhs->lhs);
-            return "farm_Color_getHex(" + recv + ")";
-          }
-          
           // For struct methods, pass &receiver; for class methods, pass receiver (already a pointer)
-          // Exception: math struct methods pass receiver by value and return a new value
           std::string recv;
-          if (e->lhs->lhs->type->kind == TypeKind::Struct && !is_math_method) {
-            // Regular struct method: need address of receiver
+          if (e->lhs->lhs->type->kind == TypeKind::Struct) {
+            // Struct method: need address of receiver
             if (e->lhs->lhs->is_lvalue) {
               // Receiver is an lvalue, pass its address directly
               recv = emit_lvalue_ptr(e->lhs->lhs);
@@ -482,183 +423,44 @@ struct Emitter {
                 recv = "&" + tmp;
               }
             }
-          } else if (is_math_method) {
-            // Math struct method: pass receiver by value
-            recv = emit_expr(e->lhs->lhs);
           } else {
             // Class method: receiver is already a pointer
             recv = emit_expr(e->lhs->lhs);
           }
-          
-          // M3: Special handling for lookAt on Object3D and subclasses
-          if (e->mangled.find("_lookAt") != std::string::npos) {
-            std::string class_name = e->lhs->lhs->type->name;
-            if (class_name == "farm_Object3D" || class_name == "farm_Scene" || 
-                class_name == "farm_PerspectiveCamera" || class_name == "farm_Mesh" ||
-                class_name == "farm_AmbientLight" || class_name == "farm_DirectionalLight" || 
-                class_name == "farm_PointLight") {
-              if (e->args.size() == 3) {
-                // lookAt(x, y, z)
-                std::string x = emit_expr(e->args[0]);
-                std::string y = emit_expr(e->args[1]);
-                std::string z = emit_expr(e->args[2]);
-                return "farm_Object3D_lookAt_xyz((farm_Object3D*)" + recv + ", " + x + ", " + y + ", " + z + ")";
-              } else if (e->args.size() == 1) {
-                // lookAt(Vector3)
-                std::string v = emit_expr(e->args[0]);
-                return "farm_Object3D_lookAt_v((farm_Object3D*)" + recv + ", " + v + ")";
-              }
-            }
+
+          // M3: Object3D hierarchy/lookAt live on farm_Object3D_* regardless of subclass.
+          if (uses_scene && e->lhs->lhs->type->kind == TypeKind::Class &&
+              is_object3d_sym(e->lhs->lhs->type->name) &&
+              (e->mangled.find("farm_Object3D_") == 0)) {
+            recv = "(farm_Object3D*)(" + recv + ")";
           }
-          
-          // M3: Special handling for Vector3.set(x, y, z) and Quaternion.set(x, y, z, w) - inline field assignment
-          if (e->mangled.find("_set") != std::string::npos && 
-              e->lhs->lhs->type->kind == TypeKind::Struct) {
-            std::string struct_name = e->lhs->lhs->type->name;
-            bool is_vector3_set = struct_name.find("Vector3") != std::string::npos && e->args.size() == 3;
-            bool is_quat_set = struct_name.find("Quaternion") != std::string::npos && e->args.size() == 4;
-            
-            if (is_vector3_set || is_quat_set) {
-              // Check if this is setting rotation or quaternion on an Object3D
-              bool is_rotation_field = false;
-              bool is_quaternion_field = false;
-              std::string obj_ptr;
-              
-              if (e->lhs->lhs->kind == ExprKind::Field && e->lhs->lhs->lhs->type->kind == TypeKind::Class) {
-                std::string class_name = e->lhs->lhs->lhs->type->name;
-                bool is_object3d_subclass = (class_name == "farm_Object3D" || class_name == "farm_Scene" || 
-                                             class_name == "farm_PerspectiveCamera" || class_name == "farm_Mesh" ||
-                                             class_name == "farm_AmbientLight" || class_name == "farm_DirectionalLight" || 
-                                             class_name == "farm_PointLight");
-                if (is_object3d_subclass && e->lhs->lhs->name == "rotation") {
-                  is_rotation_field = true;
-                  obj_ptr = emit_expr(e->lhs->lhs->lhs);
-                } else if (is_object3d_subclass && e->lhs->lhs->name == "quaternion") {
-                  is_quaternion_field = true;
-                  obj_ptr = emit_expr(e->lhs->lhs->lhs);
-                }
-              }
-              
-              // Emit inline assignment
-              std::string ptr;
-              if (e->lhs->lhs->is_lvalue) {
-                ptr = emit_lvalue_ptr(e->lhs->lhs);
-              } else {
-                std::string recv_val = emit_expr(e->lhs->lhs);
-                std::string tmp = fresh("rcv");
-                out << c_type(e->lhs->lhs->type) << " " << tmp << " = " << recv_val << ";\n";
-                ptr = "&" + tmp;
-              }
-              
-              if (is_vector3_set) {
-                std::string x = emit_expr(e->args[0]);
-                std::string y = emit_expr(e->args[1]);
-                std::string z = emit_expr(e->args[2]);
-                out << "(" << ptr << ")->f_x = " << x << ";\n";
-                out << "(" << ptr << ")->f_y = " << y << ";\n";
-                out << "(" << ptr << ")->f_z = " << z << ";\n";
-              } else { // is_quat_set
-                std::string x = emit_expr(e->args[0]);
-                std::string y = emit_expr(e->args[1]);
-                std::string z = emit_expr(e->args[2]);
-                std::string w = emit_expr(e->args[3]);
-                out << "(" << ptr << ")->f_x = " << x << ";\n";
-                out << "(" << ptr << ")->f_y = " << y << ";\n";
-                out << "(" << ptr << ")->f_z = " << z << ";\n";
-                out << "(" << ptr << ")->w = " << w << ";\n";  // w has no f_ prefix
-              }
-              
-              // M3: Set dirty flag if this is rotation/quaternion on Object3D
-              if (is_rotation_field) {
-                out << "(" << obj_ptr << ")->rotation_dirty = true;\n";
-              } else if (is_quaternion_field) {
-                out << "(" << obj_ptr << ")->quaternion_dirty = true;\n";
-              }
-              
-              // Return dereferenced value (set returns the struct)
-              return "*(" + ptr + ")";
-            }
-          }
-          
-          std::string call_name = e->mangled;
-          // M1: User-defined class methods use double underscore: ClassName__methodName
-          // but M3 scene classes in runtime use single underscore
-          // Operators already have correct underscores, don't modify them
-          // If mangled has single underscore and lhs->lhs is a non-scene Class (and not an operator), fix it
-          std::string class_name = e->lhs->lhs->type->name;
-          bool is_scene_class = (class_name == "farm_Scene" || class_name == "farm_Object3D" ||
-                                 class_name == "farm_PerspectiveCamera" || class_name == "farm_Mesh" ||
-                                 class_name == "farm_BoxGeometry" || class_name == "farm_SphereGeometry" ||
-                                 class_name == "farm_PlaneGeometry" || class_name == "farm_MeshBasicMaterial" ||
-                                 class_name == "farm_MeshStandardMaterial" || class_name == "farm_AmbientLight" ||
-                                 class_name == "farm_DirectionalLight" || class_name == "farm_PointLight" ||
-                                 class_name == "farm_Renderer");
-          bool is_operator = (call_name.find("__farm_op_") != std::string::npos);
-          bool is_stdlib = (class_name.find("m1_") == 0 || class_name.find("m0_") == 0);
-          
-          if (!is_scene_class && !is_operator && !is_stdlib && e->lhs->lhs->type->kind == TypeKind::Class && call_name.find("_") != std::string::npos) {
-            // Replace single underscore with double underscore for user-defined class methods
-            size_t pos = call_name.find("_");
-            // Find the last single underscore before the method name
-            size_t last_single = std::string::npos;
-            for (size_t i = 0; i < call_name.length() - 1; i++) {
-              if (call_name[i] == '_' && call_name[i+1] != '_') {
-                last_single = i;
-              }
-            }
-            if (last_single != std::string::npos && call_name[last_single+1] != '_') {
-              // Insert another underscore to make it double
-              call_name.insert(last_single+1, "_");
-            }
-          }
-          
-          std::string call = call_name + "(" + recv;
-          for (auto& a : e->args) { 
+
+          std::string call = e->mangled + "(" + recv;
+          for (auto& a : e->args) {
             call += ", ";
             std::string arg_val = emit_expr(a);
-            // M3: Auto-upcast Object3D subclasses to Object3D* for scene hierarchy methods
-            if (a->type->kind == TypeKind::Class) {
-              std::string class_name = a->type->name;
-              // Check if this is an Object3D subclass and the method likely expects Object3D*
-              if ((class_name == "farm_Scene" || class_name == "farm_PerspectiveCamera" || 
-                   class_name == "farm_Mesh" || class_name == "farm_AmbientLight" || 
-                   class_name == "farm_DirectionalLight" || class_name == "farm_PointLight") &&
-                  (e->mangled.find("add") != std::string::npos || 
-                   e->mangled.find("remove") != std::string::npos ||
-                   e->mangled.find("addAt") != std::string::npos)) {
-                arg_val = "(farm_Object3D*)" + arg_val;
-              }
+            if (uses_scene && a->type && a->type->kind == TypeKind::Class && is_object3d_sym(a->type->name) &&
+                (e->mangled.find("farm_Object3D_add") == 0 || e->mangled.find("farm_Object3D_remove") == 0 ||
+                 e->mangled.find("farm_Object3D_addAt") == 0)) {
+              arg_val = "(farm_Object3D*)(" + arg_val + ")";
             }
             call += arg_val;
           }
           call += ")";
-          
-          // M3: For math methods on Object3D fields (position, scale), assign result back
-          // But NOT for standalone math values (M2 tests) or chained calls
-          bool should_assign_back = false;
-          if (is_math_method && e->lhs->lhs->is_lvalue && 
-              e->type->kind == TypeKind::Struct && 
-              e->type->name == e->lhs->lhs->type->name) {
-            // Check if receiver is a field of an Object3D subclass
-            if (e->lhs->lhs->kind == ExprKind::Field && e->lhs->lhs->lhs->type->kind == TypeKind::Class) {
-              std::string class_name = e->lhs->lhs->lhs->type->name;
-              bool is_object3d_subclass = (class_name == "farm_Object3D" || class_name == "farm_Scene" || 
-                                           class_name == "farm_PerspectiveCamera" || class_name == "farm_Mesh" ||
-                                           class_name == "farm_AmbientLight" || class_name == "farm_DirectionalLight" || 
-                                           class_name == "farm_PointLight");
-              std::string field_name = e->lhs->lhs->name;
-              // Only assign back for Object3D fields like position, scale (not rotation/quaternion which have dirty flags)
-              if (is_object3d_subclass && (field_name == "position" || field_name == "scale")) {
-                should_assign_back = true;
-              }
-            }
-          }
-          
-          if (should_assign_back) {
-            emit_assign(e->lhs->lhs, call);
+
+          // M3: Quaternion.set / setFromAxisAngle on Object3D.quaternion must mark quaternion_dirty
+          // so a subsequent rotation read syncs. Gated: only when the receiver is a scene-object field.
+          if (uses_scene && e->lhs->lhs->type->kind == TypeKind::Struct &&
+              is_math_type_name(e->lhs->lhs->type->name) && math_base(e->lhs->lhs->type->name) == "Quaternion" &&
+              (e->lhs->name == "set" || e->lhs->name == "setFromAxisAngle") &&
+              e->lhs->lhs->kind == ExprKind::Field && e->lhs->lhs->lhs &&
+              e->lhs->lhs->lhs->type && e->lhs->lhs->lhs->type->kind == TypeKind::Class &&
+              is_object3d_sym(e->lhs->lhs->lhs->type->name)) {
+            std::string obj = emit_expr(e->lhs->lhs->lhs);
+            out << "(void)(" << call << ");\n";
+            out << "((farm_Object3D*)(" << obj << "))->quaternion_dirty = 1;\n";
             return "0";
           }
-          
           return call;
         }
         return "0";
@@ -691,65 +493,23 @@ struct Emitter {
       case ExprKind::New: {
         if (e->type->kind == TypeKind::Class) {
           std::string v = fresh("obj");
-          
-          // M3 scene classes: map to runtime constructor functions
-          // Check if this is a farmos:scene class by name
-          std::string class_name = e->type->name;
-          bool is_scene_class = (class_name == "farm_Scene" || class_name == "farm_Object3D" ||
-                                 class_name == "farm_PerspectiveCamera" || class_name == "farm_Mesh" ||
-                                 class_name == "farm_BoxGeometry" || class_name == "farm_SphereGeometry" ||
-                                 class_name == "farm_PlaneGeometry" || class_name == "farm_MeshBasicMaterial" ||
-                                 class_name == "farm_MeshStandardMaterial" || class_name == "farm_AmbientLight" ||
-                                 class_name == "farm_DirectionalLight" || class_name == "farm_PointLight" ||
-                                 class_name == "farm_Renderer");
-          
-          if (is_scene_class) {
-            // M3: Pre-emit nested New expressions as temporaries to avoid invalid C syntax
+          if (uses_scene && is_scene_class_sym(e->type->name)) {
             std::vector<std::string> arg_values;
-            for (auto& arg : e->args) {
-              if (arg->kind == ExprKind::New) {
-                // Emit the nested new as a temporary variable first
-                std::string temp_val = emit_expr(arg);
-                arg_values.push_back(temp_val);
-              } else {
-                arg_values.push_back(emit_expr(arg));
-              }
-            }
-            
-            // Call runtime constructor function directly
-            out << "struct " << e->mangled << "* " << v << " = " << e->mangled << "_new";
-            
-            // M3: Use the resolved constructor variant from sema
-            if (!e->ctor_variant.empty()) {
-              out << "_" << e->ctor_variant;
-            }
-            
+            for (auto& arg : e->args) arg_values.push_back(emit_expr(arg));
+            out << e->mangled << "* " << v << " = " << e->mangled << "_new";
+            if (!e->ctor_variant.empty()) out << "_" << e->ctor_variant;
             out << "(";
             for (size_t i = 0; i < arg_values.size(); ++i) {
-              if (i > 0) out << ", ";
+              if (i) out << ", ";
               out << arg_values[i];
             }
             out << ");\n";
-            
-            // M3: Runtime bug workaround - farm_Mesh_new and Light constructors don't initialize Object3D fields
-            // Only initialize for Mesh and Lights - NOT Scene/Camera (see comment below)
-            bool needs_object3d_init = (class_name == "farm_Mesh" || class_name == "farm_AmbientLight" ||
-                                       class_name == "farm_DirectionalLight" || class_name == "farm_PointLight");
-            if (needs_object3d_init) {
-              out << v << "->f_visible = 1;\n"; // true
-              out << v << "->matrixAutoUpdate = 1;\n"; // true
-              out << v << "->parent = NULL;\n";
-              out << v << "->children.items = NULL;\n";
-              out << v << "->children.count = 0;\n";
-              out << v << "->children.capacity = 0;\n";
-            }
-          } else {
-            // Original class constructor logic
-            out << "struct " << e->mangled << "* " << v << " = (struct " << e->mangled << "*)farm_arena_alloc(sizeof(struct " << e->mangled << "));\n";
-            out << e->mangled << "__constructor(" << v;
-            for (auto& a : e->args) out << ", " << emit_expr(a);
-            out << ");\n";
+            return v;
           }
+          out << "struct Farm_" << e->mangled << "* " << v << " = (struct Farm_" << e->mangled << "*)farm_arena_alloc(sizeof(struct Farm_" << e->mangled << "));\n";
+          out << e->mangled << "__constructor(" << v;
+          for (auto& a : e->args) out << ", " << emit_expr(a);
+          out << ");\n";
           return v;
         }
         std::string ty = c_type(e->type);
@@ -762,40 +522,48 @@ struct Emitter {
           // M2: Default constructor - special handling for math types
           if (sd->name == "Matrix4") {
             // Identity matrix: diagonal = 1, rest = 0
-            out << "  for (int i = 0; i < 16; i++) " << v << ".elements[i] = 0.0;\n";
-            out << "  " << v << ".elements[0] = 1.0;\n";   // [0,0]
-            out << "  " << v << ".elements[5] = 1.0;\n";   // [1,1]
-            out << "  " << v << ".elements[10] = 1.0;\n";  // [2,2]
-            out << "  " << v << ".elements[15] = 1.0;\n";  // [3,3]
+            std::string el = uses_scene ? (v + ".elements") : (v + ".f_elements.data");
+            out << "  for (int i = 0; i < 16; i++) " << el << "[i] = 0.0;\n";
+            out << "  " << el << "[0] = 1.0;\n";   // [0,0]
+            out << "  " << el << "[5] = 1.0;\n";   // [1,1]
+            out << "  " << el << "[10] = 1.0;\n";  // [2,2]
+            out << "  " << el << "[15] = 1.0;\n";  // [3,3]
           } else if (sd->name == "Matrix3") {
             // Identity matrix: diagonal = 1, rest = 0
-            out << "  for (int i = 0; i < 9; i++) " << v << ".elements[i] = 0.0;\n";
-            out << "  " << v << ".elements[0] = 1.0;\n";   // [0,0]
-            out << "  " << v << ".elements[4] = 1.0;\n";   // [1,1]
-            out << "  " << v << ".elements[8] = 1.0;\n";   // [2,2]
+            std::string el = uses_scene ? (v + ".elements") : (v + ".f_elements.data");
+            out << "  for (int i = 0; i < 9; i++) " << el << "[i] = 0.0;\n";
+            out << "  " << el << "[0] = 1.0;\n";   // [0,0]
+            out << "  " << el << "[4] = 1.0;\n";   // [1,1]
+            out << "  " << el << "[8] = 1.0;\n";   // [2,2]
           } else if (sd->name == "Quaternion") {
             // Identity quaternion: (0, 0, 0, 1)
             out << "  " << v << ".f_x = 0.0;\n";
             out << "  " << v << ".f_y = 0.0;\n";
             out << "  " << v << ".f_z = 0.0;\n";
-            out << "  " << v << ".f_w = 1.0;\n";
+            out << "  " << v << (uses_scene ? ".w" : ".f_w") << " = 1.0;\n";
           } else if (sd->name == "Box3") {
             // Empty box: min = +infinity, max = -infinity
-            out << "  " << v << ".f_min.f_x = 1.0/0.0;\n";  // +inf
-            out << "  " << v << ".f_min.f_y = 1.0/0.0;\n";
-            out << "  " << v << ".f_min.f_z = 1.0/0.0;\n";
-            out << "  " << v << ".f_max.f_x = -1.0/0.0;\n"; // -inf
-            out << "  " << v << ".f_max.f_y = -1.0/0.0;\n";
-            out << "  " << v << ".f_max.f_z = -1.0/0.0;\n";
+            std::string mn = uses_scene ? ".min" : ".f_min";
+            std::string mx = uses_scene ? ".max" : ".f_max";
+            out << "  " << v << mn << ".f_x = 1.0/0.0;\n";  // +inf
+            out << "  " << v << mn << ".f_y = 1.0/0.0;\n";
+            out << "  " << v << mn << ".f_z = 1.0/0.0;\n";
+            out << "  " << v << mx << ".f_x = -1.0/0.0;\n"; // -inf
+            out << "  " << v << mx << ".f_y = -1.0/0.0;\n";
+            out << "  " << v << mx << ".f_z = -1.0/0.0;\n";
           } else if (sd->name == "Euler") {
             // Default Euler: (0, 0, 0, "XYZ")
             out << "  " << v << ".f_x = 0.0;\n";
             out << "  " << v << ".f_y = 0.0;\n";
             out << "  " << v << ".f_z = 0.0;\n";
-            out << "  " << v << ".f_order = (FarmString){.ptr=\"XYZ\", .len=3};\n";
+            if (uses_scene)
+              out << "  " << v << ".order[0]='X'; " << v << ".order[1]='Y'; " << v << ".order[2]='Z'; " << v << ".order[3]=0;\n";
+            else
+              out << "  " << v << ".f_order = (FarmString){.ptr=\"XYZ\", .len=3};\n";
           } else {
             // Default: zero all fields
             for (auto& f : sd->fields) {
+              std::string fn = uses_scene ? runtime_field_name(f.name, sd->name) : ("f_" + f.name);
               if (f.type->kind == TypeKind::Struct) {
                 // Nested struct - create default instance
                 std::string nested_ty = c_type(f.type);
@@ -816,42 +584,45 @@ struct Emitter {
                   for (auto& nf : nested_sd->fields) {
                     std::string zero_val = "0";
                     if (nf.type->kind == TypeKind::Float) zero_val = "0.0";
-                    out << nested_v << ".f_" << nf.name << " = " << zero_val << ";\n";
+                    std::string nfn = uses_scene
+                      ? runtime_field_name(nf.name, nested_sd->name)
+                      : ("f_" + nf.name);
+                    out << nested_v << "." << nfn << " = " << zero_val << ";\n";
                   }
                 }
-                out << v << ".f_" << f.name << " = " << nested_v << ";\n";
+                out << v << "." << fn << " = " << nested_v << ";\n";
               } else {
                 std::string zero_val = "0";
                 if (f.type->kind == TypeKind::Float) zero_val = "0.0";
-                out << v << ".f_" << f.name << " = " << zero_val << ";\n";
+                out << v << "." << fn << " = " << zero_val << ";\n";
               }
             }
           }
         } else if (sd->name == "Color" && e->args.size() == 1) {
           // Color(hex: int) constructor
           std::string hex_val = emit_expr(e->args[0]);
-          if (is_math_struct(sd)) {
-            out << v << ".r = ((" << hex_val << " >> 16) & 255) / 255.0;\n";
-            out << v << ".g = ((" << hex_val << " >> 8) & 255) / 255.0;\n";
-            out << v << ".b = (" << hex_val << " & 255) / 255.0;\n";
-          } else {
-            out << v << ".f_r = ((" << hex_val << " >> 16) & 255) / 255.0;\n";
-            out << v << ".f_g = ((" << hex_val << " >> 8) & 255) / 255.0;\n";
-            out << v << ".f_b = (" << hex_val << " & 255) / 255.0;\n";
-          }
+          std::string r = uses_scene ? "r" : "f_r";
+          std::string g = uses_scene ? "g" : "f_g";
+          std::string b = uses_scene ? "b" : "f_b";
+          out << v << "." << r << " = ((" << hex_val << " >> 16) & 255) / 255.0;\n";
+          out << v << "." << g << " = ((" << hex_val << " >> 8) & 255) / 255.0;\n";
+          out << v << "." << b << " = (" << hex_val << " & 255) / 255.0;\n";
         } else if (sd->name == "Euler" && e->args.size() == 3) {
           // Euler(x, y, z) constructor with default order "XYZ"
           for (size_t i=0; i<3; ++i) {
             std::string arg_val = emit_expr(e->args[i]);
             out << v << ".f_" << sd->fields[i].name << " = " << arg_val << ";\n";
           }
-          out << v << ".f_order = (FarmString){.ptr=\"XYZ\", .len=3};\n";
+          if (uses_scene)
+            out << "  " << v << ".order[0]='X'; " << v << ".order[1]='Y'; " << v << ".order[2]='Z'; " << v << ".order[3]=0;\n";
+          else
+            out << v << ".f_order = (FarmString){.ptr=\"XYZ\", .len=3};\n";
         } else {
           // Explicit constructor with all arguments
           for (size_t i=0;i<e->args.size();++i) {
             std::string arg_val = emit_expr(e->args[i]);
-            std::string field_name = is_math_struct(sd) ? runtime_field_name(sd->fields[i].name, sd->name) : ("f_" + sd->fields[i].name);
-            out << v << "." << field_name << " = " << arg_val << ";\n";
+            std::string fn = uses_scene ? runtime_field_name(sd->fields[i].name, sd->name) : ("f_" + sd->fields[i].name);
+            out << v << "." << fn << " = " << arg_val << ";\n";
           }
         }
         return v;
@@ -870,11 +641,14 @@ struct Emitter {
         std::string base = emit_expr(lv->lhs);
         std::string bp = fresh("bp");
         out << c_type(lv->lhs->type) << " " << bp << " = " << base << ";\n";
-        return "&(" + bp + "->f_" + lv->name + ")";
+        std::string fn = (uses_scene && is_scene_class_sym(lv->lhs->type->name))
+          ? scene_class_field(lv->name) : ("f_" + lv->name);
+        return "&(" + bp + "->" + fn + ")";
       }
       /* struct field: address of enclosing struct value, then field */
       std::string sp = emit_lvalue_ptr(lv->lhs);
-      return "&((" + sp + ")->f_" + lv->name + ")";
+      std::string fn = struct_field_access(lv->name, lv->lhs->type);
+      return "&((" + sp + ")->" + fn + ")";
     }
     if (lv->kind == ExprKind::Index) {
       std::string ip = fresh("ix");
@@ -883,6 +657,8 @@ struct Emitter {
       if (lv->lhs->type->kind == TypeKind::FixedArray) {
         std::string ap = emit_lvalue_ptr(lv->lhs);
         out << "farm_bounds_check(" << ip << ", (int64_t)" << lv->lhs->type->fixed_len << ");\n";
+        if (uses_scene && lv->lhs->kind == ExprKind::Field && lv->lhs->name == "elements")
+          return "&((*(" + ap + "))[" + ip + "])";
         return "&((" + ap + ")->data[" + ip + "])";
       }
       if (lv->lhs->kind == ExprKind::Ident) {
@@ -906,32 +682,17 @@ struct Emitter {
   void emit_assign(ExprPtr lv, const std::string& rval) {
     std::string ptr = emit_lvalue_ptr(lv);
     out << "*(" << ptr << ") = " << rval << ";\n";
-    
-    // M3: Track dirty flags for Euler/Quaternion sync on Object3D
-    // When assigning to rotation.x/y/z or quaternion.x/y/z/w on Object3D subclasses,
-    // mark the appropriate dirty flag
-    if (lv->kind == ExprKind::Field && lv->lhs && lv->lhs->kind == ExprKind::Field) {
-      // Check if this is obj.rotation.x or obj.quaternion.x pattern
+    // M3: Object3D.rotation.x/y/z/order and .quaternion.x/y/z/w writes mark dirty flags.
+    if (uses_scene && lv->kind == ExprKind::Field && lv->lhs && lv->lhs->kind == ExprKind::Field &&
+        lv->lhs->lhs && lv->lhs->lhs->type && lv->lhs->lhs->type->kind == TypeKind::Class &&
+        is_object3d_sym(lv->lhs->lhs->type->name)) {
       std::string parent_field = lv->lhs->name;
       std::string child_field = lv->name;
-      
-      // Check if the grandparent is an Object3D subclass
-      if (lv->lhs->lhs && lv->lhs->lhs->type && lv->lhs->lhs->type->kind == TypeKind::Class) {
-        std::string class_name = lv->lhs->lhs->type->name;
-        bool is_object3d = (class_name == "farm_Object3D" || class_name == "farm_Scene" || 
-                           class_name == "farm_PerspectiveCamera" || class_name == "farm_Mesh" ||
-                           class_name == "farm_AmbientLight" || class_name == "farm_DirectionalLight" || 
-                           class_name == "farm_PointLight");
-        
-        if (is_object3d) {
-          std::string obj_expr = emit_expr(lv->lhs->lhs);
-          if (parent_field == "rotation" && (child_field == "x" || child_field == "y" || child_field == "z" || child_field == "order")) {
-            out << "(" << obj_expr << ")->rotation_dirty = 1;\n";
-          } else if (parent_field == "quaternion" && (child_field == "x" || child_field == "y" || child_field == "z" || child_field == "w")) {
-            out << "(" << obj_expr << ")->quaternion_dirty = 1;\n";
-          }
-        }
-      }
+      std::string obj_expr = emit_expr(lv->lhs->lhs);
+      if (parent_field == "rotation" && (child_field == "x" || child_field == "y" || child_field == "z" || child_field == "order"))
+        out << "((farm_Object3D*)(" << obj_expr << "))->rotation_dirty = 1;\n";
+      else if (parent_field == "quaternion" && (child_field == "x" || child_field == "y" || child_field == "z" || child_field == "w"))
+        out << "((farm_Object3D*)(" << obj_expr << "))->quaternion_dirty = 1;\n";
     }
   }
 
@@ -1060,105 +821,61 @@ struct Emitter {
   }
 
   std::string emit_all() {
+    uses_scene = false;
+    for (auto& m : prog.modules) {
+      if (m.path == "farmos:scene") { uses_scene = true; break; }
+      for (auto& imp : m.imports) if (imp.path == "farmos:scene") { uses_scene = true; break; }
+      if (uses_scene) break;
+    }
+
     out << "/* Generated by farmc */\n";
     out << "#include <stdint.h>\n";
     out << "#include <stdio.h>\n";
     out << "#include <math.h>\n";
     out << "#include \"farm_rt.h\"\n";
-    // M2: Check if any math types are used
-    bool uses_math = false;
-    for (auto& m : prog.modules) {
-      if (m.path == "farmos:math") {
-        uses_math = true;
-        break;
-      }
-      for (auto& imp : m.imports) {
-        if (imp.path == "farmos:math") {
-          uses_math = true;
-          break;
-        }
-      }
-      if (uses_math) break;
-    }
-    if (uses_math) {
-      out << "#include \"farm_math.h\"\n";
-    }
-    // M3: Check if any scene classes are used
-    bool uses_scene = false;
-    for (auto& m : prog.modules) {
-      for (auto& imp : m.imports) {
-        if (imp.path == "farmos:scene") {
-          uses_scene = true;
-          break;
-        }
-      }
-      for (auto& c : m.classes) {
-        // Check if this is a scene class by c_sym prefix
-        if (c.c_sym.find("farm_Scene") == 0 ||
-            c.c_sym.find("farm_Object3D") == 0 ||
-            c.c_sym.find("farm_PerspectiveCamera") == 0 ||
-            c.c_sym.find("farm_Mesh") == 0 ||
-            c.c_sym.find("farm_BoxGeometry") == 0 ||
-            c.c_sym.find("farm_SphereGeometry") == 0 ||
-            c.c_sym.find("farm_PlaneGeometry") == 0 ||
-            c.c_sym.find("farm_MeshBasicMaterial") == 0 ||
-            c.c_sym.find("farm_MeshStandardMaterial") == 0 ||
-            c.c_sym.find("farm_AmbientLight") == 0 ||
-            c.c_sym.find("farm_DirectionalLight") == 0 ||
-            c.c_sym.find("farm_PointLight") == 0 ||
-            c.c_sym.find("farm_Renderer") == 0) {
-          uses_scene = true;
-          break;
-        }
-      }
-      if (uses_scene) break;
-    }
     if (uses_scene) {
+      out << "#include \"farm_math.h\"\n";
       out << "#include \"farm_scene.h\"\n";
     }
-    out << "/* farmc build: " << __DATE__ << " " << __TIME__ << " */\n";
     out << "\n";
     // Emit fixed array typedefs first (structs may reference them)
     emit_fixed_typedefs();
     // Emit all structs first (so classes can reference them)
     for (auto& m : prog.modules) {
-      // M2/M3: Skip math module structs - they're typedefs in farm_math.h
-      bool is_math_module = (m.path == "farmos:math");
       for (auto& s : m.structs) {
-        if (is_math_module) continue;
-        
+        if (uses_scene && m.path == "farmos:math") continue;
         out << "struct Farm_" << s.c_sym << " {\n";
         for (auto& f : s.fields) out << "  " << c_type(f.type) << " f_" << f.name << ";\n";
         out << "};\n";
       }
     }
-    // Then emit all classes (skip scene classes - already in farm_scene.h)
+    // Then emit all classes
     for (auto& m : prog.modules) {
       for (auto& c : m.classes) {
-        // M3: Skip scene classes defined in runtime header
-        if (c.c_sym.find("farm_Scene") == 0 || c.c_sym.find("farm_Object3D") == 0 ||
-            c.c_sym.find("farm_PerspectiveCamera") == 0 || c.c_sym.find("farm_Mesh") == 0 ||
-            c.c_sym.find("farm_BoxGeometry") == 0 || c.c_sym.find("farm_SphereGeometry") == 0 ||
-            c.c_sym.find("farm_PlaneGeometry") == 0 || c.c_sym.find("farm_MeshBasicMaterial") == 0 ||
-            c.c_sym.find("farm_MeshStandardMaterial") == 0 || c.c_sym.find("farm_AmbientLight") == 0 ||
-            c.c_sym.find("farm_DirectionalLight") == 0 || c.c_sym.find("farm_PointLight") == 0 ||
-            c.c_sym.find("farm_Renderer") == 0) {
-          continue;
-        }
-        out << "struct " << c.c_sym << " {\n";
+        if (uses_scene && is_scene_class_sym(c.c_sym)) continue;
+        out << "struct Farm_" << c.c_sym << " {\n";
         for (auto& f : c.fields) out << "  " << c_type(f.type) << " f_" << f.name << ";\n";
         out << "};\n";
       }
     }
     
+    auto is_math_decl = [&](const StructDecl& s) {
+      return s.name == "Vector2" || s.name == "Vector3" || s.name == "Vector4" ||
+             s.name == "Matrix3" || s.name == "Matrix4" || s.name == "Quaternion" ||
+             s.name == "Color" || s.name == "Euler" || s.name == "Ray" ||
+             s.name == "Sphere" || s.name == "Box3" || s.name == "RayHit";
+    };
+    auto math_struct_c = [&](const StructDecl& s) -> std::string {
+      if (uses_scene && is_math_decl(s)) return "farm_" + s.name;
+      return "struct Farm_" + s.c_sym;
+    };
+
     // M2: Forward declare struct print helpers  
     out << "/* M2 struct print helpers forward declarations */\n";
     for (auto& m : prog.modules) {
-      bool is_math_module = (m.path == "farmos:math");
       for (auto& s : m.structs) {
-        std::string type_name = is_math_module ? ("farm_" + s.name) : ("struct Farm_" + s.c_sym);
-        out << "void farm_print_" << sanitize(s.name) << "(" << type_name << " v);\n";
-        out << "void farm_print_" << sanitize(s.name) << "_ln(" << type_name << " v);\n";
+        out << "void farm_print_" << sanitize(s.name) << "(" << math_struct_c(s) << " v);\n";
+        out << "void farm_print_" << sanitize(s.name) << "_ln(" << math_struct_c(s) << " v);\n";
       }
     }
     out << "/* End M2 forward declarations */\n";
@@ -1183,30 +900,15 @@ struct Emitter {
         out << ");\n";
       }
       for (auto& c : m.classes) {
-        // M3: Skip forward declarations for scene classes - they're in farm_scene.h
-        bool is_scene_class = (c.c_sym == "farm_Scene" || c.c_sym == "farm_Object3D" ||
-                               c.c_sym == "farm_PerspectiveCamera" || c.c_sym == "farm_Mesh" ||
-                               c.c_sym == "farm_BoxGeometry" || c.c_sym == "farm_SphereGeometry" ||
-                               c.c_sym == "farm_PlaneGeometry" || c.c_sym == "farm_MeshBasicMaterial" ||
-                               c.c_sym == "farm_MeshStandardMaterial" || c.c_sym == "farm_AmbientLight" ||
-                               c.c_sym == "farm_DirectionalLight" || c.c_sym == "farm_PointLight" ||
-                               c.c_sym == "farm_Renderer");
-        if (is_scene_class) continue;
-        
+        if (uses_scene && is_scene_class_sym(c.c_sym)) continue;
         for (auto& md : c.methods) {
           std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
-          out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct " << c.c_sym << "* this";
+          out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.c_sym << "* this";
           for (auto& p : md.params) out << ", " << c_type(p.type) << " v_" << p.name;
           out << ");\n";
         }
       }
       // M2: Forward declare struct methods
-      bool is_math_module = (m.path == "farmos:math");
-      if (is_math_module) {
-        // Skip math module - methods are declared in farm_math.h
-        continue;
-      }
-      
       for (auto& s : m.structs) {
         for (auto& md : s.methods) {
           // If method is mutating (returns this), return pointer for chaining
@@ -1219,9 +921,9 @@ struct Emitter {
           if (md.ret->kind == TypeKind::Struct && 
               md.ret->name == s.c_sym && 
               mutating_methods.count(md.name) > 0) {
-            ret_type = "struct Farm_" + s.c_sym + "*";
+            ret_type = math_struct_c(s) + "*";
           }
-          out << ret_type << " " << s.c_sym << "__" << md.name << "(struct Farm_" << s.c_sym << "* this";
+          out << ret_type << " " << s.c_sym << "__" << md.name << "(" << math_struct_c(s) << "* this";
           for (auto& p : md.params) out << ", " << c_type(p.type) << " v_" << p.name;
           out << ");\n";
         }
@@ -1264,19 +966,10 @@ struct Emitter {
         out << "\n";
       }
       for (auto& c : m.classes) {
-        // M3: Skip implementations for scene classes - they're in farm_scene.c
-        bool is_scene_class = (c.c_sym == "farm_Scene" || c.c_sym == "farm_Object3D" ||
-                               c.c_sym == "farm_PerspectiveCamera" || c.c_sym == "farm_Mesh" ||
-                               c.c_sym == "farm_BoxGeometry" || c.c_sym == "farm_SphereGeometry" ||
-                               c.c_sym == "farm_PlaneGeometry" || c.c_sym == "farm_MeshBasicMaterial" ||
-                               c.c_sym == "farm_MeshStandardMaterial" || c.c_sym == "farm_AmbientLight" ||
-                               c.c_sym == "farm_DirectionalLight" || c.c_sym == "farm_PointLight" ||
-                               c.c_sym == "farm_Renderer");
-        if (is_scene_class) continue;
-        
+        if (uses_scene && is_scene_class_sym(c.c_sym)) continue;
         for (auto& md : c.methods) {
           std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
-          out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct " << c.c_sym << "* this";
+          out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.c_sym << "* this";
           for (auto& p : md.params) out << ", " << c_type(p.type) << " v_" << p.name;
           out << ") ";
           emit_stmt(md.body);
@@ -1285,84 +978,6 @@ struct Emitter {
       }
       
       // M2: Implement struct methods
-      bool is_math_module = (m.path == "farmos:math");
-      // M2: Implement struct print helpers (must be before continue for math modules)
-      for (auto& s : m.structs) {
-        // Determine if this is a math module struct
-        std::string type_name = is_math_module ? ("farm_" + s.name) : ("struct Farm_" + s.c_sym);
-        
-        // print version (no newline)
-        out << "void farm_print_" << sanitize(s.name) << "(" << type_name << " v) {\n";
-        // Check for types with array fields
-        if (s.name == "Matrix4" || s.name == "Matrix3") {
-          out << "  printf(\"" << s.name << "{...}\");\n";
-        } else {
-          // M2: RayHit prints with field names
-          bool with_field_names = (s.name == "RayHit");
-          out << "  printf(\"" << s.name << "(\");\n";
-          out << "  fflush(stdout);\n"; // Flush before unbuffered writes
-          for (size_t i = 0; i < s.fields.size(); ++i) {
-            if (i > 0) {
-              out << "  printf(\", \");\n";
-              out << "  fflush(stdout);\n";
-            }
-            auto& field = s.fields[i];
-            if (with_field_names) {
-              out << "  printf(\"" << field.name << ": \");\n";
-              out << "  fflush(stdout);\n";
-            }
-            
-            // Determine field name with proper prefix
-            std::string field_access = is_math_module ? ("v." + runtime_field_name(field.name, s.name)) : ("v.f_" + field.name);
-            
-            // Special case for Euler.order (char[4])
-            if (s.name == "Euler" && field.name == "order") {
-              out << "  printf(\"\\\"%s\\\"\", " << field_access << ");\n";
-              out << "  fflush(stdout);\n";
-            } else if (field.type->kind == TypeKind::FixedArray) {
-              // Fixed char array - print as C string
-              out << "  printf(\"\\\"%s\\\"\", " << field_access << ");\n";
-              out << "  fflush(stdout);\n";
-            } else if (field.type->kind == TypeKind::Float) {
-              out << "  farm_print_float(" << field_access << ");\n";
-            } else if (field.type->kind == TypeKind::String) {
-              out << "  printf(\"\\\"\");\n";  // Opening quote
-              out << "  fflush(stdout);\n";
-              out << "  farm_print_string(" << field_access << ");\n";
-              out << "  printf(\"\\\"\");\n";  // Closing quote
-              out << "  fflush(stdout);\n";
-            } else if (field.type->kind == TypeKind::Bool) {
-              out << "  farm_print_bool(" << field_access << ");\n";
-            } else if (field.type->kind == TypeKind::Struct) {
-              // For struct fields, find the base type name without module prefix
-              std::string field_type_name = field.type->name;
-              size_t pos = field_type_name.find_last_of('_');
-              if (pos != std::string::npos && field_type_name.substr(0, pos).find("m") == 0) {
-                field_type_name = field_type_name.substr(pos + 1);
-              }
-              out << "  farm_print_" << field_type_name << "(" << field_access << ");\n";
-            } else {
-              out << "  farm_print_float(" << field_access << ");\n"; // Default
-            }
-          }
-          out << "  printf(\")\");\n";
-          out << "  fflush(stdout);\n"; // Flush closing paren before function returns
-        }
-        out << "}\n";
-        
-        // println version (with newline)
-        out << "void farm_print_" << sanitize(s.name) << "_ln(" << type_name << " v) {\n";
-        out << "  farm_print_" << sanitize(s.name) << "(v);\n";
-        out << "  putchar('\\n');\n";
-        out << "  fflush(stdout);\n"; // Flush newline before returning
-        out << "}\n";
-      }
-      
-      if (is_math_module) {
-        // Skip math module struct methods - they're implemented in farm_math.c
-        continue;
-      }
-      
       for (auto& s : m.structs) {
         for (auto& md : s.methods) {
           // If method is mutating (returns this), return pointer for chaining
@@ -1375,10 +990,10 @@ struct Emitter {
           if (md.ret->kind == TypeKind::Struct && 
               md.ret->name == s.c_sym && 
               mutating_methods.count(md.name) > 0) {
-            ret_type = "struct Farm_" + s.c_sym + "*";
+            ret_type = math_struct_c(s) + "*";
             returns_this_ptr = true;
           }
-          out << ret_type << " " << s.c_sym << "__" << md.name << "(struct Farm_" + s.c_sym << "* this";
+          out << ret_type << " " << s.c_sym << "__" << md.name << "(" << math_struct_c(s) << "* this";
           for (auto& p : md.params) out << ", " << c_type(p.type) << " v_" << p.name;
           out << ") ";
           
@@ -1392,6 +1007,22 @@ struct Emitter {
           if (is_builtin) {
             // Generate built-in implementation
             out << "{\n";
+            std::string el = uses_scene ? "elements" : "f_elements.data";
+            std::string qw = uses_scene ? "w" : "f_w";
+            std::string v2x = uses_scene ? "x" : "f_x";
+            std::string v2y = uses_scene ? "y" : "f_y";
+            std::string orig = uses_scene ? "origin" : "f_origin";
+            std::string dirn = uses_scene ? "direction" : "f_direction";
+            std::string ctr = uses_scene ? "center" : "f_center";
+            std::string rad = uses_scene ? "radius" : "f_radius";
+            std::string bmin = uses_scene ? "min" : "f_min";
+            std::string bmax = uses_scene ? "max" : "f_max";
+            std::string hitf = uses_scene ? "hit" : "f_hit";
+            std::string ptf = uses_scene ? "point" : "f_point";
+            std::string distf = uses_scene ? "distance" : "f_distance";
+            auto sty = [&](const std::string& n) {
+              return uses_scene ? ("farm_" + n) : ("struct Farm_m1_" + n);
+            };
             if (s.name == "Vector3" && md.name == "add") {
               out << "  this->f_x += v_v.f_x;\n";
               out << "  this->f_y += v_v.f_y;\n";
@@ -1424,7 +1055,7 @@ struct Emitter {
               out << "  }\n";
               out << "  return this;\n";
             } else if (s.name == "Vector3" && md.name == "clone") {
-              out << "  struct Farm_" << s.c_sym << " result;\n";
+              out << "  " << sty("Vector3") << " result;\n";
               out << "  result.f_x = this->f_x;\n";
               out << "  result.f_y = this->f_y;\n";
               out << "  result.f_z = this->f_z;\n";
@@ -1452,43 +1083,43 @@ struct Emitter {
               out << "  double dz = this->f_z - v_v.f_z;\n";
               out << "  return dx*dx + dy*dy + dz*dz;\n";
             } else if (s.name == "Vector2" && md.name == "length") {
-              out << "  return sqrt(this->f_x * this->f_x + this->f_y * this->f_y);\n";
+              out << "  return sqrt(this->" << v2x << " * this->" << v2x << " + this->" << v2y << " * this->" << v2y << ");\n";
             } else if (s.name == "Vector2" && md.name == "normalize") {
-              out << "  double len = sqrt(this->f_x * this->f_x + this->f_y * this->f_y);\n";
-              out << "  if (len > 0.0) { this->f_x /= len; this->f_y /= len; }\n";
+              out << "  double len = sqrt(this->" << v2x << " * this->" << v2x << " + this->" << v2y << " * this->" << v2y << ");\n";
+              out << "  if (len > 0.0) { this->" << v2x << " /= len; this->" << v2y << " /= len; }\n";
               out << "  return this;\n";
             } else if (s.name == "Vector2" && md.name == "add") {
-              out << "  this->f_x += v_v.f_x;\n";
-              out << "  this->f_y += v_v.f_y;\n";
+              out << "  this->" << v2x << " += v_v." << v2x << ";\n";
+              out << "  this->" << v2y << " += v_v." << v2y << ";\n";
               out << "  return this;\n";
             } else if (s.name == "Vector2" && md.name == "multiplyScalar") {
-              out << "  this->f_x *= v_s;\n";
-              out << "  this->f_y *= v_s;\n";
+              out << "  this->" << v2x << " *= v_s;\n";
+              out << "  this->" << v2y << " *= v_s;\n";
               out << "  return this;\n";
             } else if (s.name == "Vector2" && md.name == "applyMatrix3") {
               // Apply 3x3 matrix to (x, y, 1) homogeneous coordinate
-              out << "  double* e = v_m.f_elements.data;\n";
-              out << "  double x = e[0] * this->f_x + e[3] * this->f_y + e[6];\n";
-              out << "  double y = e[1] * this->f_x + e[4] * this->f_y + e[7];\n";
-              out << "  this->f_x = x;\n";
-              out << "  this->f_y = y;\n";
+              out << "  double* e = v_m." << el << ";\n";
+              out << "  double x = e[0] * this->" << v2x << " + e[3] * this->" << v2y << " + e[6];\n";
+              out << "  double y = e[1] * this->" << v2x << " + e[4] * this->" << v2y << " + e[7];\n";
+              out << "  this->" << v2x << " = x;\n";
+              out << "  this->" << v2y << " = y;\n";
               out << "  return this;\n";
             } else if (s.name == "Vector2" && md.name == "__farm_op_add") {
-              out << "  struct Farm_m1_Vector2 result;\n";
-              out << "  result.f_x = this->f_x + v_other.f_x;\n";
-              out << "  result.f_y = this->f_y + v_other.f_y;\n";
+              out << "  " << sty("Vector2") << " result;\n";
+              out << "  result." << v2x << " = this->" << v2x << " + v_other." << v2x << ";\n";
+              out << "  result." << v2y << " = this->" << v2y << " + v_other." << v2y << ";\n";
               out << "  return result;\n";
             } else if (s.name == "Vector4" && md.name == "dot") {
-              out << "  return this->f_x * v_v.f_x + this->f_y * v_v.f_y + this->f_z * v_v.f_z + this->f_w * v_v.f_w;\n";
+              out << "  return this->f_x * v_v.f_x + this->f_y * v_v.f_y + this->f_z * v_v.f_z + this->" << qw << " * v_v." << qw << ";\n";
             } else if (s.name == "Vector4" && md.name == "multiplyScalar") {
               out << "  this->f_x *= v_s;\n";
               out << "  this->f_y *= v_s;\n";
               out << "  this->f_z *= v_s;\n";
-              out << "  this->f_w *= v_s;\n";
+              out << "  this->" << qw << " *= v_s;\n";
               out << "  return this;\n";
             } else if (s.name == "Matrix4" && md.name == "determinant") {
               // 4x4 matrix determinant (column-major order)
-              out << "  double* m = this->f_elements.data;\n";
+              out << "  double* m = this->" << el << ";\n";
               out << "  double n11=m[0], n12=m[4], n13=m[8],  n14=m[12];\n";
               out << "  double n21=m[1], n22=m[5], n23=m[9],  n24=m[13];\n";
               out << "  double n31=m[2], n32=m[6], n33=m[10], n34=m[14];\n";
@@ -1499,7 +1130,7 @@ struct Emitter {
               out << "         n44*(n12*n23*n31 - n13*n22*n31 + n13*n21*n32 - n11*n23*n32 - n12*n21*n33 + n11*n22*n33);\n";
             } else if (s.name == "Matrix4" && md.name == "makeTranslation") {
               // Set to translation matrix (column-major)
-              out << "  double* m = this->f_elements.data;\n";
+              out << "  double* m = this->" << el << ";\n";
               out << "  m[0] = 1.0; m[4] = 0.0; m[8]  = 0.0; m[12] = v_x;\n";
               out << "  m[1] = 0.0; m[5] = 1.0; m[9]  = 0.0; m[13] = v_y;\n";
               out << "  m[2] = 0.0; m[6] = 0.0; m[10] = 1.0; m[14] = v_z;\n";
@@ -1507,7 +1138,7 @@ struct Emitter {
               out << "  return this;\n";
             } else if (s.name == "Matrix4" && md.name == "makeScale") {
               // Set to scale matrix (column-major)
-              out << "  double* m = this->f_elements.data;\n";
+              out << "  double* m = this->" << el << ";\n";
               out << "  m[0] = v_x; m[4] = 0.0;  m[8]  = 0.0;  m[12] = 0.0;\n";
               out << "  m[1] = 0.0; m[5] = v_y;  m[9]  = 0.0;  m[13] = 0.0;\n";
               out << "  m[2] = 0.0; m[6] = 0.0;  m[10] = v_z;  m[14] = 0.0;\n";
@@ -1515,8 +1146,8 @@ struct Emitter {
               out << "  return this;\n";
             } else if (s.name == "Matrix4" && md.name == "multiply") {
               // this = this * m (column-major)
-              out << "  double* a = this->f_elements.data;\n";
-              out << "  double* b = v_m.f_elements.data;\n";
+              out << "  double* a = this->" << el << ";\n";
+              out << "  double* b = v_m." << el << ";\n";
               out << "  double a11=a[0], a12=a[4], a13=a[8],  a14=a[12];\n";
               out << "  double a21=a[1], a22=a[5], a23=a[9],  a24=a[13];\n";
               out << "  double a31=a[2], a32=a[6], a33=a[10], a34=a[14];\n";
@@ -1544,7 +1175,7 @@ struct Emitter {
               out << "  return this;\n";
             } else if (s.name == "Matrix4" && md.name == "transpose") {
               // Transpose in place
-              out << "  double* m = this->f_elements.data;\n";
+              out << "  double* m = this->" << el << ";\n";
               out << "  double tmp;\n";
               out << "  tmp = m[1]; m[1] = m[4]; m[4] = tmp;\n";
               out << "  tmp = m[2]; m[2] = m[8]; m[8] = tmp;\n";
@@ -1555,7 +1186,7 @@ struct Emitter {
               out << "  return this;\n";
             } else if (s.name == "Matrix4" && md.name == "invert") {
               // Invert 4x4 matrix (Gauss-Jordan elimination, simplified)
-              out << "  double* m = this->f_elements.data;\n";
+              out << "  double* m = this->" << el << ";\n";
               out << "  double n11=m[0], n12=m[4], n13=m[8],  n14=m[12];\n";
               out << "  double n21=m[1], n22=m[5], n23=m[9],  n24=m[13];\n";
               out << "  double n31=m[2], n32=m[6], n33=m[10], n34=m[14];\n";
@@ -1586,7 +1217,7 @@ struct Emitter {
               out << "  return this;\n";
             } else if (s.name == "Matrix4" && md.name == "set") {
               // Set all 16 elements
-              out << "  double* m = this->f_elements.data;\n";
+              out << "  double* m = this->" << el << ";\n";
               for (int i = 0; i < 16; i++) {
                 out << "  m[" << i << "] = v_n" << i << ";\n";
               }
@@ -1594,7 +1225,7 @@ struct Emitter {
             } else if (s.name == "Matrix4" && md.name == "makeRotationY") {
               out << "  double c = cos(v_theta);\n";
               out << "  double s = sin(v_theta);\n";
-              out << "  double* e = this->f_elements.data;\n";
+              out << "  double* e = this->" << el << ";\n";
               out << "  e[0] = c;  e[4] = 0; e[8] = s;  e[12] = 0;\n";
               out << "  e[1] = 0;  e[5] = 1; e[9] = 0;  e[13] = 0;\n";
               out << "  e[2] = -s; e[6] = 0; e[10] = c; e[14] = 0;\n";
@@ -1603,7 +1234,7 @@ struct Emitter {
             } else if (s.name == "Matrix4" && md.name == "makeRotationX") {
               out << "  double c = cos(v_theta);\n";
               out << "  double s = sin(v_theta);\n";
-              out << "  double* e = this->f_elements.data;\n";
+              out << "  double* e = this->" << el << ";\n";
               out << "  e[0] = 1; e[4] = 0;  e[8] = 0;  e[12] = 0;\n";
               out << "  e[1] = 0; e[5] = c;  e[9] = -s; e[13] = 0;\n";
               out << "  e[2] = 0; e[6] = s;  e[10] = c; e[14] = 0;\n";
@@ -1611,7 +1242,7 @@ struct Emitter {
               out << "  return this;\n";
             } else if (s.name == "Vector3" && md.name == "applyMatrix4") {
               // Apply 4x4 matrix to (x, y, z, 1) homogeneous coordinate
-              out << "  double* e = v_m.f_elements.data;\n";
+              out << "  double* e = v_m." << el << ";\n";
               out << "  double x = this->f_x, y = this->f_y, z = this->f_z;\n";
               out << "  double w = e[3]*x + e[7]*y + e[11]*z + e[15];\n";
               out << "  w = (w != 0.0) ? 1.0 / w : 1.0;\n";
@@ -1621,7 +1252,7 @@ struct Emitter {
               out << "  return this;\n";
             } else if (s.name == "Vector3" && md.name == "applyQuaternion") {
               // Rotate vector by quaternion
-              out << "  double qx = v_q.f_x, qy = v_q.f_y, qz = v_q.f_z, qw = v_q.f_w;\n";
+              out << "  double qx = v_q.f_x, qy = v_q.f_y, qz = v_q.f_z, qw = v_q." << qw << ";\n";
               out << "  double x = this->f_x, y = this->f_y, z = this->f_z;\n";
               out << "  double ix =  qw*x + qy*z - qz*y;\n";
               out << "  double iy =  qw*y + qz*x - qx*z;\n";
@@ -1640,25 +1271,25 @@ struct Emitter {
               out << "  this->f_z = ax*by - ay*bx;\n";
               out << "  return this;\n";
             } else if (s.name == "Vector3" && md.name == "__farm_op_add") {
-              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  " << sty("Vector3") << " result;\n";
               out << "  result.f_x = this->f_x + v_other.f_x;\n";
               out << "  result.f_y = this->f_y + v_other.f_y;\n";
               out << "  result.f_z = this->f_z + v_other.f_z;\n";
               out << "  return result;\n";
             } else if (s.name == "Vector3" && md.name == "__farm_op_sub") {
-              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  " << sty("Vector3") << " result;\n";
               out << "  result.f_x = this->f_x - v_other.f_x;\n";
               out << "  result.f_y = this->f_y - v_other.f_y;\n";
               out << "  result.f_z = this->f_z - v_other.f_z;\n";
               out << "  return result;\n";
             } else if (s.name == "Vector3" && md.name == "__farm_op_mul") {
-              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  " << sty("Vector3") << " result;\n";
               out << "  result.f_x = this->f_x * v_scalar;\n";
               out << "  result.f_y = this->f_y * v_scalar;\n";
               out << "  result.f_z = this->f_z * v_scalar;\n";
               out << "  return result;\n";
             } else if (s.name == "Vector3" && md.name == "__farm_op_div") {
-              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  " << sty("Vector3") << " result;\n";
               out << "  result.f_x = this->f_x / v_scalar;\n";
               out << "  result.f_y = this->f_y / v_scalar;\n";
               out << "  result.f_z = this->f_z / v_scalar;\n";
@@ -1668,127 +1299,142 @@ struct Emitter {
             } else if (s.name == "Vector3" && md.name == "__farm_op_neq") {
               out << "  return (this->f_x != v_other.f_x || this->f_y != v_other.f_y || this->f_z != v_other.f_z) ? 1 : 0;\n";
             } else if (s.name == "Vector3" && md.name == "__farm_op_neg") {
-              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  " << sty("Vector3") << " result;\n";
               out << "  result.f_x = -this->f_x;\n";
               out << "  result.f_y = -this->f_y;\n";
               out << "  result.f_z = -this->f_z;\n";
               out << "  return result;\n";
             } else if (s.name == "Vector3" && md.name == "__farm_op_rmul") {
               // scalar * vector (reverse multiply)
-              out << "  struct Farm_m1_Vector3 result;\n";
+              out << "  " << sty("Vector3") << " result;\n";
               out << "  result.f_x = v_scalar * this->f_x;\n";
               out << "  result.f_y = v_scalar * this->f_y;\n";
               out << "  result.f_z = v_scalar * this->f_z;\n";
               out << "  return result;\n";
             } else if (s.name == "Quaternion" && md.name == "multiply") {
               // this = this * q
-              out << "  double qax = this->f_x, qay = this->f_y, qaz = this->f_z, qaw = this->f_w;\n";
-              out << "  double qbx = v_q.f_x, qby = v_q.f_y, qbz = v_q.f_z, qbw = v_q.f_w;\n";
+              out << "  double qax = this->f_x, qay = this->f_y, qaz = this->f_z, qaw = this->" << qw << ";\n";
+              out << "  double qbx = v_q.f_x, qby = v_q.f_y, qbz = v_q.f_z, qbw = v_q." << qw << ";\n";
               out << "  this->f_x = qax*qbw + qaw*qbx + qay*qbz - qaz*qby;\n";
               out << "  this->f_y = qay*qbw + qaw*qby + qaz*qbx - qax*qbz;\n";
               out << "  this->f_z = qaz*qbw + qaw*qbz + qax*qby - qay*qbx;\n";
-              out << "  this->f_w = qaw*qbw - qax*qbx - qay*qby - qaz*qbz;\n";
+              out << "  this->" << qw << " = qaw*qbw - qax*qbx - qay*qby - qaz*qbz;\n";
               out << "  return this;\n";
             } else if (s.name == "Quaternion" && md.name == "equals") {
-              out << "  return (this->f_x == v_q.f_x && this->f_y == v_q.f_y && this->f_z == v_q.f_z && this->f_w == v_q.f_w) ? 1 : 0;\n";
+              out << "  return (this->f_x == v_q.f_x && this->f_y == v_q.f_y && this->f_z == v_q.f_z && this->" << qw << " == v_q." << qw << ") ? 1 : 0;\n";
+            } else if (uses_scene && s.name == "Quaternion" && md.name == "set") {
+              out << "  this->f_x = v_x;\n";
+              out << "  this->f_y = v_y;\n";
+              out << "  this->f_z = v_z;\n";
+              out << "  this->" << qw << " = v_w;\n";
+              out << "  return this;\n";
             } else if (s.name == "Quaternion" && md.name == "setFromAxisAngle") {
               out << "  double half = v_angle * 0.5;\n";
               out << "  double s = sin(half);\n";
               out << "  this->f_x = v_axis.f_x * s;\n";
               out << "  this->f_y = v_axis.f_y * s;\n";
               out << "  this->f_z = v_axis.f_z * s;\n";
-              out << "  this->f_w = cos(half);\n";
+              out << "  this->" << qw << " = cos(half);\n";
               out << "  return this;\n";
             } else if (s.name == "Color" && md.name == "setHex") {
-              out << "  this->f_r = ((v_hex >> 16) & 255) / 255.0;\n";
-              out << "  this->f_g = ((v_hex >> 8) & 255) / 255.0;\n";
-              out << "  this->f_b = (v_hex & 255) / 255.0;\n";
+              std::string cr = uses_scene ? "r" : "f_r";
+              std::string cg = uses_scene ? "g" : "f_g";
+              std::string cb = uses_scene ? "b" : "f_b";
+              out << "  this->" << cr << " = ((v_hex >> 16) & 255) / 255.0;\n";
+              out << "  this->" << cg << " = ((v_hex >> 8) & 255) / 255.0;\n";
+              out << "  this->" << cb << " = (v_hex & 255) / 255.0;\n";
               out << "  return this;\n";
             } else if (s.name == "Color" && md.name == "multiplyScalar") {
-              out << "  this->f_r *= v_s;\n";
-              out << "  this->f_g *= v_s;\n";
-              out << "  this->f_b *= v_s;\n";
+              std::string cr = uses_scene ? "r" : "f_r";
+              std::string cg = uses_scene ? "g" : "f_g";
+              std::string cb = uses_scene ? "b" : "f_b";
+              out << "  this->" << cr << " *= v_s;\n";
+              out << "  this->" << cg << " *= v_s;\n";
+              out << "  this->" << cb << " *= v_s;\n";
               out << "  return this;\n";
             } else if (s.name == "Color" && md.name == "getHex") {
-              out << "  int r = (int)(this->f_r * 255.0);\n";
-              out << "  int g = (int)(this->f_g * 255.0);\n";
-              out << "  int b = (int)(this->f_b * 255.0);\n";
+              std::string cr = uses_scene ? "r" : "f_r";
+              std::string cg = uses_scene ? "g" : "f_g";
+              std::string cb = uses_scene ? "b" : "f_b";
+              out << "  int r = (int)(this->" << cr << " * 255.0);\n";
+              out << "  int g = (int)(this->" << cg << " * 255.0);\n";
+              out << "  int b = (int)(this->" << cb << " * 255.0);\n";
               out << "  return (r << 16) | (g << 8) | b;\n";
             } else if (s.name == "Ray" && md.name == "at") {
-              out << "  struct Farm_m1_Vector3 result;\n";
-              out << "  result.f_x = this->f_origin.f_x + this->f_direction.f_x * v_t;\n";
-              out << "  result.f_y = this->f_origin.f_y + this->f_direction.f_y * v_t;\n";
-              out << "  result.f_z = this->f_origin.f_z + this->f_direction.f_z * v_t;\n";
+              out << "  " << sty("Vector3") << " result;\n";
+              out << "  result.f_x = this->" << orig << ".f_x + this->" << dirn << ".f_x * v_t;\n";
+              out << "  result.f_y = this->" << orig << ".f_y + this->" << dirn << ".f_y * v_t;\n";
+              out << "  result.f_z = this->" << orig << ".f_z + this->" << dirn << ".f_z * v_t;\n";
               out << "  return result;\n";
             } else if (s.name == "Ray" && md.name == "intersectSphere") {
-              out << "  struct Farm_m1_RayHit result;\n";
-              out << "  double dx = this->f_origin.f_x - v_s.f_center.f_x;\n";
-              out << "  double dy = this->f_origin.f_y - v_s.f_center.f_y;\n";
-              out << "  double dz = this->f_origin.f_z - v_s.f_center.f_z;\n";
-              out << "  double a = this->f_direction.f_x*this->f_direction.f_x + this->f_direction.f_y*this->f_direction.f_y + this->f_direction.f_z*this->f_direction.f_z;\n";
-              out << "  double b = 2.0 * (dx*this->f_direction.f_x + dy*this->f_direction.f_y + dz*this->f_direction.f_z);\n";
-              out << "  double c = dx*dx + dy*dy + dz*dz - v_s.f_radius*v_s.f_radius;\n";
+              out << "  " << sty("RayHit") << " result;\n";
+              out << "  double dx = this->" << orig << ".f_x - v_s." << ctr << ".f_x;\n";
+              out << "  double dy = this->" << orig << ".f_y - v_s." << ctr << ".f_y;\n";
+              out << "  double dz = this->" << orig << ".f_z - v_s." << ctr << ".f_z;\n";
+              out << "  double a = this->" << dirn << ".f_x*this->" << dirn << ".f_x + this->" << dirn << ".f_y*this->" << dirn << ".f_y + this->" << dirn << ".f_z*this->" << dirn << ".f_z;\n";
+              out << "  double b = 2.0 * (dx*this->" << dirn << ".f_x + dy*this->" << dirn << ".f_y + dz*this->" << dirn << ".f_z);\n";
+              out << "  double c = dx*dx + dy*dy + dz*dz - v_s." << rad << "*v_s." << rad << ";\n";
               out << "  double disc = b*b - 4.0*a*c;\n";
-              out << "  if (disc < 0.0) { result.f_hit = 0; result.f_point.f_x = result.f_point.f_y = result.f_point.f_z = 0.0; result.f_distance = 0.0; return result; }\n";
+              out << "  if (disc < 0.0) { result." << hitf << " = 0; result." << ptf << ".f_x = result." << ptf << ".f_y = result." << ptf << ".f_z = 0.0; result." << distf << " = 0.0; return result; }\n";
               out << "  double t = (-b - sqrt(disc)) / (2.0*a);\n";
-              out << "  if (t < 0.0) { result.f_hit = 0; result.f_point.f_x = result.f_point.f_y = result.f_point.f_z = 0.0; result.f_distance = 0.0; return result; }\n";
-              out << "  result.f_hit = 1;\n";
-              out << "  result.f_point.f_x = this->f_origin.f_x + this->f_direction.f_x * t;\n";
-              out << "  result.f_point.f_y = this->f_origin.f_y + this->f_direction.f_y * t;\n";
-              out << "  result.f_point.f_z = this->f_origin.f_z + this->f_direction.f_z * t;\n";
-              out << "  result.f_distance = t;\n";
+              out << "  if (t < 0.0) { result." << hitf << " = 0; result." << ptf << ".f_x = result." << ptf << ".f_y = result." << ptf << ".f_z = 0.0; result." << distf << " = 0.0; return result; }\n";
+              out << "  result." << hitf << " = 1;\n";
+              out << "  result." << ptf << ".f_x = this->" << orig << ".f_x + this->" << dirn << ".f_x * t;\n";
+              out << "  result." << ptf << ".f_y = this->" << orig << ".f_y + this->" << dirn << ".f_y * t;\n";
+              out << "  result." << ptf << ".f_z = this->" << orig << ".f_z + this->" << dirn << ".f_z * t;\n";
+              out << "  result." << distf << " = t;\n";
               out << "  return result;\n";
             } else if (s.name == "Sphere" && md.name == "containsPoint") {
-              out << "  double dx = v_p.f_x - this->f_center.f_x;\n";
-              out << "  double dy = v_p.f_y - this->f_center.f_y;\n";
-              out << "  double dz = v_p.f_z - this->f_center.f_z;\n";
-              out << "  return (dx*dx + dy*dy + dz*dz <= this->f_radius*this->f_radius) ? 1 : 0;\n";
+              out << "  double dx = v_p.f_x - this->" << ctr << ".f_x;\n";
+              out << "  double dy = v_p.f_y - this->" << ctr << ".f_y;\n";
+              out << "  double dz = v_p.f_z - this->" << ctr << ".f_z;\n";
+              out << "  return (dx*dx + dy*dy + dz*dz <= this->" << rad << "*this->" << rad << ") ? 1 : 0;\n";
             } else if (s.name == "Sphere" && md.name == "intersectsSphere") {
-              out << "  double dx = this->f_center.f_x - v_s.f_center.f_x;\n";
-              out << "  double dy = this->f_center.f_y - v_s.f_center.f_y;\n";
-              out << "  double dz = this->f_center.f_z - v_s.f_center.f_z;\n";
+              out << "  double dx = this->" << ctr << ".f_x - v_s." << ctr << ".f_x;\n";
+              out << "  double dy = this->" << ctr << ".f_y - v_s." << ctr << ".f_y;\n";
+              out << "  double dz = this->" << ctr << ".f_z - v_s." << ctr << ".f_z;\n";
               out << "  double dist = sqrt(dx*dx + dy*dy + dz*dz);\n";
-              out << "  return (dist <= (this->f_radius + v_s.f_radius)) ? 1 : 0;\n";
+              out << "  return (dist <= (this->" << rad << " + v_s." << rad << ")) ? 1 : 0;\n";
             } else if (s.name == "Box3" && md.name == "isEmpty") {
-              out << "  return (this->f_max.f_x < this->f_min.f_x || this->f_max.f_y < this->f_min.f_y || this->f_max.f_z < this->f_min.f_z) ? 1 : 0;\n";
+              out << "  return (this->" << bmax << ".f_x < this->" << bmin << ".f_x || this->" << bmax << ".f_y < this->" << bmin << ".f_y || this->" << bmax << ".f_z < this->" << bmin << ".f_z) ? 1 : 0;\n";
             } else if (s.name == "Box3" && md.name == "expandByPoint") {
-              out << "  if (v_p.f_x < this->f_min.f_x) this->f_min.f_x = v_p.f_x;\n";
-              out << "  if (v_p.f_y < this->f_min.f_y) this->f_min.f_y = v_p.f_y;\n";
-              out << "  if (v_p.f_z < this->f_min.f_z) this->f_min.f_z = v_p.f_z;\n";
-              out << "  if (v_p.f_x > this->f_max.f_x) this->f_max.f_x = v_p.f_x;\n";
-              out << "  if (v_p.f_y > this->f_max.f_y) this->f_max.f_y = v_p.f_y;\n";
-              out << "  if (v_p.f_z > this->f_max.f_z) this->f_max.f_z = v_p.f_z;\n";
+              out << "  if (v_p.f_x < this->" << bmin << ".f_x) this->" << bmin << ".f_x = v_p.f_x;\n";
+              out << "  if (v_p.f_y < this->" << bmin << ".f_y) this->" << bmin << ".f_y = v_p.f_y;\n";
+              out << "  if (v_p.f_z < this->" << bmin << ".f_z) this->" << bmin << ".f_z = v_p.f_z;\n";
+              out << "  if (v_p.f_x > this->" << bmax << ".f_x) this->" << bmax << ".f_x = v_p.f_x;\n";
+              out << "  if (v_p.f_y > this->" << bmax << ".f_y) this->" << bmax << ".f_y = v_p.f_y;\n";
+              out << "  if (v_p.f_z > this->" << bmax << ".f_z) this->" << bmax << ".f_z = v_p.f_z;\n";
               out << "  return this;\n";
             } else if (s.name == "Box3" && md.name == "containsPoint") {
-              out << "  return (v_p.f_x >= this->f_min.f_x && v_p.f_x <= this->f_max.f_x &&\n";
-              out << "          v_p.f_y >= this->f_min.f_y && v_p.f_y <= this->f_max.f_y &&\n";
-              out << "          v_p.f_z >= this->f_min.f_z && v_p.f_z <= this->f_max.f_z) ? 1 : 0;\n";
+              out << "  return (v_p.f_x >= this->" << bmin << ".f_x && v_p.f_x <= this->" << bmax << ".f_x &&\n";
+              out << "          v_p.f_y >= this->" << bmin << ".f_y && v_p.f_y <= this->" << bmax << ".f_y &&\n";
+              out << "          v_p.f_z >= this->" << bmin << ".f_z && v_p.f_z <= this->" << bmax << ".f_z) ? 1 : 0;\n";
             } else if (s.name == "Box3" && md.name == "getCenter") {
-              out << "  struct Farm_m1_Vector3 result;\n";
-              out << "  result.f_x = (this->f_min.f_x + this->f_max.f_x) * 0.5;\n";
-              out << "  result.f_y = (this->f_min.f_y + this->f_max.f_y) * 0.5;\n";
-              out << "  result.f_z = (this->f_min.f_z + this->f_max.f_z) * 0.5;\n";
+              out << "  " << sty("Vector3") << " result;\n";
+              out << "  result.f_x = (this->" << bmin << ".f_x + this->" << bmax << ".f_x) * 0.5;\n";
+              out << "  result.f_y = (this->" << bmin << ".f_y + this->" << bmax << ".f_y) * 0.5;\n";
+              out << "  result.f_z = (this->" << bmin << ".f_z + this->" << bmax << ".f_z) * 0.5;\n";
               out << "  return result;\n";
             } else if (s.name == "Box3" && md.name == "getSize") {
-              out << "  struct Farm_m1_Vector3 result;\n";
-              out << "  result.f_x = this->f_max.f_x - this->f_min.f_x;\n";
-              out << "  result.f_y = this->f_max.f_y - this->f_min.f_y;\n";
-              out << "  result.f_z = this->f_max.f_z - this->f_min.f_z;\n";
+              out << "  " << sty("Vector3") << " result;\n";
+              out << "  result.f_x = this->" << bmax << ".f_x - this->" << bmin << ".f_x;\n";
+              out << "  result.f_y = this->" << bmax << ".f_y - this->" << bmin << ".f_y;\n";
+              out << "  result.f_z = this->" << bmax << ".f_z - this->" << bmin << ".f_z;\n";
               out << "  return result;\n";
             } else if (s.name == "Box3" && md.name == "intersectsBox") {
-              out << "  return (this->f_max.f_x >= v_box.f_min.f_x && this->f_min.f_x <= v_box.f_max.f_x &&\n";
-              out << "          this->f_max.f_y >= v_box.f_min.f_y && this->f_min.f_y <= v_box.f_max.f_y &&\n";
-              out << "          this->f_max.f_z >= v_box.f_min.f_z && this->f_min.f_z <= v_box.f_max.f_z) ? 1 : 0;\n";
+              out << "  return (this->" << bmax << ".f_x >= v_box." << bmin << ".f_x && this->" << bmin << ".f_x <= v_box." << bmax << ".f_x &&\n";
+              out << "          this->" << bmax << ".f_y >= v_box." << bmin << ".f_y && this->" << bmin << ".f_y <= v_box." << bmax << ".f_y &&\n";
+              out << "          this->" << bmax << ".f_z >= v_box." << bmin << ".f_z && this->" << bmin << ".f_z <= v_box." << bmax << ".f_z) ? 1 : 0;\n";
             } else if (s.name == "Matrix3" && md.name == "determinant") {
               // 3x3 matrix determinant (column-major order)
-              out << "  double* m = this->f_elements.data;\n";
+              out << "  double* m = this->" << el << ";\n";
               out << "  double a=m[0], b=m[3], c=m[6];\n";
               out << "  double d=m[1], e=m[4], f=m[7];\n";
               out << "  double g=m[2], h=m[5], i=m[8];\n";
               out << "  return a*(e*i - f*h) - b*(d*i - f*g) + c*(d*h - e*g);\n";
             } else if (s.name == "Matrix3" && md.name == "makeScale") {
               // Set to scale matrix and return this for chaining
-              out << "  double* m = this->f_elements.data;\n";
+              out << "  double* m = this->" << el << ";\n";
               out << "  m[0] = v_sx; m[3] = 0.0;   m[6] = 0.0;\n";
               out << "  m[1] = 0.0;  m[4] = v_sy;  m[7] = 0.0;\n";
               out << "  m[2] = 0.0;  m[5] = 0.0;   m[8] = 1.0;\n";
@@ -1820,6 +1466,68 @@ struct Emitter {
             out << "\n";
           }
         }
+      }
+      
+      // M2: Implement struct print helpers
+      for (auto& s : m.structs) {
+        // print version (no newline)
+        out << "void farm_print_" << sanitize(s.name) << "(" << math_struct_c(s) << " v) {\n";
+        // Check for types with array fields
+        if (s.name == "Matrix4" || s.name == "Matrix3") {
+          out << "  printf(\"" << s.name << "{...}\");\n";
+        } else {
+          // M2: RayHit prints with field names
+          bool with_field_names = (s.name == "RayHit");
+          out << "  printf(\"" << s.name << "(\");\n";
+          out << "  fflush(stdout);\n"; // Flush before unbuffered writes
+          for (size_t i = 0; i < s.fields.size(); ++i) {
+            if (i > 0) {
+              out << "  printf(\", \");\n";
+              out << "  fflush(stdout);\n";
+            }
+            auto& field = s.fields[i];
+            if (with_field_names) {
+              out << "  printf(\"" << field.name << ": \");\n";
+              out << "  fflush(stdout);\n";
+            }
+            std::string facc = std::string("v.") + (uses_scene && is_math_decl(s)
+              ? runtime_field_name(field.name, s.name) : ("f_" + field.name));
+            if (uses_scene && s.name == "Euler" && field.name == "order") {
+              out << "  printf(\"\\\"%s\\\"\", " << facc << ");\n";
+              out << "  fflush(stdout);\n";
+            } else if (field.type->kind == TypeKind::Float) {
+              out << "  farm_print_float(" << facc << ");\n";
+            } else if (field.type->kind == TypeKind::String) {
+              out << "  printf(\"\\\"\");\n";  // Opening quote
+              out << "  fflush(stdout);\n";
+              out << "  farm_print_string(" << facc << ");\n";
+              out << "  printf(\"\\\"\");\n";  // Closing quote
+              out << "  fflush(stdout);\n";
+            } else if (field.type->kind == TypeKind::Bool) {
+              out << "  farm_print_bool(" << facc << ");\n";
+            } else if (field.type->kind == TypeKind::Struct) {
+              // For struct fields, find the base type name without module prefix
+              std::string type_name = field.type->name;
+              size_t pos = type_name.find_last_of('_');
+              if (pos != std::string::npos && type_name.substr(0, pos).find("m") == 0) {
+                type_name = type_name.substr(pos + 1);
+              }
+              out << "  farm_print_" << type_name << "(" << facc << ");\n";
+            } else {
+              out << "  farm_print_float(" << facc << ");\n"; // Default
+            }
+          }
+          out << "  printf(\")\");\n";
+          out << "  fflush(stdout);\n"; // Flush closing paren before function returns
+        }
+        out << "}\n";
+        
+        // println version (with newline)
+        out << "void farm_print_" << sanitize(s.name) << "_ln(" << math_struct_c(s) << " v) {\n";
+        out << "  farm_print_" << sanitize(s.name) << "(v);\n";
+        out << "  putchar('\\n');\n";
+        out << "  fflush(stdout);\n"; // Flush newline before returning
+        out << "}\n";
       }
     }
     std::string main_sym = "fn_m0_main";

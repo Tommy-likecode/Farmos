@@ -77,21 +77,26 @@ struct Sema {
     return nullptr;
   }
 
-  // M3: Check if `actual` type is assignable to `expected` (type_eq OR stdlib is-a for classes)
+  // M3: farmos:scene classes use runtime symbols `farm_*` and stdlib is-a (Object3D).
+  static bool is_scene_class_sym(const std::string& c_sym) {
+    return c_sym == "farm_Scene" || c_sym == "farm_Object3D" ||
+           c_sym == "farm_PerspectiveCamera" || c_sym == "farm_Mesh" ||
+           c_sym == "farm_BoxGeometry" || c_sym == "farm_SphereGeometry" ||
+           c_sym == "farm_PlaneGeometry" || c_sym == "farm_MeshBasicMaterial" ||
+           c_sym == "farm_MeshStandardMaterial" || c_sym == "farm_AmbientLight" ||
+           c_sym == "farm_DirectionalLight" || c_sym == "farm_PointLight" ||
+           c_sym == "farm_Renderer";
+  }
+
   bool types_assignable(TypePtr actual, TypePtr expected) {
     if (type_eq(actual, expected)) return true;
-    // Check stdlib class is-a (Mesh/Light/Camera/Scene → Object3D)
     if (actual->kind == TypeKind::Class && expected->kind == TypeKind::Class) {
       auto* actual_class = find_class_any(actual->name);
       if (!actual_class) return false;
-      // Walk base chain (base_class stores display names, so look them up)
       std::string base = actual_class->base_class;
       while (!base.empty()) {
-        auto* base_class = find_class_any("farm_" + base);  // Convert display name to c_sym
-        if (!base_class) {
-          // Try without farm_ prefix (in case it's already a c_sym)
-          base_class = find_class_any(base);
-        }
+        auto* base_class = find_class_any("farm_" + base);
+        if (!base_class) base_class = find_class_any(base);
         if (!base_class) break;
         if (base_class->c_sym == expected->name) return true;
         base = base_class->base_class;
@@ -398,32 +403,20 @@ struct Sema {
           auto* cd = find_class_any(t->name);
           if (!cd) { error_at(path, e->loc, "E0505", "undefined name `" + e->name + "`"); e->type=Type::ty_error(); break; }
           bool found=false;
-          
-          // Search fields and methods in current class and base chain
+          // M3: Walk Object3D base chain for scene classes only; user classes keep the M1 lookup.
           auto* search_class = cd;
           while (search_class && !found) {
-            for (auto& f : search_class->fields) {
-              if (f.name==e->name) {
-                e->type=f.type;
-                found=true;
-                break;
-              }
-            }
+            for (auto& f : search_class->fields) if (f.name==e->name) { e->type=f.type; found=true; break; }
             if (!found) {
-              for (auto& md : search_class->methods) {
-                if (!md.is_ctor && md.name==e->name) {
-                  // M3: TEMP - always use single underscore for debugging
-                  std::string sep = "_";
-                  e->mangled = search_class->c_sym + sep + e->name;
-                  e->type = Type::ty_error();
-                  found = true;
-                  break;
-                }
+              for (auto& md : search_class->methods) if (!md.is_ctor && md.name==e->name) {
+                std::string sep = is_scene_class_sym(search_class->c_sym) ? "_" : "__";
+                e->mangled = search_class->c_sym + sep + e->name;
+                e->type = Type::ty_error();
+                found = true; break;
               }
             }
-            if (!found && !search_class->base_class.empty()) {
-              std::string base_c_sym = "farm_" + search_class->base_class;
-              search_class = find_class_any(base_c_sym);
+            if (!found && is_scene_class_sym(cd->c_sym) && !search_class->base_class.empty()) {
+              search_class = find_class_any("farm_" + search_class->base_class);
             } else {
               break;
             }
@@ -523,50 +516,35 @@ struct Sema {
           auto rt = e->lhs->lhs->type;
           if (rt->kind == TypeKind::Class) {
             auto* cd = find_class_any(rt->name);
-            // M3: Find all methods with matching name in class and base chain
-            std::vector<MethodDecl*> candidates;
-            auto* search_class = cd;
-            while (search_class) {
-              for (auto& m : search_class->methods) {
-                if (!m.is_ctor && m.name == e->lhs->name) {
-                  candidates.push_back(&m);
-                }
-              }
-              if (!search_class->base_class.empty()) {
-                std::string base_c_sym = "farm_" + search_class->base_class;
-                search_class = find_class_any(base_c_sym);
-              } else {
-                break;
-              }
-            }
-            
-            // M3: Select best overload based on arity and types
             MethodDecl* md = nullptr;
-            for (auto* candidate : candidates) {
-              if (candidate->params.size() == e->args.size()) {
-                // Check if all arguments match (with int→float coercion)
+            ClassDecl* owner = cd;
+            if (cd && is_scene_class_sym(cd->c_sym)) {
+              // M3: Overload + Object3D base-chain lookup (lookAt, add, ...).
+              std::vector<std::pair<ClassDecl*, MethodDecl*>> candidates;
+              auto* search_class = cd;
+              while (search_class) {
+                for (auto& m : search_class->methods)
+                  if (!m.is_ctor && m.name == e->lhs->name)
+                    candidates.push_back({search_class, &m});
+                if (!search_class->base_class.empty())
+                  search_class = find_class_any("farm_" + search_class->base_class);
+                else
+                  break;
+              }
+              for (auto& cand : candidates) {
+                if (cand.second->params.size() != e->args.size()) continue;
                 bool all_match = true;
                 for (size_t i = 0; i < e->args.size(); ++i) {
                   TypePtr arg_type = e->args[i]->type;
-                  TypePtr param_type = candidate->params[i].type;
-                  
-                  // Allow int→float coercion
-                  if (param_type->kind == TypeKind::Float && arg_type->kind == TypeKind::Int) {
-                    continue; // Will be coerced
-                  }
-                  
-                  if (!types_assignable(arg_type, param_type)) {
-                    all_match = false;
-                    break;
-                  }
+                  TypePtr param_type = cand.second->params[i].type;
+                  if (param_type->kind == TypeKind::Float && arg_type->kind == TypeKind::Int) continue;
+                  if (!types_assignable(arg_type, param_type)) { all_match = false; break; }
                 }
-                if (all_match) {
-                  md = candidate;
-                  break;
-                }
+                if (all_match) { owner = cand.first; md = cand.second; break; }
               }
+            } else {
+              if (cd) for (auto& m : cd->methods) if (!m.is_ctor && m.name == e->lhs->name) { md = &m; break; }
             }
-            
             if (!md) { error_at(path, e->loc, "E0505", "undefined name `" + e->lhs->name + "`"); e->type=Type::ty_error(); }
             else {
               if (e->args.size()!=md->params.size())
@@ -579,12 +557,30 @@ struct Sema {
                       e->args[i]->type->kind == TypeKind::Int) {
                     e->args[i] = try_coerce_int_to_float(e->args[i]);
                   }
-                  if (!types_assignable(e->args[i]->type, md->params[i].type))
+                  bool ok = is_scene_class_sym(cd->c_sym)
+                    ? types_assignable(e->args[i]->type, md->params[i].type)
+                    : type_eq(e->args[i]->type, md->params[i].type);
+                  if (!ok)
                     error_at(path, e->args[i]->loc, "E0408", "type mismatch");
                 }
               }
-              // M3: Use single underscore for scene classes
-              e->mangled = cd->c_sym + "_" + md->name;
+              if (is_scene_class_sym(cd->c_sym)) {
+                // Runtime scene methods use a single underscore: farm_Object3D_add.
+                if (md->name == "lookAt" && e->args.size() == 3)
+                  e->mangled = "farm_Object3D_lookAt_xyz";
+                else if (md->name == "lookAt" && e->args.size() == 1)
+                  e->mangled = "farm_Object3D_lookAt_v";
+                else if (md->name == "add" || md->name == "remove" || md->name == "addAt" ||
+                         md->name == "childCount" || md->name == "getChild" ||
+                         md->name == "updateMatrix" || md->name == "updateMatrixWorld" ||
+                         md->name == "setRotationFromEuler" || md->name == "setRotationFromQuaternion")
+                  e->mangled = std::string("farm_Object3D_") + md->name;
+                else
+                  e->mangled = cd->c_sym + "_" + md->name;
+              } else {
+                e->mangled = cd->c_sym + "__" + md->name;
+              }
+              (void)owner;
               e->type = md->ret;
             }
           } else if (rt->kind == TypeKind::Struct) {
@@ -604,20 +600,11 @@ struct Sema {
                       e->args[i]->type->kind == TypeKind::Int) {
                     e->args[i] = try_coerce_int_to_float(e->args[i]);
                   }
-                  if (!types_assignable(e->args[i]->type, md->params[i].type))
+                  if (!type_eq(e->args[i]->type, md->params[i].type))
                     error_at(path, e->args[i]->loc, "E0408", "type mismatch");
                 }
               }
-              // M2/M3: Math module structs use runtime naming
-              bool is_math_struct = (sd->name == "Vector2" || sd->name == "Vector3" || sd->name == "Vector4" ||
-                                    sd->name == "Matrix3" || sd->name == "Matrix4" || sd->name == "Quaternion" ||
-                                    sd->name == "Color" || sd->name == "Euler" || sd->name == "Ray" || 
-                                    sd->name == "Sphere" || sd->name == "Box3");
-              if (is_math_struct) {
-                e->mangled = "farm_" + sd->name + "_" + md->name;
-              } else {
-                e->mangled = sd->c_sym + "__" + md->name;
-              }
+              e->mangled = sd->c_sym + "__" + md->name;
               e->type = md->ret;
             }
           } else {
@@ -677,182 +664,99 @@ struct Sema {
       case ExprKind::New: {
         for (auto& a : e->args) check_expr(a);
         if (auto* cd = find_class(e->type_name)) {
-          // M3: Check if this is a farmos:scene class that uses runtime constructor overloads
-          bool is_scene_class = (cd->c_sym.find("farm_") == 0);
-          
-          if (is_scene_class) {
-            // Scene classes: resolve constructor variant based on arity and argument types
+          if (is_scene_class_sym(cd->c_sym)) {
+            // M3: Runtime constructor overloads (not the single AST ctor).
             std::string variant = "";
             size_t nargs = e->args.size();
-            
+            auto coerce_float = [&](ExprPtr& a) {
+              if (a->type->kind == TypeKind::Int) a = try_coerce_int_to_float(a);
+              else if (a->type->kind != TypeKind::Float)
+                error_at(path, a->loc, "E0408", "type mismatch: expected float");
+            };
             if (cd->c_sym == "farm_MeshStandardMaterial") {
-              if (nargs == 0) {
-                variant = "";
-              } else if (nargs == 1) {
-                if (e->args[0]->type->kind == TypeKind::Int) {
-                  variant = "hex";
-                } else if (e->args[0]->type->kind == TypeKind::Struct && e->args[0]->type->name.find("Color") != std::string::npos) {
-                  variant = "color";
-                } else {
-                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int or Color");
-                }
-              } else {
+              if (nargs == 1) {
+                if (e->args[0]->type->kind == TypeKind::Int) variant = "hex";
+                else if (e->args[0]->type->kind == TypeKind::Struct && e->args[0]->type->name.find("Color") != std::string::npos) variant = "color";
+                else error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int or Color");
+              } else if (nargs != 0) {
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0 or 1, found " + std::to_string(nargs));
               }
             } else if (cd->c_sym == "farm_MeshBasicMaterial") {
-              if (nargs == 0) {
-                variant = "";
-              } else if (nargs == 1) {
-                if (e->args[0]->type->kind == TypeKind::Int) {
-                  variant = "hex";
-                } else {
-                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int");
-                }
-              } else {
+              if (nargs == 1) {
+                if (e->args[0]->type->kind == TypeKind::Int) variant = "hex";
+                else if (e->args[0]->type->kind == TypeKind::Struct && e->args[0]->type->name.find("Color") != std::string::npos) variant = "color";
+                else error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int");
+              } else if (nargs != 0) {
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0 or 1, found " + std::to_string(nargs));
               }
             } else if (cd->c_sym == "farm_AmbientLight" || cd->c_sym == "farm_DirectionalLight" || cd->c_sym == "farm_PointLight") {
-              if (nargs == 0) {
-                variant = "";
-              } else if (nargs == 1) {
-                if (e->args[0]->type->kind == TypeKind::Int) {
-                  variant = "hex";
-                } else {
-                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int");
-                }
+              if (nargs == 1) {
+                if (e->args[0]->type->kind == TypeKind::Int) variant = "hex";
+                else error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int");
               } else if (nargs == 2) {
-                // Check first arg type
-                if (e->args[0]->type->kind == TypeKind::Int) {
-                  variant = "hex_i";
-                } else if (e->args[0]->type->kind == TypeKind::Struct && e->args[0]->type->name.find("Color") != std::string::npos) {
-                  variant = "color_i";
-                } else {
-                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int or Color");
-                }
-                // Check second arg is float/int
-                if (e->args[1]->type->kind == TypeKind::Int) {
-                  e->args[1] = try_coerce_int_to_float(e->args[1]);
-                } else if (e->args[1]->type->kind != TypeKind::Float) {
-                  error_at(path, e->args[1]->loc, "E0408", "type mismatch: expected float");
-                }
-              } else {
+                if (e->args[0]->type->kind == TypeKind::Int) variant = "hex_i";
+                else if (e->args[0]->type->kind == TypeKind::Struct && e->args[0]->type->name.find("Color") != std::string::npos) variant = "color_i";
+                else error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int or Color");
+                coerce_float(e->args[1]);
+              } else if (nargs != 0) {
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0, 1, or 2, found " + std::to_string(nargs));
               }
             } else if (cd->c_sym == "farm_Mesh") {
-              if (nargs != 2) {
+              if (nargs != 2)
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 2, found " + std::to_string(nargs));
+              else {
+                bool valid_geometry = e->args[0]->type->kind == TypeKind::Class &&
+                  (e->args[0]->type->name == "farm_BoxGeometry" || e->args[0]->type->name == "farm_SphereGeometry" ||
+                   e->args[0]->type->name == "farm_PlaneGeometry");
+                if (!valid_geometry)
+                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected geometry type (BoxGeometry, SphereGeometry, or PlaneGeometry)");
+                bool valid_material = e->args[1]->type->kind == TypeKind::Class &&
+                  (e->args[1]->type->name == "farm_MeshBasicMaterial" || e->args[1]->type->name == "farm_MeshStandardMaterial");
+                if (!valid_material)
+                  error_at(path, e->args[1]->loc, "E0408", "type mismatch: expected material type (MeshBasicMaterial or MeshStandardMaterial)");
               }
-              // Mesh constructor accepts (geometry, material) - validate types
-              // First arg must be a geometry class type
-              bool valid_geometry = false;
-              if (e->args[0]->type->kind == TypeKind::Class) {
-                std::string geom_type = e->args[0]->type->name;
-                if (geom_type == "farm_BoxGeometry" || geom_type == "farm_SphereGeometry" || geom_type == "farm_PlaneGeometry") {
-                  valid_geometry = true;
-                }
-              }
-              if (!valid_geometry) {
-                error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected geometry type (BoxGeometry, SphereGeometry, or PlaneGeometry)");
-              }
-              // Second arg must be a material class type
-              bool valid_material = false;
-              if (e->args[1]->type->kind == TypeKind::Class) {
-                std::string mat_type = e->args[1]->type->name;
-                if (mat_type == "farm_MeshBasicMaterial" || mat_type == "farm_MeshStandardMaterial") {
-                  valid_material = true;
-                }
-              }
-              if (!valid_material) {
-                error_at(path, e->args[1]->loc, "E0408", "type mismatch: expected material type (MeshBasicMaterial or MeshStandardMaterial)");
-              }
-              variant = "";
             } else if (cd->c_sym == "farm_BoxGeometry") {
-              if (nargs == 0) {
-                variant = "";
-              } else if (nargs == 3) {
-                variant = "whd";
-                for (int i = 0; i < 3; ++i) {
-                  if (e->args[i]->type->kind == TypeKind::Int) {
-                    e->args[i] = try_coerce_int_to_float(e->args[i]);
-                  } else if (e->args[i]->type->kind != TypeKind::Float) {
-                    error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected float");
-                  }
-                }
-              } else {
+              if (nargs == 3) { variant = "whd"; for (int i=0;i<3;++i) coerce_float(e->args[i]); }
+              else if (nargs != 0)
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0 or 3, found " + std::to_string(nargs));
-              }
             } else if (cd->c_sym == "farm_SphereGeometry") {
-              if (nargs == 0) {
-                variant = "";
-              } else if (nargs == 1) {
-                variant = "r";
-                if (e->args[0]->type->kind == TypeKind::Int) {
-                  e->args[0] = try_coerce_int_to_float(e->args[0]);
-                } else if (e->args[0]->type->kind != TypeKind::Float) {
-                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected float");
-                }
-              } else if (nargs == 3) {
-                variant = "full";
-                for (int i = 0; i < 3; ++i) {
-                  if (e->args[i]->type->kind == TypeKind::Int) {
-                    e->args[i] = try_coerce_int_to_float(e->args[i]);
-                  } else if (e->args[i]->type->kind != TypeKind::Float) {
-                    error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected float");
-                  }
-                }
-              } else {
+              if (nargs == 1) { variant = "r"; coerce_float(e->args[0]); }
+              else if (nargs == 3) { variant = "full"; for (int i=0;i<3;++i) coerce_float(e->args[i]); }
+              else if (nargs != 0)
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0, 1, or 3, found " + std::to_string(nargs));
-              }
             } else if (cd->c_sym == "farm_PlaneGeometry") {
-              if (nargs == 0) {
-                variant = "";
-              } else if (nargs == 2) {
-                variant = "wh";
-                for (int i = 0; i < 2; ++i) {
-                  if (e->args[i]->type->kind == TypeKind::Int) {
-                    e->args[i] = try_coerce_int_to_float(e->args[i]);
-                  } else if (e->args[i]->type->kind != TypeKind::Float) {
-                    error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected float");
-                  }
-                }
-              } else {
+              if (nargs == 2) { variant = "wh"; for (int i=0;i<2;++i) coerce_float(e->args[i]); }
+              else if (nargs != 0)
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0 or 2, found " + std::to_string(nargs));
-              }
             } else if (cd->c_sym == "farm_Renderer") {
-              if (nargs == 0) {
-                variant = "";
-              } else if (nargs == 2) {
+              if (nargs == 2) {
                 variant = "wh";
-                for (int i = 0; i < 2; ++i) {
-                  if (e->args[i]->type->kind != TypeKind::Int) {
+                for (int i=0;i<2;++i)
+                  if (e->args[i]->type->kind != TypeKind::Int)
                     error_at(path, e->args[i]->loc, "E0408", "type mismatch: expected int");
-                  }
-                }
-              } else {
+              } else if (nargs != 0)
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0 or 2, found " + std::to_string(nargs));
-              }
+            } else if (cd->c_sym == "farm_PerspectiveCamera") {
+              if (nargs != 4)
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 4, found " + std::to_string(nargs));
+              else
+                for (int i=0;i<4;++i) coerce_float(e->args[i]);
+            } else if (nargs != 0 && cd->ctor_index >= 0) {
+              auto& ctor = cd->methods[cd->ctor_index];
+              if (e->args.size()!=ctor.params.size())
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(ctor.params.size()) + ", found " + std::to_string(e->args.size()));
             }
-            // Other scene classes (Scene, PerspectiveCamera, etc.) use default constructors
-            
             e->ctor_variant = variant;
             e->type = Type::ty_class(cd->c_sym);
             e->mangled = cd->c_sym;
           } else {
-            // User classes: use __constructor
             if (cd->ctor_index < 0) { e->type=Type::ty_error(); break; }
             auto& ctor = cd->methods[cd->ctor_index];
             if (e->args.size()!=ctor.params.size())
               error_at(path, e->loc, "E0411", "wrong number of arguments: expected " + std::to_string(ctor.params.size()) + ", found " + std::to_string(e->args.size()));
-            else for (size_t i=0;i<e->args.size();++i) {
-              // M3: Try int→float coercion (same as struct constructors)
-              if (!types_assignable(e->args[i]->type, ctor.params[i].type) &&
-                  ctor.params[i].type->kind == TypeKind::Float &&
-                  e->args[i]->type->kind == TypeKind::Int) {
-                e->args[i] = try_coerce_int_to_float(e->args[i]);
-              }
-              if (!types_assignable(e->args[i]->type, ctor.params[i].type))
+            else for (size_t i=0;i<e->args.size();++i)
+              if (!type_eq(e->args[i]->type, ctor.params[i].type))
                 error_at(path, e->args[i]->loc, "E0408", "type mismatch");
-            }
             e->type = Type::ty_class(cd->c_sym);
             e->mangled = cd->c_sym;
           }
@@ -1144,8 +1048,8 @@ struct Sema {
   void check_method(ClassDecl& c, MethodDecl& m) {
     cur_fn = m.name; cur_ret = m.ret; cur_class = &c; in_ctor = m.is_ctor;
     Scope sc; scope = &sc;
-    // Skip body checks for synthetic/builtin methods (empty Block stub)
-    if (m.body && m.body->kind == StmtKind::Block && m.body->stmts.empty()) {
+    // M3: Synthetic farmos:scene methods are empty stubs implemented in runtime/farm_scene.c.
+    if (is_scene_class_sym(c.c_sym) && m.body && m.body->kind == StmtKind::Block && m.body->stmts.empty()) {
       scope = nullptr;
       return;
     }

@@ -1388,22 +1388,6 @@ static Module create_farmos_math_module() {
       q.methods.push_back(std::move(md));
     }
     
-    // set(x: float, y: float, z: float, w: float): Quaternion
-    {
-      MethodDecl md;
-      md.name = "set";
-      md.params.push_back(Param{"x", Type::ty_float(), SourceLoc{1,1}});
-      md.params.push_back(Param{"y", Type::ty_float(), SourceLoc{1,1}});
-      md.params.push_back(Param{"z", Type::ty_float(), SourceLoc{1,1}});
-      md.params.push_back(Param{"w", Type::ty_float(), SourceLoc{1,1}});
-      md.ret = Type::ty_struct("Quaternion");
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      q.methods.push_back(std::move(md));
-    }
-    
     m.structs.push_back(std::move(q));
   }
   
@@ -1547,18 +1531,6 @@ static Module create_farmos_math_module() {
       md.name = "setHex";
       md.params.push_back(Param{"hex", Type::ty_int(), SourceLoc{1,1}});
       md.ret = Type::ty_struct("Color");
-      md.loc = SourceLoc{1, 1};
-      auto block = std::make_unique<Stmt>();
-      block->kind = StmtKind::Block;
-      md.body = std::move(block);
-      c.methods.push_back(std::move(md));
-    }
-    
-    // getHex(): int
-    {
-      MethodDecl md;
-      md.name = "getHex";
-      md.ret = Type::ty_int();
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
@@ -1934,6 +1906,27 @@ struct Loader {
       for (auto& pair : math_mod->vis_structs) {
         scene_mod->vis_structs[pair.first] = pair.second;
       }
+      // M3: Quaternion.set is required for Object3D.quaternion.set(...). Keep it off the
+      // farmos:math module for M1/M2 so generated C matches master.
+      for (auto& s : math_mod->structs) {
+        if (s.name != "Quaternion") continue;
+        bool has_set = false;
+        for (auto& md : s.methods) if (md.name == "set") { has_set = true; break; }
+        if (has_set) break;
+        MethodDecl md;
+        md.name = "set";
+        md.params.push_back(Param{"x", Type::ty_float(), SourceLoc{1,1}});
+        md.params.push_back(Param{"y", Type::ty_float(), SourceLoc{1,1}});
+        md.params.push_back(Param{"z", Type::ty_float(), SourceLoc{1,1}});
+        md.params.push_back(Param{"w", Type::ty_float(), SourceLoc{1,1}});
+        md.ret = Type::ty_struct("Quaternion");
+        md.loc = SourceLoc{1, 1};
+        auto block = std::make_unique<Stmt>();
+        block->kind = StmtKind::Block;
+        md.body = std::move(block);
+        s.methods.push_back(std::move(md));
+        break;
+      }
     }
 
     for (auto& mod : prog.modules) {
@@ -2231,7 +2224,7 @@ static int run_cmd(const std::string& cmd_utf8) {
 }
 
 static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const fs::path& rt_h_dir,
-                            const fs::path& out_exe, bool verbose) {
+                            const fs::path& out_exe, bool verbose, bool link_scene) {
   std::string cc = find_c_compiler();
   if (cc.empty()) {
     std::cerr << "farmc: no C compiler found (set FARM_CC)\n";
@@ -2245,19 +2238,23 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   }
   cc = cc_command_prefix(cc);
   // Size-oriented flags; NO -ffast-math. GNU statement-expressions require clang/gcc.
-  // M3: Also compile farm_math.c and farm_scene.c for scene runtime
+  // -ffp-contract=off: required for M3 PNG determinism; does not change generated C.
   fs::path rt_math_c = rt_h_dir / "farm_math.c";
   fs::path rt_scene_c = rt_h_dir / "farm_scene.c";
-  
+
+  auto append_scene_rt = [&](std::ostringstream& o) {
+    // Link farm_math.c / farm_scene.c only for farmos:scene programs (M1/M2 match master).
+    if (link_scene) {
+      if (fs::exists(rt_math_c)) o << "\"" << path_to_utf8(rt_math_c) << "\" ";
+      if (fs::exists(rt_scene_c)) o << "\"" << path_to_utf8(rt_scene_c) << "\" ";
+    }
+  };
+
   std::ostringstream cmd;
   cmd << cc << " -std=c11 -Os -flto -ffunction-sections -fdata-sections -ffp-contract=off "
       << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
       << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
-  
-  // M3: Add math and scene runtime if they exist
-  if (fs::exists(rt_math_c)) cmd << "\"" << path_to_utf8(rt_math_c) << "\" ";
-  if (fs::exists(rt_scene_c)) cmd << "\"" << path_to_utf8(rt_scene_c) << "\" ";
-  
+  append_scene_rt(cmd);
   cmd << "-o \"" << path_to_utf8(out_exe) << "\" "
       << "-Wl,--gc-sections -s -lm";
   if (verbose) std::cerr << "farmc: " << cmd.str() << "\n";
@@ -2268,10 +2265,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
     cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections -ffp-contract=off "
          << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
          << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
-    
-    if (fs::exists(rt_math_c)) cmd2 << "\"" << path_to_utf8(rt_math_c) << "\" ";
-    if (fs::exists(rt_scene_c)) cmd2 << "\"" << path_to_utf8(rt_scene_c) << "\" ";
-    
+    append_scene_rt(cmd2);
     cmd2 << "-o \"" << path_to_utf8(out_exe) << "\" "
          << "-Wl,--gc-sections -s -lm";
     if (verbose) std::cerr << "farmc: retry " << cmd2.str() << "\n";
@@ -2402,7 +2396,13 @@ static int cmd_build(std::vector<std::string> args) {
   // touches the destination or leaves partial files beside it.
   fs::path out_req(outfile);
   fs::path link_out = scratch().file("link_out.exe");
-  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose);
+  bool link_scene = false;
+  for (auto& m : loader.prog.modules) {
+    if (m.path == "farmos:scene") { link_scene = true; break; }
+    for (auto& imp : m.imports) if (imp.path == "farmos:scene") { link_scene = true; break; }
+    if (link_scene) break;
+  }
+  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene);
   if (rc == 0) {
     std::error_code ec;
     fs::rename(link_out, out_req, ec);
