@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## B1: first(xs) reads v[0]/#len through a T[] param vs push(xs) is E0802.
+# error: 13:7: E0802
+# note: 10:11

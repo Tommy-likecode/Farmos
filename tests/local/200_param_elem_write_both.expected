@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## B1: writes through T[] parameters must instantiate at the caller (setE vs setE).
+# error: 12:7: E0801
+# note: 9:7

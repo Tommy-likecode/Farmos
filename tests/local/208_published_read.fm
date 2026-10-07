@@ -1,0 +1,24 @@
+class C {
+  n: int;
+  constructor(n: int) {
+    this.n = n;
+  }
+}
+
+function main(): int {
+  let cs: C[2] = [new C(0), new C(0)];
+  let o: int = 0;
+  parallel {
+    task {
+      let t: C = new C(1);
+      cs[0] = t;
+      t.n = 5;
+    }
+    task {
+      let u: C = cs[1];
+      o = u.n;
+    }
+  }
+  println(o);
+  return 0;
+}

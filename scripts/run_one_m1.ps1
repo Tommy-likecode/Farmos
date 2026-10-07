@@ -81,12 +81,40 @@ function Parse-Expected([string]$path) {
       $flags = @($Matches[1].Trim() -split '[ \t]+' | Where-Object { $_ -ne '' })
       continue
     }
-    if ($line -cmatch '^# repeat:[ \t]*(\d+)[ \t]*$') { $repeat = [int]$Matches[1]; continue }
-    if ($line -cmatch '^# threads:[ \t]*([0-9, \t]+)[ \t]*$') {
-      $threads = @()
-      foreach ($part in ($Matches[1] -split ',')) {
-        $t = $part.Trim()
-        if ($t -ne '') { $threads += [int]$t }
+    if ($line.StartsWith('# repeat:', [StringComparison]::Ordinal)) {
+      if ($line -cmatch '^# repeat:[ \t]*(\d+)[ \t]*$') {
+        $repeat = [int]$Matches[1]
+        if ($repeat -lt 1 -or $repeat -gt 1000) {
+          Write-Host "FAIL ${Name}: # repeat: must be in 1..1000"
+          exit 1
+        }
+      } else {
+        Write-Host "FAIL ${Name}: malformed # repeat: line"
+        exit 1
+      }
+      continue
+    }
+    if ($line.StartsWith('# threads:', [StringComparison]::Ordinal)) {
+      if ($line -cmatch '^# threads:[ \t]*(\d+)([ \t]*,[ \t]*\d+)*[ \t]*$') {
+        $threads = @()
+        $rest = ($line.Substring(10)).Trim()
+        foreach ($part in ($rest -split ',')) {
+          $t = $part.Trim()
+          if ($t -eq '') { continue }
+          $n = [int]$t
+          if ($n -lt 1) {
+            Write-Host "FAIL ${Name}: malformed # threads: line"
+            exit 1
+          }
+          $threads += $n
+        }
+        if ($threads.Count -eq 0) {
+          Write-Host "FAIL ${Name}: malformed # threads: line"
+          exit 1
+        }
+      } else {
+        Write-Host "FAIL ${Name}: malformed # threads: line"
+        exit 1
       }
       continue
     }

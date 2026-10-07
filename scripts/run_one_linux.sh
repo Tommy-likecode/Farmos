@@ -74,12 +74,22 @@ def parse_expected(path):
             m = re.match(r"^# flags:[ \t]*(.+)[ \t]*$", line)
             if m:
                 flags = m.group(1).split(); continue
-            m = re.match(r"^# repeat:[ \t]*(\d+)[ \t]*$", line)
-            if m:
-                repeat = int(m.group(1)); continue
-            m = re.match(r"^# threads:[ \t]*([0-9, \t]+)[ \t]*$", line)
-            if m:
-                threads = [int(x.strip()) for x in m.group(1).split(",") if x.strip()]; continue
+            if line.startswith("# repeat:"):
+                m = re.match(r"^# repeat:[ \t]*(\d+)[ \t]*$", line)
+                if not m:
+                    raise ValueError("malformed # repeat: line")
+                repeat = int(m.group(1))
+                if repeat < 1 or repeat > 1000:
+                    raise ValueError("# repeat: must be in 1..1000")
+                continue
+            if line.startswith("# threads:"):
+                m = re.match(r"^# threads:[ \t]*(\d+)([ \t]*,[ \t]*\d+)*[ \t]*$", line)
+                if not m:
+                    raise ValueError("malformed # threads: line")
+                threads = [int(x.strip()) for x in line.split(":", 1)[1].split(",") if x.strip()]
+                if not threads or any(t < 1 for t in threads):
+                    raise ValueError("malformed # threads: line")
+                continue
             m = re.match(r"^# diag_exact:[ \t]*true[ \t]*$", line)
             if m:
                 diag_exact = True; continue
@@ -205,7 +215,10 @@ def check_run_farmc_stderr(got, want, main, err):
         if not note_match(g.get("note"), w.get("note"), main):
             fail(f"farmc warning note mismatch for {w['code']}\n{err}")
 
-exp = parse_expected(exp_path)
+try:
+    exp = parse_expected(exp_path)
+except ValueError as e:
+    fail(str(e))
 main = f"{name}.fm"
 if os.path.isfile(os.path.join(tests_dir, name, "main.fm")):
     main = f"{name}/main.fm"

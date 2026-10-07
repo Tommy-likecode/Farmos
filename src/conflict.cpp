@@ -1,4 +1,5 @@
 #include "sema.hpp"
+#include <cstddef>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -532,6 +533,25 @@ struct Analyzer {
     return false;
   }
 
+  void publish_escaping_expr(ExprPtr e, bool dst_private) {
+    if (!e || dst_private || task_local_depth <= 0) return;
+    std::function<void(ExprPtr)> walk = [&](ExprPtr x) {
+      if (!x) return;
+      if (x->type && x->type->kind == TypeKind::Class) {
+        Origin o = expr_origin(x);
+        if (o.kind == Origin::Site) {
+          task_alloc_sites.erase(o.id);
+          private_sites.erase(o.id);
+        }
+      }
+      walk(x->lhs);
+      walk(x->rhs);
+      for (auto& a : x->args) walk(a);
+      for (auto& f : x->fields) walk(f.second);
+    };
+    walk(e);
+  }
+
   void emit_acc(std::vector<Access>& out, SourceLoc loc, Path p, bool rd, bool wr, CVal wv,
                 int sid, const std::string& callee = "", bool through = false) {
     if (skip_private_path(p)) return;
@@ -741,7 +761,10 @@ void Analyzer::collect_expr(ExprPtr e, std::vector<Access>& acc, int sid) {
       if (!e->mangled.empty()) break; // const/fn
       auto it = env.find(e->name);
       if (it == env.end()) break;
-      emit_acc(acc, e->loc, var_path(e->name), true, false, {}, sid);
+      // DynArray (and other by-ref) parameters use a Param vpath so summary
+      // effects survive effects_to_summary and instantiate at the caller.
+      Path p = (it->second.vpath.root == RootK::Param) ? it->second.vpath : var_path(e->name);
+      emit_acc(acc, e->loc, p, true, false, {}, sid);
       break;
     }
     case ExprKind::This: {
@@ -889,15 +912,19 @@ void Analyzer::instantiate_call(ExprPtr call, std::vector<Access>& acc, int sid)
       if (!call->args.empty()) {
         Path p = lvalue_path(call->args[0], acc, sid, false, {});
         emit_acc(acc, cloc, p, false, true, CVal::unk(), sid, "push", true);
+        bool arr_private = skip_private_path(p);
+        for (size_t i = 1; i < call->args.size(); ++i)
+          publish_escaping_expr(call->args[i], arr_private);
       }
       return;
     }
   }
 
   for (auto& a : call->args) {
-    // Class-typed Ident/This args are covered by instantiated summary effects;
-    // do not emit a whole-object read (that would look like a use of the local).
-    if (a && a->type && a->type->kind == TypeKind::Class &&
+    // Class-typed and dynamic-array Ident/This args are covered by instantiated
+    // summary effects; do not emit a whole-object/whole-array read.
+    if (a && a->type &&
+        (a->type->kind == TypeKind::Class || a->type->kind == TypeKind::DynArray) &&
         (a->kind == ExprKind::Ident || a->kind == ExprKind::This))
       continue;
     collect_expr(a, acc, sid);
@@ -906,6 +933,16 @@ void Analyzer::instantiate_call(ExprPtr call, std::vector<Access>& acc, int sid)
     ExprPtr recv = call->lhs->lhs;
     if (recv && recv->kind != ExprKind::Ident && recv->kind != ExprKind::This)
       collect_expr(recv, acc, sid);
+  }
+  // Passing a task-allocated object into a call publishes it unless the
+  // receiver of a method call is still task-private.
+  {
+    bool recv_private = false;
+    if (call->lhs && call->lhs->kind == ExprKind::Field && call->lhs->lhs) {
+      Path rp = lvalue_path(call->lhs->lhs, acc, sid, false, {});
+      recv_private = skip_private_path(rp);
+    }
+    for (auto& a : call->args) publish_escaping_expr(a, recv_private);
   }
 
   std::string key = call->mangled;
@@ -1057,7 +1094,11 @@ void Analyzer::collect_stmt(StmtPtr s, std::vector<Access>& acc) {
           auto it = env.find(s->init->name);
           if (it != env.end()) b.origin = it->second.origin;
         }
-        if (b.origin.kind == Origin::Site && task_local_depth > 0)
+        // Only *this task's* allocations are private. Aliasing an outer/shared
+        // Site (let q = p) must not hide subsequent field writes.
+        bool fresh = s->init && (s->init->kind == ExprKind::New ||
+                                 (s->init->kind == ExprKind::Call && fresh_fns.count(s->init->mangled)));
+        if (fresh && b.origin.kind == Origin::Site && task_local_depth > 0)
           task_alloc_sites.insert(b.origin.id);
       } else if (ty && ty->kind == TypeKind::DynArray) {
         if (s->init && s->init->kind == ExprKind::Ident) {
@@ -1124,6 +1165,8 @@ void Analyzer::collect_stmt(StmtPtr s, std::vector<Access>& acc) {
           }
         }
       }
+      // §4.8: storing a task-allocated object into a shared location publishes it.
+      publish_escaping_expr(s->rhs, skip_private_path(lp));
       break;
     }
     case StmtKind::Expr:
@@ -1202,15 +1245,23 @@ void Analyzer::collect_stmt(StmtPtr s, std::vector<Access>& acc) {
 }
 
 static int conflict_class(const Access& x, const Access& y, OverlapK ov, Path* loc) {
+  (void)loc;
   if (ov == OverlapK::Disjoint) return 0;
   bool wrwr = x.wr && y.wr;
   bool rw = (x.rd && y.wr) || (x.wr && y.rd);
   if (wrwr) {
-    bool same = x.wval.known() && y.wval.known() && cval_eq(x.wval, y.wval);
-    // project to overlap if depths differ
-    if (same && loc) {
-      // already equal
+    // §5.6: when write paths have different depth, compare values restricted
+    // to the overlap location (project the shorter/whole write onto extra steps).
+    CVal vx = x.wval, vy = y.wval;
+    size_t nx = x.path.steps.size(), ny = y.path.steps.size();
+    if (nx < ny) {
+      std::vector<Step> extra(y.path.steps.begin() + (std::ptrdiff_t)nx, y.path.steps.end());
+      vx = project(vx, extra);
+    } else if (ny < nx) {
+      std::vector<Step> extra(x.path.steps.begin() + (std::ptrdiff_t)ny, x.path.steps.end());
+      vy = project(vy, extra);
     }
+    bool same = vx.known() && vy.known() && cval_eq(vx, vy);
     if (same) return 2; // W0801
     return 4; // E0801 (outranks E0802 when both apply to the same later-task access)
   }
@@ -1585,11 +1636,21 @@ void setup_fn_env(Analyzer& A, FunctionDecl& f, ClassDecl* cls, StructDecl* st) 
   for (size_t i = 0; i < f.params.size(); ++i) {
     Bind b;
     b.type = f.params[i].type;
-    b.vpath = A.var_path(f.params[i].name);
-    if (b.type && b.type->kind == TypeKind::Class) {
-      b.origin.kind = Origin::Param;
-      b.origin.id = cls ? (int)i + 1 : (int)i;
-      b.origin.cls = b.type->name;
+    int k = cls ? (int)i + 1 : (int)i;
+    if (b.type && b.type->kind == TypeKind::DynArray) {
+      // §7.1: dynamic-array parameters are by-reference; keep as Param(k).
+      b.vpath.root = RootK::Param;
+      b.vpath.origin.kind = Origin::Param;
+      b.vpath.origin.id = k;
+      b.vpath.var = f.params[i].name;
+      b.vpath.display = f.params[i].name;
+    } else {
+      b.vpath = A.var_path(f.params[i].name);
+      if (b.type && b.type->kind == TypeKind::Class) {
+        b.origin.kind = Origin::Param;
+        b.origin.id = k;
+        b.origin.cls = b.type->name;
+      }
     }
     A.env[f.params[i].name] = b;
   }
@@ -1604,9 +1665,19 @@ void setup_method_env(Analyzer& A, ClassDecl& c, MethodDecl& m) {
   th.vpath = A.origin_path(th.origin); th.vpath.display = "this";
   A.env["this"] = th;
   for (size_t i = 0; i < m.params.size(); ++i) {
-    Bind b; b.type = m.params[i].type; b.vpath = A.var_path(m.params[i].name);
-    if (b.type && b.type->kind == TypeKind::Class) {
-      b.origin.kind = Origin::Param; b.origin.id = (int)i + 1; b.origin.cls = b.type->name;
+    Bind b; b.type = m.params[i].type;
+    int k = (int)i + 1;
+    if (b.type && b.type->kind == TypeKind::DynArray) {
+      b.vpath.root = RootK::Param;
+      b.vpath.origin.kind = Origin::Param;
+      b.vpath.origin.id = k;
+      b.vpath.var = m.params[i].name;
+      b.vpath.display = m.params[i].name;
+    } else {
+      b.vpath = A.var_path(m.params[i].name);
+      if (b.type && b.type->kind == TypeKind::Class) {
+        b.origin.kind = Origin::Param; b.origin.id = k; b.origin.cls = b.type->name;
+      }
     }
     A.env[m.params[i].name] = b;
   }
@@ -1618,7 +1689,17 @@ void setup_struct_env(Analyzer& A, StructDecl& s, MethodDecl& m) {
   Bind th; th.type = Type::ty_struct(s.c_sym); th.vpath = A.var_path("this"); th.vpath.display = "this";
   A.env["this"] = th;
   for (size_t i = 0; i < m.params.size(); ++i) {
-    Bind b; b.type = m.params[i].type; b.vpath = A.var_path(m.params[i].name);
+    Bind b; b.type = m.params[i].type;
+    int k = (int)i + 1;
+    if (b.type && b.type->kind == TypeKind::DynArray) {
+      b.vpath.root = RootK::Param;
+      b.vpath.origin.kind = Origin::Param;
+      b.vpath.origin.id = k;
+      b.vpath.var = m.params[i].name;
+      b.vpath.display = m.params[i].name;
+    } else {
+      b.vpath = A.var_path(m.params[i].name);
+    }
     A.env[m.params[i].name] = b;
   }
 }
@@ -1641,25 +1722,34 @@ void analyze_parallel(Analyzer& A, StmtPtr par) {
   report_block(A, tasks, A.file);
 }
 
-Summary effects_to_summary(const std::vector<Access>& acc, bool file_io) {
+Summary effects_to_summary(Analyzer& A, const std::vector<Access>& acc, bool file_io) {
   Summary s; s.file_io = file_io;
-  // keep only Param/Graph/Tree/Unknown roots
+  // keep only Param/Graph/Tree/Unknown roots (§7.1: DynArray params are Param)
   std::map<std::string, Effect> merged;
   for (auto& a : acc) {
-    if (a.path.root == RootK::Var) {
-      // only keep if var is a parameter displayed as param path — already converted for this
-      continue;
+    Path p = a.path;
+    if (p.root == RootK::Var) {
+      auto it = A.env.find(p.var);
+      if (it != A.env.end() && it->second.vpath.root == RootK::Param) {
+        p.root = RootK::Param;
+        p.origin = it->second.vpath.origin;
+        p.cls = it->second.vpath.cls;
+        p.display = it->second.vpath.display;
+        for (auto& st : p.steps) p.display += Analyzer::step_str(st);
+      } else {
+        continue;
+      }
     }
-    if (a.path.root != RootK::Param && a.path.root != RootK::Graph &&
-        a.path.root != RootK::Tree && a.path.root != RootK::Unknown &&
-        a.path.root != RootK::Site)
+    if (p.root != RootK::Param && p.root != RootK::Graph &&
+        p.root != RootK::Tree && p.root != RootK::Unknown &&
+        p.root != RootK::Site)
       continue;
-    if (a.path.root == RootK::Site) continue; // callee-private alloc
-    std::string k = std::to_string((int)a.path.root) + "|" + a.path.display + "|" +
-                    std::to_string(a.path.origin.id);
-    for (auto& st : a.path.steps) k += Analyzer::step_str(st);
+    if (p.root == RootK::Site) continue; // callee-private alloc
+    std::string k = std::to_string((int)p.root) + "|" + p.display + "|" +
+                    std::to_string(p.origin.id);
+    for (auto& st : p.steps) k += Analyzer::step_str(st);
     Effect& e = merged[k];
-    e.path = a.path;
+    e.path = p;
     e.rd = e.rd || a.rd;
     e.wr = e.wr || a.wr;
     if (e.wr) {
@@ -1725,7 +1815,7 @@ void compute_summaries(Analyzer& A) {
         bool fio = false;
         for (auto& a : acc) (void)a;
         // FILE_IO from instantiated calls already emitted as E0805 only in tasks; track via sums
-        Summary ns = effects_to_summary(acc, fio);
+        Summary ns = effects_to_summary(A, acc, fio);
         // also propagate file_io from callees
         auto add_fio = [&](StmtPtr s, auto&& self) -> void {
           if (!s) return;
@@ -1766,7 +1856,7 @@ void compute_summaries(Analyzer& A) {
               a.path.root = RootK::Param;
             }
           }
-          Summary ns = effects_to_summary(acc, false);
+          Summary ns = effects_to_summary(A, acc, false);
           std::string key = c.c_sym + "__" + md.name;
           auto& old = A.sums[key];
           if (old.effects.size() != ns.effects.size()) ch = true;
@@ -1787,7 +1877,7 @@ void compute_summaries(Analyzer& A) {
               a.path.display = "this";
             }
           }
-          Summary ns = effects_to_summary(acc, false);
+          Summary ns = effects_to_summary(A, acc, false);
           std::string key = s.c_sym + "__" + md.name;
           auto& old = A.sums[key];
           if (old.effects.size() != ns.effects.size()) ch = true;

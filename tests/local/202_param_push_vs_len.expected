@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## B1: push through a parameter vs len(xs) is E0802 (whole-array write vs #len).
+# error: 13:11: E0802
+# note: 10:7

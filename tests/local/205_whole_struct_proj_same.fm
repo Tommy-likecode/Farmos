@@ -1,0 +1,18 @@
+struct P {
+  a: int;
+  b: int;
+}
+
+function main(): int {
+  let p: P = new P(0, 0);
+  parallel {
+    task {
+      p = new P(1, 2);
+    }
+    task {
+      p.b = 2;
+    }
+  }
+  println(p.a);
+  return 0;
+}

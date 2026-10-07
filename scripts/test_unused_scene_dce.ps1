@@ -165,6 +165,51 @@ function Assert-SceneLink([string]$label, [string]$log) {
   }
 }
 
+function Get-PeSectionNames([byte[]]$b) {
+  $names = @()
+  if ($b.Length -lt 0x40) { return $names }
+  if ($b[0] -ne 0x4D -or $b[1] -ne 0x5A) { return $names }
+  $eLfanew = [int](Get-UInt32 $b 0x3C)
+  if ($eLfanew -lt 0 -or ($eLfanew + 24) -gt $b.Length) { return $names }
+  if ($b[$eLfanew] -ne 0x50 -or $b[$eLfanew + 1] -ne 0x45 -or $b[$eLfanew + 2] -ne 0 -or $b[$eLfanew + 3] -ne 0) { return $names }
+  $numSections = Get-UInt16 $b ($eLfanew + 6)
+  $optSize = Get-UInt16 $b ($eLfanew + 20)
+  $sectOff = $eLfanew + 24 + $optSize
+  for ($s = 0; $s -lt $numSections; $s++) {
+    $sh = $sectOff + $s * 40
+    if (($sh + 8) -gt $b.Length) { break }
+    $end = $sh
+    while ($end -lt ($sh + 8) -and $b[$end] -ne 0) { $end++ }
+    $names += [System.Text.Encoding]::ASCII.GetString($b, $sh, ($end - $sh))
+  }
+  return $names
+}
+
+function Assert-NoThreadRuntime([string]$label, [string]$log, [byte[]]$csrc, [byte[]]$bin) {
+  $markers = @("farm_par.c", "farm_par.h", "FARM_ENABLE_THREADS", "-pthread", "InitializeCriticalSection", "CreateThread", "_beginthread")
+  foreach ($m in $markers) {
+    if ($log.IndexOf($m, [StringComparison]::Ordinal) -ge 0) {
+      Fail-Dce "${label}: verbose link command mentions thread API '$m'`n$log"
+    }
+  }
+  $text = [System.Text.Encoding]::UTF8.GetString($csrc)
+  foreach ($m in $markers) {
+    if ($text.IndexOf($m, [StringComparison]::Ordinal) -ge 0) {
+      Fail-Dce "${label}: generated C contains thread API '$m'"
+    }
+  }
+  foreach ($n in (Get-PeSectionNames $bin)) {
+    if ($n -eq ".tls") { Fail-Dce "${label}: PE has a .tls section" }
+  }
+  $binText = [System.Text.Encoding]::ASCII.GetString($bin)
+  if ($binText.IndexOf("InitializeCriticalSection", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Dce "${label}: binary imports InitializeCriticalSection"
+  }
+  if ($binText.IndexOf("CreateThread", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Dce "${label}: binary imports CreateThread"
+  }
+}
+
 $helloSrc = Join-Path $RepoRoot "spec/tests/M1/001_hello.fm"
 $unusedSrc = Join-Path $RepoRoot "spec/tests/M3/040_unused_scene_import.fm"
 $m2Src = Join-Path $RepoRoot "spec/tests/M2/001_vector3_print.fm"
@@ -208,6 +253,9 @@ try {
   Assert-NonSceneLink "unused scene import" $ulog
   Assert-NonSceneLink "M2 vector3" $m2log
   Assert-SceneLink "M3 used Scene" $m3log
+
+  Assert-NoThreadRuntime "hello" $hlog $hc $hb
+  Assert-NoThreadRuntime "unused scene import" $ulog $uc $ub
 
   Write-Host "PASS unused_scene_dce: hello=$hs unused=$us binaries identical"
 } finally {

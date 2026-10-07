@@ -1,0 +1,26 @@
+class C {
+  n: int;
+  constructor(n: int) {
+    this.n = n;
+  }
+}
+
+function mutAll(x: C): void {
+  x.n = 7;
+}
+
+function main(): int {
+  let cs: C[2] = [new C(0), new C(0)];
+  parallel {
+    task {
+      let t: C = new C(1);
+      cs[0] = t;
+      t.n = 5;
+    }
+    task {
+      mutAll(cs[1]);
+    }
+  }
+  println(cs[0].n);
+  return 0;
+}

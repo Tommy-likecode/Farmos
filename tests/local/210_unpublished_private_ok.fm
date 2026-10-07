@@ -1,0 +1,22 @@
+class C {
+  n: int;
+  constructor(n: int) {
+    this.n = n;
+  }
+}
+
+function main(): int {
+  parallel {
+    task {
+      let t: C = new C(1);
+      t.n = 5;
+      println(t.n);
+    }
+    task {
+      let t: C = new C(2);
+      t.n = 6;
+      println(t.n);
+    }
+  }
+  return 0;
+}
