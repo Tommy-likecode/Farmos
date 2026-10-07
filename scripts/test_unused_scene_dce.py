@@ -24,6 +24,87 @@ def fail(msg):
     sys.exit(1)
 
 
+def _u16(data, off):
+    return int.from_bytes(data[off:off + 2], "little")
+
+
+def _u32(data, off):
+    return int.from_bytes(data[off:off + 4], "little")
+
+
+def pe_timestamp_offsets(data):
+    """File offsets of PE COFF TimeDateStamp and IMAGE_DEBUG_DIRECTORY timestamps."""
+    offs = []
+    if len(data) < 0x40 or data[:2] != b"MZ":
+        return offs
+    e_lfanew = _u32(data, 0x3C)
+    if e_lfanew + 24 > len(data) or data[e_lfanew:e_lfanew + 4] != b"PE\0\0":
+        return offs
+    offs.append(e_lfanew + 8)
+    num_sections = _u16(data, e_lfanew + 6)
+    opt_size = _u16(data, e_lfanew + 20)
+    opt_off = e_lfanew + 24
+    if opt_off + opt_size > len(data):
+        return offs
+    magic = _u16(data, opt_off)
+    if magic == 0x10B:
+        num_rva_off, dd_off = opt_off + 92, opt_off + 96
+    elif magic == 0x20B:
+        num_rva_off, dd_off = opt_off + 108, opt_off + 112
+    else:
+        return offs
+    if num_rva_off + 4 > len(data) or _u32(data, num_rva_off) < 7:
+        return offs
+    debug_ent = dd_off + 6 * 8
+    if debug_ent + 8 > len(data):
+        return offs
+    debug_rva = _u32(data, debug_ent)
+    debug_size = _u32(data, debug_ent + 4)
+    if debug_rva == 0 or debug_size == 0:
+        return offs
+    sect_off = opt_off + opt_size
+    file_off = None
+    for s in range(num_sections):
+        sh = sect_off + s * 40
+        if sh + 24 > len(data):
+            break
+        virt_size = _u32(data, sh + 8)
+        va = _u32(data, sh + 12)
+        raw_size = _u32(data, sh + 16)
+        raw_ptr = _u32(data, sh + 20)
+        span = virt_size if virt_size > raw_size else raw_size
+        if va <= debug_rva < va + span:
+            file_off = raw_ptr + (debug_rva - va)
+            break
+    if file_off is None:
+        return offs
+    for i in range(debug_size // 28):
+        ts = file_off + i * 28 + 4
+        if ts + 4 <= len(data):
+            offs.append(ts)
+    return offs
+
+
+def binaries_equal(a, b):
+    """Byte-identical on Linux ELF. On Windows PE, ignore linker TimeDateStamp fields."""
+    if a == b:
+        return True
+    if sys.platform != "win32" or len(a) != len(b):
+        return False
+    skip = set()
+    for blob in (a, b):
+        for off in pe_timestamp_offsets(blob):
+            skip.update(range(off, off + 4))
+    if not skip:
+        return False
+    for i, (x, y) in enumerate(zip(a, b)):
+        if i in skip:
+            continue
+        if x != y:
+            return False
+    return True
+
+
 def build(farmc, src, out, extra=None, cwd=None):
     cmd = [farmc, "build", src, "-o", out]
     if extra:
@@ -95,7 +176,7 @@ def main():
             hb = f.read()
         with open(unused, "rb") as f:
             ub = f.read()
-        if hb != ub:
+        if not binaries_equal(hb, ub):
             fail("hello binary differs from unused-import binary")
         if sys.platform.startswith("linux") and hs == LINUX_AUDIT_HELLO_SIZE:
             pass  # audit baseline: unused is also 13824 via equality above

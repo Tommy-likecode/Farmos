@@ -11,6 +11,93 @@ function Fail-Dce([string]$msg) {
   exit 1
 }
 
+function Get-UInt16([byte[]]$b, [int]$off) {
+  return [BitConverter]::ToUInt16($b, $off)
+}
+function Get-UInt32([byte[]]$b, [int]$off) {
+  return [BitConverter]::ToUInt32($b, $off)
+}
+
+# llvm-mingw writes COFF TimeDateStamp (and optionally IMAGE_DEBUG_DIRECTORY
+# TimeDateStamp). Same source built twice differs in those 4-byte fields.
+function Get-PeTimestampOffsets([byte[]]$b) {
+  $offs = @()
+  if ($b.Length -lt 0x40) { return $offs }
+  if ($b[0] -ne 0x4D -or $b[1] -ne 0x5A) { return $offs }
+  $eLfanew = [int](Get-UInt32 $b 0x3C)
+  if ($eLfanew -lt 0 -or ($eLfanew + 24) -gt $b.Length) { return $offs }
+  if ($b[$eLfanew] -ne 0x50 -or $b[$eLfanew + 1] -ne 0x45 -or $b[$eLfanew + 2] -ne 0 -or $b[$eLfanew + 3] -ne 0) { return $offs }
+  $offs += ($eLfanew + 8)
+  $numSections = Get-UInt16 $b ($eLfanew + 6)
+  $optSize = Get-UInt16 $b ($eLfanew + 20)
+  $optOff = $eLfanew + 24
+  if (($optOff + $optSize) -gt $b.Length) { return $offs }
+  $magic = Get-UInt16 $b $optOff
+  if ($magic -eq 0x10B) { $numRvaOff = $optOff + 92; $ddOff = $optOff + 96 }
+  elseif ($magic -eq 0x20B) { $numRvaOff = $optOff + 108; $ddOff = $optOff + 112 }
+  else { return $offs }
+  if (($numRvaOff + 4) -gt $b.Length) { return $offs }
+  if ((Get-UInt32 $b $numRvaOff) -lt 7) { return $offs }
+  $debugEnt = $ddOff + 6 * 8
+  if (($debugEnt + 8) -gt $b.Length) { return $offs }
+  $debugRva = Get-UInt32 $b $debugEnt
+  $debugSize = Get-UInt32 $b ($debugEnt + 4)
+  if ($debugRva -eq 0 -or $debugSize -eq 0) { return $offs }
+  $sectOff = $optOff + $optSize
+  $fileOff = -1
+  for ($s = 0; $s -lt $numSections; $s++) {
+    $sh = $sectOff + $s * 40
+    if (($sh + 24) -gt $b.Length) { break }
+    $virtSize = Get-UInt32 $b ($sh + 8)
+    $va = Get-UInt32 $b ($sh + 12)
+    $rawSize = Get-UInt32 $b ($sh + 16)
+    $rawPtr = Get-UInt32 $b ($sh + 20)
+    $span = $virtSize
+    if ($rawSize -gt $span) { $span = $rawSize }
+    if ($debugRva -ge $va -and $debugRva -lt ($va + $span)) {
+      $fileOff = [int]($rawPtr + ($debugRva - $va))
+      break
+    }
+  }
+  if ($fileOff -lt 0) { return $offs }
+  $n = [int][Math]::Floor($debugSize / 28)
+  for ($i = 0; $i -lt $n; $i++) {
+    $ts = $fileOff + $i * 28 + 4
+    if (($ts + 4) -le $b.Length) { $offs += $ts }
+  }
+  return $offs
+}
+
+function Test-PeBytesEqual([byte[]]$a, [byte[]]$b) {
+  if ($a.Length -ne $b.Length) { return $false }
+  $mask = New-Object 'bool[]' $a.Length
+  $got = $false
+  foreach ($o in (Get-PeTimestampOffsets $a)) {
+    $got = $true
+    for ($k = 0; $k -lt 4; $k++) {
+      $idx = $o + $k
+      if ($idx -ge 0 -and $idx -lt $a.Length) { $mask[$idx] = $true }
+    }
+  }
+  foreach ($o in (Get-PeTimestampOffsets $b)) {
+    $got = $true
+    for ($k = 0; $k -lt 4; $k++) {
+      $idx = $o + $k
+      if ($idx -ge 0 -and $idx -lt $a.Length) { $mask[$idx] = $true }
+    }
+  }
+  for ($i = 0; $i -lt $a.Length; $i++) {
+    if ($mask[$i]) { continue }
+    if ($a[$i] -ne $b[$i]) { return $false }
+  }
+  if (-not $got) {
+    for ($i = 0; $i -lt $a.Length; $i++) {
+      if ($a[$i] -ne $b[$i]) { return $false }
+    }
+  }
+  return $true
+}
+
 function Invoke-FarmcBuild {
   param([Parameter(Mandatory=$true)][string[]]$FarmcArgs, [Parameter(Mandatory=$true)][string]$Label)
   foreach ($a in $FarmcArgs) {
@@ -103,9 +190,7 @@ try {
   $hb = [System.IO.File]::ReadAllBytes($hello)
   $ub = [System.IO.File]::ReadAllBytes($unused)
   if ($hb.Length -ne $ub.Length) { Fail-Dce "hello binary differs from unused-import binary" }
-  for ($i = 0; $i -lt $hb.Length; $i++) {
-    if ($hb[$i] -ne $ub[$i]) { Fail-Dce "hello binary differs from unused-import binary" }
-  }
+  if (-not (Test-PeBytesEqual $hb $ub)) { Fail-Dce "hello binary differs from unused-import binary" }
 
   $hc = [System.IO.File]::ReadAllBytes($helloC)
   $uc = [System.IO.File]::ReadAllBytes($unusedC)
