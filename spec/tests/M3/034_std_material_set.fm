@@ -1,0 +1,9 @@
+import { MeshStandardMaterial } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const m: MeshStandardMaterial = new MeshStandardMaterial();
+  m.set(new Color(0xff0000));
+  println(m.color.getHex());
+  return 0;
+}

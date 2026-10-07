@@ -1,0 +1,6 @@
+import { Scene } from "farmos:scene";
+
+function main(): int {
+  println("Hello, Farmos");
+  return 0;
+}

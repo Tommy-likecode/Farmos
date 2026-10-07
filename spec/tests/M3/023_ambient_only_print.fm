@@ -1,0 +1,9 @@
+import { AmbientLight } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const a: AmbientLight = new AmbientLight(0xff0000, 0.5);
+  println(a.color.getHex());
+  println(a.intensity);
+  return 0;
+}

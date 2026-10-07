@@ -80,6 +80,7 @@ struct Expr {
   std::string type_name; // new / struct lit name
   // resolved
   std::string mangled; // function symbol
+  std::string ctor_variant; // M3: Constructor variant suffix for scene classes (e.g. "hex_i", "color")
   bool is_lvalue = false;
   bool is_const_binding = false;
   bool is_reverse_op = false;  // M2: For left-associative operators (scalar * vector)
@@ -150,6 +151,7 @@ struct ClassDecl {
   int ctor_index = -1;
   std::string c_sym;
   int module_id = 0;
+  std::string base_class;  // M3: stdlib-only is-a (e.g. "Object3D" for Mesh/Scene/Light/Camera)
 };
 
 struct FunctionDecl {

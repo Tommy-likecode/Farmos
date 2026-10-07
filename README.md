@@ -1,3 +1,15 @@
+# Farmos
+
+## M3 — `farmos:scene`
+
+Three.js-like scene graph and CPU rasterizer (`import { … } from "farmos:scene"`). Spec: `spec/M3-scene.md`. Fixtures: `spec/tests/M3/` (`run_png` goldens plus API tests).
+
+Unused `farmos:scene` imports are dead-code eliminated (AC-M3-01 / AC-M3-11): they must not change hello size or M1/M2 compile flags / linked runtime. Scene programs additionally pass `-ffp-contract=off` and link `farm_math.c` + `farm_scene.c`.
+
+Linux: `scripts/run_m3_linux.sh build/farmc` after a CMake build. DCE/size gate: `python3 scripts/test_unused_scene_dce.py build/farmc .` (Windows: `scripts/test_unused_scene_dce.ps1`).
+
+---
+
 # Farmos M1 — `farmc`
 
 C++17 compiler for the Farmos M1 core language. Pipeline: lexer → parser → AST → semantic check → emit portable C11 → invoke system C compiler.

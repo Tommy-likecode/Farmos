@@ -21,41 +21,377 @@ farm_Box3 farm_Box3_empty() {
 
 // Vector3 length
 double farm_Vector3_length(farm_Vector3 v) {
-  return sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+  return sqrt(v.f_x*v.f_x + v.f_y*v.f_y + v.f_z*v.f_z);
 }
 
 // Vector3 normalize
 farm_Vector3 farm_Vector3_normalize(farm_Vector3 v) {
   double len = farm_Vector3_length(v);
   if (len == 0.0) return v;  // zero unchanged per spec
-  return (farm_Vector3){v.x/len, v.y/len, v.z/len};
+  return (farm_Vector3){v.f_x/len, v.f_y/len, v.f_z/len};
 }
 
 // Vector3 add
 farm_Vector3 farm_Vector3_add(farm_Vector3 a, farm_Vector3 b) {
-  return (farm_Vector3){a.x+b.x, a.y+b.y, a.z+b.z};
+  return (farm_Vector3){a.f_x+b.f_x, a.f_y+b.f_y, a.f_z+b.f_z};
 }
 
 // Vector3 sub
 farm_Vector3 farm_Vector3_sub(farm_Vector3 a, farm_Vector3 b) {
-  return (farm_Vector3){a.x-b.x, a.y-b.y, a.z-b.z};
+  return (farm_Vector3){a.f_x-b.f_x, a.f_y-b.f_y, a.f_z-b.f_z};
 }
 
 // Vector3 multiply scalar
 farm_Vector3 farm_Vector3_multiplyScalar(farm_Vector3 v, double s) {
-  return (farm_Vector3){v.x*s, v.y*s, v.z*s};
+  return (farm_Vector3){v.f_x*s, v.f_y*s, v.f_z*s};
 }
 
 // Vector3 dot
 double farm_Vector3_dot(farm_Vector3 a, farm_Vector3 b) {
-  return a.x*b.x + a.y*b.y + a.z*b.z;
+  return a.f_x*b.f_x + a.f_y*b.f_y + a.f_z*b.f_z;
 }
 
 // Vector3 cross
 farm_Vector3 farm_Vector3_cross(farm_Vector3 a, farm_Vector3 b) {
   return (farm_Vector3){
-    a.y*b.z - a.z*b.y,
-    a.z*b.x - a.x*b.z,
-    a.x*b.y - a.y*b.x
+    a.f_y*b.f_z - a.f_z*b.f_y,
+    a.f_z*b.f_x - a.f_x*b.f_z,
+    a.f_x*b.f_y - a.f_y*b.f_x
   };
+}
+
+// Vector4 applyMatrix4
+farm_Vector4 farm_Vector4_applyMatrix4(farm_Vector4 v, farm_Matrix4 m) {
+  double* e = m.elements;
+  return (farm_Vector4){
+    e[0]*v.f_x + e[4]*v.f_y + e[8]*v.f_z + e[12]*v.w,
+    e[1]*v.f_x + e[5]*v.f_y + e[9]*v.f_z + e[13]*v.w,
+    e[2]*v.f_x + e[6]*v.f_y + e[10]*v.f_z + e[14]*v.w,
+    e[3]*v.f_x + e[7]*v.f_y + e[11]*v.f_z + e[15]*v.w
+  };
+}
+
+// Matrix4 multiplyMatrices
+farm_Matrix4 farm_Matrix4_multiplyMatrices(farm_Matrix4 a, farm_Matrix4 b) {
+  farm_Matrix4 result;
+  double* ae = a.elements;
+  double* be = b.elements;
+  double* re = result.elements;
+  
+  for (int i = 0; i < 4; i++) {
+    for (int j = 0; j < 4; j++) {
+      re[i + j*4] = 0;
+      for (int k = 0; k < 4; k++) {
+        re[i + j*4] += ae[i + k*4] * be[k + j*4];
+      }
+    }
+  }
+  return result;
+}
+
+// Matrix4 compose
+farm_Matrix4 farm_Matrix4_compose(farm_Vector3 position, farm_Quaternion quaternion, farm_Vector3 scale) {
+  farm_Matrix4 m;
+  double* e = m.elements;
+  
+  double x = quaternion.f_x, y = quaternion.f_y, z = quaternion.f_z, w = quaternion.w;
+  double x2 = x + x, y2 = y + y, z2 = z + z;
+  double xx = x * x2, xy = x * y2, xz = x * z2;
+  double yy = y * y2, yz = y * z2, zz = z * z2;
+  double wx = w * x2, wy = w * y2, wz = w * z2;
+  
+  double sx = scale.f_x, sy = scale.f_y, sz = scale.f_z;
+  
+  e[0] = (1 - (yy + zz)) * sx;
+  e[1] = (xy + wz) * sx;
+  e[2] = (xz - wy) * sx;
+  e[3] = 0;
+  
+  e[4] = (xy - wz) * sy;
+  e[5] = (1 - (xx + zz)) * sy;
+  e[6] = (yz + wx) * sy;
+  e[7] = 0;
+  
+  e[8] = (xz + wy) * sz;
+  e[9] = (yz - wx) * sz;
+  e[10] = (1 - (xx + yy)) * sz;
+  e[11] = 0;
+  
+  e[12] = position.f_x;
+  e[13] = position.f_y;
+  e[14] = position.f_z;
+  e[15] = 1;
+  
+  return m;
+}
+
+// Matrix4 invert
+farm_Matrix4 farm_Matrix4_invert(farm_Matrix4 m) {
+  farm_Matrix4 result;
+  double* te = result.elements;
+  double* me = m.elements;
+  
+  double n11 = me[0], n21 = me[1], n31 = me[2], n41 = me[3];
+  double n12 = me[4], n22 = me[5], n32 = me[6], n42 = me[7];
+  double n13 = me[8], n23 = me[9], n33 = me[10], n43 = me[11];
+  double n14 = me[12], n24 = me[13], n34 = me[14], n44 = me[15];
+  
+  double t11 = n23 * n34 * n42 - n24 * n33 * n42 + n24 * n32 * n43 - n22 * n34 * n43 - n23 * n32 * n44 + n22 * n33 * n44;
+  double t12 = n14 * n33 * n42 - n13 * n34 * n42 - n14 * n32 * n43 + n12 * n34 * n43 + n13 * n32 * n44 - n12 * n33 * n44;
+  double t13 = n13 * n24 * n42 - n14 * n23 * n42 + n14 * n22 * n43 - n12 * n24 * n43 - n13 * n22 * n44 + n12 * n23 * n44;
+  double t14 = n14 * n23 * n32 - n13 * n24 * n32 - n14 * n22 * n33 + n12 * n24 * n33 + n13 * n22 * n34 - n12 * n23 * n34;
+  
+  double det = n11 * t11 + n21 * t12 + n31 * t13 + n41 * t14;
+  
+  if (det == 0) {
+    // Singular matrix - return identity
+    return farm_Matrix4_identity();
+  }
+  
+  double detInv = 1.0 / det;
+  
+  te[0] = t11 * detInv;
+  te[1] = (n24 * n33 * n41 - n23 * n34 * n41 - n24 * n31 * n43 + n21 * n34 * n43 + n23 * n31 * n44 - n21 * n33 * n44) * detInv;
+  te[2] = (n22 * n34 * n41 - n24 * n32 * n41 + n24 * n31 * n42 - n21 * n34 * n42 - n22 * n31 * n44 + n21 * n32 * n44) * detInv;
+  te[3] = (n23 * n32 * n41 - n22 * n33 * n41 - n23 * n31 * n42 + n21 * n33 * n42 + n22 * n31 * n43 - n21 * n32 * n43) * detInv;
+  
+  te[4] = t12 * detInv;
+  te[5] = (n13 * n34 * n41 - n14 * n33 * n41 + n14 * n31 * n43 - n11 * n34 * n43 - n13 * n31 * n44 + n11 * n33 * n44) * detInv;
+  te[6] = (n14 * n32 * n41 - n12 * n34 * n41 - n14 * n31 * n42 + n11 * n34 * n42 + n12 * n31 * n44 - n11 * n32 * n44) * detInv;
+  te[7] = (n12 * n33 * n41 - n13 * n32 * n41 + n13 * n31 * n42 - n11 * n33 * n42 - n12 * n31 * n43 + n11 * n32 * n43) * detInv;
+  
+  te[8] = t13 * detInv;
+  te[9] = (n14 * n23 * n41 - n13 * n24 * n41 - n14 * n21 * n43 + n11 * n24 * n43 + n13 * n21 * n44 - n11 * n23 * n44) * detInv;
+  te[10] = (n12 * n24 * n41 - n14 * n22 * n41 + n14 * n21 * n42 - n11 * n24 * n42 - n12 * n21 * n44 + n11 * n22 * n44) * detInv;
+  te[11] = (n13 * n22 * n41 - n12 * n23 * n41 - n13 * n21 * n42 + n11 * n23 * n42 + n12 * n21 * n43 - n11 * n22 * n43) * detInv;
+  
+  te[12] = t14 * detInv;
+  te[13] = (n13 * n24 * n31 - n14 * n23 * n31 + n14 * n21 * n33 - n11 * n24 * n33 - n13 * n21 * n34 + n11 * n23 * n34) * detInv;
+  te[14] = (n14 * n22 * n31 - n12 * n24 * n31 - n14 * n21 * n32 + n11 * n24 * n32 + n12 * n21 * n34 - n11 * n22 * n34) * detInv;
+  te[15] = (n12 * n23 * n31 - n13 * n22 * n31 + n13 * n21 * n32 - n11 * n23 * n32 - n12 * n21 * n33 + n11 * n22 * n33) * detInv;
+  
+  return result;
+}
+
+// Matrix4 makePerspective
+farm_Matrix4 farm_Matrix4_makePerspective(double left, double right, double top, double bottom, double near, double far) {
+  farm_Matrix4 m;
+  double* e = m.elements;
+  
+  double x = 2.0 * near / (right - left);
+  double y = 2.0 * near / (top - bottom);
+  
+  double a = (right + left) / (right - left);
+  double b = (top + bottom) / (top - bottom);
+  double c = -(far + near) / (far - near);
+  double d = -2.0 * far * near / (far - near);
+  
+  e[0] = x;   e[4] = 0;   e[8] = a;    e[12] = 0;
+  e[1] = 0;   e[5] = y;   e[9] = b;    e[13] = 0;
+  e[2] = 0;   e[6] = 0;   e[10] = c;   e[14] = d;
+  e[3] = 0;   e[7] = 0;   e[11] = -1;  e[15] = 0;
+  
+  return m;
+}
+
+// Quaternion setFromEuler
+farm_Quaternion farm_Quaternion_setFromEuler(farm_Euler e) {
+  double x = e.f_x, y = e.f_y, z = e.f_z;
+  double c1 = cos(x / 2.0);
+  double c2 = cos(y / 2.0);
+  double c3 = cos(z / 2.0);
+  double s1 = sin(x / 2.0);
+  double s2 = sin(y / 2.0);
+  double s3 = sin(z / 2.0);
+  
+  farm_Quaternion q;
+  
+  // Assuming "XYZ" order (most common)
+  if (strcmp(e.order, "XYZ") == 0 || e.order[0] == 0) {
+    q.f_x = s1 * c2 * c3 + c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 - s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 + s1 * s2 * c3;
+    q.w = c1 * c2 * c3 - s1 * s2 * s3;
+  } else if (strcmp(e.order, "YXZ") == 0) {
+    q.f_x = s1 * c2 * c3 + c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 - s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 - s1 * s2 * c3;
+    q.w = c1 * c2 * c3 + s1 * s2 * s3;
+  } else if (strcmp(e.order, "ZXY") == 0) {
+    q.f_x = s1 * c2 * c3 - c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 + s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 + s1 * s2 * c3;
+    q.w = c1 * c2 * c3 - s1 * s2 * s3;
+  } else if (strcmp(e.order, "ZYX") == 0) {
+    q.f_x = s1 * c2 * c3 - c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 + s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 - s1 * s2 * c3;
+    q.w = c1 * c2 * c3 + s1 * s2 * s3;
+  } else if (strcmp(e.order, "YZX") == 0) {
+    q.f_x = s1 * c2 * c3 + c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 + s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 - s1 * s2 * c3;
+    q.w = c1 * c2 * c3 - s1 * s2 * s3;
+  } else if (strcmp(e.order, "XZY") == 0) {
+    q.f_x = s1 * c2 * c3 - c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 - s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 + s1 * s2 * c3;
+    q.w = c1 * c2 * c3 + s1 * s2 * s3;
+  } else {
+    // Default to XYZ
+    q.f_x = s1 * c2 * c3 + c1 * s2 * s3;
+    q.f_y = c1 * s2 * c3 - s1 * c2 * s3;
+    q.f_z = c1 * c2 * s3 + s1 * s2 * c3;
+    q.w = c1 * c2 * c3 - s1 * s2 * s3;
+  }
+  
+  return q;
+}
+
+// Quaternion setFromRotationMatrix
+farm_Quaternion farm_Quaternion_setFromRotationMatrix(farm_Matrix4 m) {
+  double* e = m.elements;
+  
+  double m11 = e[0], m12 = e[4], m13 = e[8];
+  double m21 = e[1], m22 = e[5], m23 = e[9];
+  double m31 = e[2], m32 = e[6], m33 = e[10];
+  
+  double trace = m11 + m22 + m33;
+  farm_Quaternion q;
+  
+  if (trace > 0) {
+    double s = 0.5 / sqrt(trace + 1.0);
+    q.w = 0.25 / s;
+    q.f_x = (m32 - m23) * s;
+    q.f_y = (m13 - m31) * s;
+    q.f_z = (m21 - m12) * s;
+  } else if (m11 > m22 && m11 > m33) {
+    double s = 2.0 * sqrt(1.0 + m11 - m22 - m33);
+    q.w = (m32 - m23) / s;
+    q.f_x = 0.25 * s;
+    q.f_y = (m12 + m21) / s;
+    q.f_z = (m13 + m31) / s;
+  } else if (m22 > m33) {
+    double s = 2.0 * sqrt(1.0 + m22 - m11 - m33);
+    q.w = (m13 - m31) / s;
+    q.f_x = (m12 + m21) / s;
+    q.f_y = 0.25 * s;
+    q.f_z = (m23 + m32) / s;
+  } else {
+    double s = 2.0 * sqrt(1.0 + m33 - m11 - m22);
+    q.w = (m21 - m12) / s;
+    q.f_x = (m13 + m31) / s;
+    q.f_y = (m23 + m32) / s;
+    q.f_z = 0.25 * s;
+  }
+  
+  return q;
+}
+
+// Euler setFromQuaternion — Three.js Euler.setFromRotationMatrix (all 6 orders).
+farm_Euler farm_Euler_setFromQuaternion(farm_Quaternion q, const char* order) {
+  farm_Euler e;
+  if (!order || order[0] == 0) order = "XYZ";
+  strncpy(e.order, order, 3);
+  e.order[3] = '\0';
+
+  double x = q.f_x, y = q.f_y, z = q.f_z, w = q.w;
+  double x2 = x * x, y2 = y * y, z2 = z * z;
+
+  // Three.js Matrix4.makeRotationFromQuaternion (column-major):
+  //   te[0]=m11, te[4]=m12, te[8]=m13, te[1]=m21, te[5]=m22, te[9]=m23, ...
+  double m11 = 1 - 2 * y2 - 2 * z2;
+  double m12 = 2 * x * y - 2 * w * z;
+  double m13 = 2 * x * z + 2 * w * y;
+  double m21 = 2 * x * y + 2 * w * z;
+  double m22 = 1 - 2 * x2 - 2 * z2;
+  double m23 = 2 * y * z - 2 * w * x;
+  double m31 = 2 * x * z - 2 * w * y;
+  double m32 = 2 * y * z + 2 * w * x;
+  double m33 = 1 - 2 * x2 - 2 * y2;
+
+  const double gimbal = 0.9999999;
+  #define FARM_CLAMP1(v) fmax(-1.0, fmin(1.0, (v)))
+
+  if (strcmp(e.order, "XYZ") == 0) {
+    e.f_y = asin(FARM_CLAMP1(m13));
+    if (fabs(m13) < gimbal) {
+      e.f_x = atan2(-m23, m33);
+      e.f_z = atan2(-m12, m11);
+    } else {
+      e.f_x = atan2(m32, m22);
+      e.f_z = 0;
+    }
+  } else if (strcmp(e.order, "YXZ") == 0) {
+    e.f_x = asin(-FARM_CLAMP1(m23));
+    if (fabs(m23) < gimbal) {
+      e.f_y = atan2(m13, m33);
+      e.f_z = atan2(m21, m22);
+    } else {
+      e.f_y = atan2(-m31, m11);
+      e.f_z = 0;
+    }
+  } else if (strcmp(e.order, "ZXY") == 0) {
+    e.f_x = asin(FARM_CLAMP1(m32));
+    if (fabs(m32) < gimbal) {
+      e.f_y = atan2(-m31, m33);
+      e.f_z = atan2(-m12, m22);
+    } else {
+      e.f_y = 0;
+      e.f_z = atan2(m21, m11);
+    }
+  } else if (strcmp(e.order, "ZYX") == 0) {
+    e.f_y = asin(-FARM_CLAMP1(m31));
+    if (fabs(m31) < gimbal) {
+      e.f_x = atan2(m32, m33);
+      e.f_z = atan2(m21, m11);
+    } else {
+      e.f_x = 0;
+      e.f_z = atan2(-m12, m22);
+    }
+  } else if (strcmp(e.order, "YZX") == 0) {
+    e.f_z = asin(FARM_CLAMP1(m21));
+    if (fabs(m21) < gimbal) {
+      e.f_x = atan2(-m23, m22);
+      e.f_y = atan2(-m31, m11);
+    } else {
+      e.f_x = 0;
+      e.f_y = atan2(m13, m33);
+    }
+  } else if (strcmp(e.order, "XZY") == 0) {
+    e.f_z = asin(-FARM_CLAMP1(m12));
+    if (fabs(m12) < gimbal) {
+      e.f_x = atan2(m32, m22);
+      e.f_y = atan2(m13, m11);
+    } else {
+      e.f_x = atan2(-m23, m33);
+      e.f_y = 0;
+    }
+  } else {
+    e.f_x = 0;
+    e.f_y = 0;
+    e.f_z = 0;
+    e.order[0] = 'X'; e.order[1] = 'Y'; e.order[2] = 'Z'; e.order[3] = 0;
+  }
+  #undef FARM_CLAMP1
+  return e;
+}
+
+// Color setHex
+farm_Color farm_Color_setHex(int32_t hex) {
+  farm_Color c;
+  c.r = ((hex >> 16) & 0xFF) / 255.0;
+  c.g = ((hex >> 8) & 0xFF) / 255.0;
+  c.b = (hex & 0xFF) / 255.0;
+  return c;
+}
+
+int32_t farm_Color_getHex(farm_Color c) {
+  int32_t r = (int32_t)(c.r * 255.0 + 0.5);
+  int32_t g = (int32_t)(c.g * 255.0 + 0.5);
+  int32_t b = (int32_t)(c.b * 255.0 + 0.5);
+  if (r < 0) r = 0; if (r > 255) r = 255;
+  if (g < 0) g = 0; if (g > 255) g = 255;
+  if (b < 0) b = 0; if (b > 255) b = 255;
+  return (r << 16) | (g << 8) | b;
 }

@@ -1,0 +1,16 @@
+import { Scene, PerspectiveCamera, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const s: Scene = new Scene();
+  s.setBackground(new Color(0xff0000));
+  println(s.hasBackground);
+  s.clearBackground();
+  println(s.hasBackground);
+  const camera: PerspectiveCamera = new PerspectiveCamera(75, 1.3333333333333333, 0.1, 1000);
+  camera.position.z = 5;
+  const renderer: Renderer = new Renderer(64, 48);
+  renderer.render(s, camera);
+  renderer.savePNG("out.png");
+  return 0;
+}

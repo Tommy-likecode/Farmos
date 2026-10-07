@@ -1,0 +1,13 @@
+import { Object3D } from "farmos:scene";
+
+function main(): int {
+  const o: Object3D = new Object3D();
+  o.position.set(1, 2, 3);
+  o.scale.set(2, 2, 2);
+  o.updateMatrix();
+  println(o.matrix.elements[12]);
+  println(o.matrix.elements[13]);
+  println(o.matrix.elements[14]);
+  println(o.matrix.elements[0]);
+  return 0;
+}

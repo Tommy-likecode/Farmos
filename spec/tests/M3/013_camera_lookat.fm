@@ -1,0 +1,11 @@
+import { PerspectiveCamera } from "farmos:scene";
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  const camera: PerspectiveCamera = new PerspectiveCamera(75, 1, 0.1, 1000);
+  camera.position.set(0, 0, 5);
+  camera.lookAt(new Vector3(0, 0, 0));
+  camera.updateMatrixWorld(true);
+  println(camera.position.z);
+  return 0;
+}

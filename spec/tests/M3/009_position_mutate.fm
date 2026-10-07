@@ -1,0 +1,11 @@
+import { Mesh, BoxGeometry, MeshBasicMaterial } from "farmos:scene";
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  const mesh: Mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(0xffffff));
+  mesh.position.x = 1.0;
+  mesh.position.y = 2.0;
+  mesh.position.add(new Vector3(0.0, 0.0, 3.0));
+  println(mesh.position);
+  return 0;
+}

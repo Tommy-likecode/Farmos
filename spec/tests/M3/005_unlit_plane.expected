@@ -1,0 +1,6 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: 3c5b5b721ef304448dd7b4d33ef59a3687a15480c45c52470a748b70c60af7e3
+# stdout:
+# end

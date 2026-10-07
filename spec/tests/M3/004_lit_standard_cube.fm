@@ -1,0 +1,30 @@
+import { Scene, PerspectiveCamera, BoxGeometry, MeshStandardMaterial, Mesh,
+         AmbientLight, DirectionalLight, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x000000));
+  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 1000);
+  camera.position.set(2, 2, 4);
+  camera.lookAt(0, 0, 0);
+  const geometry: BoxGeometry = new BoxGeometry(1, 1, 1);
+  const material: MeshStandardMaterial = new MeshStandardMaterial(new Color(1, 1, 1));
+  material.setRoughness(0.5);
+  material.setMetalness(0.0);
+  const cube: Mesh = new Mesh(geometry, material);
+  cube.rotation.x = 0.4;
+  cube.rotation.y = 0.6;
+  scene.add(cube);
+  const ambient: AmbientLight = new AmbientLight(0xffffff, 0.3);
+  scene.add(ambient);
+  const dir: DirectionalLight = new DirectionalLight(0xffffff, 0.9);
+  // lookAt makes local -Z = worldDirection = travel dir (-0.5,-1,-0.3);
+  // shade uses Ldir = -worldDirection = (0.5,1,0.3) matching _ref.
+  dir.lookAt(-0.5, -1.0, -0.3);
+  scene.add(dir);
+  const renderer: Renderer = new Renderer(128, 128);
+  renderer.render(scene, camera);
+  renderer.savePNG("out.png");
+  return 0;
+}

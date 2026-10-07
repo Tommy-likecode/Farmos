@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: 3c31a3e03c51f88d8a90d2ea3252714e017ca08af09172dcc4bba4c66e3ebc12
+## DirectionalLight orientation must yield worldDirection matching _ref (-0.5,-1,-0.3)
+# stdout:
+# end

@@ -1,0 +1,5 @@
+# kind: runtime_trap
+# exit: 107
+# stderr:
+runtime error: invalid renderer size
+# end

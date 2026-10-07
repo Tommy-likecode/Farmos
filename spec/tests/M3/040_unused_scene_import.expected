@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+## Unused farmos:scene import must DCE; stdout matches M1 hello.
+## Size gate: hello.bin == unused-import.bin (scripts/test_unused_scene_dce.py / .ps1).
+# stdout:
+Hello, Farmos
+# end

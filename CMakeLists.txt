@@ -43,6 +43,18 @@ enable_testing()
 set(PS powershell -NoProfile -ExecutionPolicy Bypass -File)
 set(FARMC_SCRIPTS "${CMAKE_SOURCE_DIR}/scripts")
 
+# Windows: scripts/run_one_m1.ps1. Linux/macOS: scripts/run_one_linux.sh
+# (same contract: `farmc build <main> -o <exe>` with cwd = fixtures dir).
+function(farmc_add_one_test test_name tests_dir fixture_name)
+  if(WIN32)
+    add_test(NAME ${test_name}
+      COMMAND ${PS} "${FARMC_SCRIPTS}/run_one_m1.ps1" -Farmc $<TARGET_FILE:farmc> -TestsDir "${tests_dir}" -Name "${fixture_name}")
+  else()
+    add_test(NAME ${test_name}
+      COMMAND bash "${FARMC_SCRIPTS}/run_one_linux.sh" $<TARGET_FILE:farmc> "${tests_dir}" "${fixture_name}")
+  endif()
+endfunction()
+
 # ---- Spec fixtures (spec/tests/M1) ----
 set(FARMC_TESTS_DIR "${CMAKE_SOURCE_DIR}/spec/tests/M1")
 file(GLOB M1_EXPECTED "${FARMC_TESTS_DIR}/*.expected")
@@ -52,15 +64,14 @@ foreach(exp ${M1_EXPECTED})
   # requires int literal coercion in this case. This M1 test is superseded by M2 and excluded
   # from M2 builds to keep the official Windows test suite green.
   if(NOT (name STREQUAL "039_mixed_arith_error"))
-    add_test(NAME m1_${name}
-      COMMAND ${PS} "${FARMC_SCRIPTS}/run_one_m1.ps1" -Farmc $<TARGET_FILE:farmc> -TestsDir "${FARMC_TESTS_DIR}" -Name "${name}")
+    farmc_add_one_test(m1_${name} "${FARMC_TESTS_DIR}" "${name}")
     set_tests_properties(m1_${name} PROPERTIES LABELS "spec")
   endif()
 endforeach()
 
 # Opt-in umbrella: labeled conformance_bundle; default ctest uses -LE conformance_bundle.
 option(FARMC_ENABLE_CONFORMANCE_BUNDLE "Register m1_conformance umbrella test" ON)
-if(FARMC_ENABLE_CONFORMANCE_BUNDLE)
+if(FARMC_ENABLE_CONFORMANCE_BUNDLE AND WIN32)
   add_test(NAME m1_conformance
     COMMAND ${PS} "${FARMC_SCRIPTS}/run_m1_tests.ps1" -Farmc $<TARGET_FILE:farmc> -TestsDir "${FARMC_TESTS_DIR}")
   set_tests_properties(m1_conformance PROPERTIES LABELS "conformance_bundle")
@@ -71,18 +82,40 @@ set(FARMC_M2_TESTS_DIR "${CMAKE_SOURCE_DIR}/spec/tests/M2")
 file(GLOB M2_EXPECTED "${FARMC_M2_TESTS_DIR}/*.expected")
 foreach(exp ${M2_EXPECTED})
   get_filename_component(name ${exp} NAME_WE)
-  add_test(NAME m2_${name}
-    COMMAND ${PS} "${FARMC_SCRIPTS}/run_one_m1.ps1" -Farmc $<TARGET_FILE:farmc> -TestsDir "${FARMC_M2_TESTS_DIR}" -Name "${name}")
+  farmc_add_one_test(m2_${name} "${FARMC_M2_TESTS_DIR}" "${name}")
   set_tests_properties(m2_${name} PROPERTIES LABELS "spec")
 endforeach()
+
+# ---- M3 Spec fixtures (spec/tests/M3) ----
+set(FARMC_M3_TESTS_DIR "${CMAKE_SOURCE_DIR}/spec/tests/M3")
+file(GLOB M3_EXPECTED "${FARMC_M3_TESTS_DIR}/*.expected")
+foreach(exp ${M3_EXPECTED})
+  get_filename_component(name ${exp} NAME_WE)
+  farmc_add_one_test(m3_${name} "${FARMC_M3_TESTS_DIR}" "${name}")
+  set_tests_properties(m3_${name} PROPERTIES LABELS "spec")
+endforeach()
+
+# AC-M3-01 / AC-M3-11: unused farmos:scene import DCE + M1/M2 link flags vs master.
+# Windows: PowerShell (no python3 required). Unix: python3.
+find_program(FARMC_PYTHON3 python3)
+if(WIN32)
+  add_test(NAME local_unused_scene_dce
+    COMMAND ${PS} "${FARMC_SCRIPTS}/test_unused_scene_dce.ps1"
+            -Farmc $<TARGET_FILE:farmc> -RepoRoot "${CMAKE_SOURCE_DIR}")
+  set_tests_properties(local_unused_scene_dce PROPERTIES LABELS "local")
+elseif(FARMC_PYTHON3)
+  add_test(NAME local_unused_scene_dce
+    COMMAND ${FARMC_PYTHON3} "${FARMC_SCRIPTS}/test_unused_scene_dce.py"
+            $<TARGET_FILE:farmc> "${CMAKE_SOURCE_DIR}")
+  set_tests_properties(local_unused_scene_dce PROPERTIES LABELS "local")
+endif()
 
 # ---- Local positive fixtures (tests/local) ----
 set(FARMC_LOCAL_TESTS_DIR "${CMAKE_SOURCE_DIR}/tests/local")
 file(GLOB LOCAL_EXPECTED "${FARMC_LOCAL_TESTS_DIR}/*.expected")
 foreach(exp ${LOCAL_EXPECTED})
   get_filename_component(name ${exp} NAME_WE)
-  add_test(NAME local_${name}
-    COMMAND ${PS} "${FARMC_SCRIPTS}/run_one_m1.ps1" -Farmc $<TARGET_FILE:farmc> -TestsDir "${FARMC_LOCAL_TESTS_DIR}" -Name "${name}")
+  farmc_add_one_test(local_${name} "${FARMC_LOCAL_TESTS_DIR}" "${name}")
   set_tests_properties(local_${name} PROPERTIES LABELS "local")
 endforeach()
 

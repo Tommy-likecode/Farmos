@@ -1,0 +1,18 @@
+import { Scene, PerspectiveCamera, PlaneGeometry, MeshBasicMaterial, Mesh, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0, 0, 0));
+  const camera: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);
+  camera.position.z = 3;
+  camera.lookAt(0, 0, 0);
+  const geometry: PlaneGeometry = new PlaneGeometry(2, 2);
+  const material: MeshBasicMaterial = new MeshBasicMaterial(0x2244ff);
+  const plane: Mesh = new Mesh(geometry, material);
+  scene.add(plane);
+  const renderer: Renderer = new Renderer(64, 64);
+  renderer.render(scene, camera);
+  renderer.savePNG("out.png");
+  return 0;
+}

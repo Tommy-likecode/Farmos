@@ -1,0 +1,7 @@
+import { Renderer } from "farmos:scene";
+
+function main(): int {
+  const renderer: Renderer = new Renderer();
+  renderer.setSize(0, 10);
+  return 0;
+}

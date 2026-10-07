@@ -1,0 +1,7 @@
+import { Object3D } from "farmos:scene";
+
+function main(): int {
+  const o: Object3D = new Object3D();
+  o.rotation.order = "ABC";
+  return 0;
+}
