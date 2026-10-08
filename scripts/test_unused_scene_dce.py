@@ -147,11 +147,15 @@ def assert_scene_link(label, log):
 
 
 # Programs that never execute `parallel` must not pay for threads (M3.5 §11.2).
-THREAD_MARKERS = (
-    "farm_par.c",
-    "farm_par.h",
+# Link-line / generated-C markers. llvm-mingw UCRT hello (master too) still has a
+# PE .tls section and KERNEL32 InitializeCriticalSection from the CRT — those
+# are not farmc thread use and must not fail the Windows check.
+LINK_THREAD_MARKERS = (
+    "farm_par",
     "FARM_ENABLE_THREADS",
     "-pthread",
+)
+LINUX_C_THREAD_MARKERS = LINK_THREAD_MARKERS + (
     "InitializeCriticalSection",
     "pthread_",
     "CreateThread",
@@ -159,41 +163,27 @@ THREAD_MARKERS = (
 )
 
 
-def pe_section_names(data):
-    names = []
-    if len(data) < 0x40 or data[:2] != b"MZ":
-        return names
-    e_lfanew = _u32(data, 0x3C)
-    if e_lfanew + 24 > len(data) or data[e_lfanew:e_lfanew + 4] != b"PE\0\0":
-        return names
-    num_sections = _u16(data, e_lfanew + 6)
-    opt_size = _u16(data, e_lfanew + 20)
-    sect_off = e_lfanew + 24 + opt_size
-    for s in range(num_sections):
-        sh = sect_off + s * 40
-        if sh + 8 > len(data):
-            break
-        names.append(data[sh:sh + 8].split(b"\0", 1)[0])
-    return names
-
-
 def assert_no_thread_runtime(label, log, csrc, binary_bytes, binary_path):
-    for m in THREAD_MARKERS:
+    for m in LINK_THREAD_MARKERS:
         if m in log:
             fail(f"{label}: verbose link command mentions thread API {m!r}\n{log}")
     try:
         text = csrc.decode("utf-8")
     except UnicodeDecodeError:
         text = csrc.decode("utf-8", errors="replace")
-    for m in THREAD_MARKERS:
+    if sys.platform == "win32":
+        for m in LINK_THREAD_MARKERS:
+            if m in text:
+                fail(f"{label}: generated C contains thread API {m!r}")
+        # Mingw CRT: .tls / InitializeCriticalSection are present on master too.
+        if b"CreateThread" in binary_bytes:
+            fail(f"{label}: binary imports CreateThread")
+        if b"pthread" in binary_bytes:
+            fail(f"{label}: binary contains a pthread symbol")
+        return
+    for m in LINUX_C_THREAD_MARKERS:
         if m in text:
             fail(f"{label}: generated C contains thread API {m!r}")
-    if sys.platform == "win32":
-        if b".tls" in pe_section_names(binary_bytes):
-            fail(f"{label}: PE has a .tls section")
-        if b"InitializeCriticalSection" in binary_bytes or b"CreateThread" in binary_bytes:
-            fail(f"{label}: binary imports a Win32 thread API")
-        return
     import shutil
     readelf = shutil.which("readelf")
     nm = shutil.which("nm")
