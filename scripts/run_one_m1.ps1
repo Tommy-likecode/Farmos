@@ -472,6 +472,10 @@ if (Same $exp.kind 'run_png') {
   $script:PngScratch = Join-Path $env:TEMP ("farmc_png_" + $Name + "_" + [guid]::NewGuid().ToString("N"))
   New-Item -ItemType Directory -Force -Path $script:PngScratch | Out-Null
   $runCwd = $script:PngScratch
+  $refDir = Join-Path $TestsDir "_ref"
+  if (Test-Path -LiteralPath $refDir -PathType Container) {
+    Copy-Item -LiteralPath $refDir -Destination (Join-Path $script:PngScratch "_ref") -Recurse -Force
+  }
 }
 
 $threadCfgs = @($null)

@@ -146,13 +146,14 @@ static bool is_scene_sym(const std::string& n) {
          n == "farm_PlaneGeometry" || n == "farm_MeshBasicMaterial" ||
          n == "farm_MeshStandardMaterial" || n == "farm_AmbientLight" ||
          n == "farm_DirectionalLight" || n == "farm_PointLight" ||
+         n == "farm_RectAreaLight" || n == "farm_Texture" ||
          n == "farm_Renderer";
 }
 
 static bool is_object3d_sym(const std::string& n) {
   return n == "farm_Object3D" || n == "farm_Scene" || n == "farm_PerspectiveCamera" ||
          n == "farm_Mesh" || n == "farm_AmbientLight" || n == "farm_DirectionalLight" ||
-         n == "farm_PointLight";
+         n == "farm_PointLight" || n == "farm_RectAreaLight";
 }
 
 static bool is_math_sym(const std::string& n) {
@@ -1495,6 +1496,7 @@ void seed_scene_summaries(Analyzer& A) {
   Path rth = pthis_cls("farm_Renderer");
   add_eff(rend, false, true, A.with_field(rth, "#frame"), CVal::unk());
   A.sums["farm_Renderer_render"] = rend;
+  A.sums["farm_Renderer_renderPath"] = rend;
 
   Summary png; png.seeded = true; png.file_io = true;
   add_eff(png, true, false, A.with_field(rth, "#frame"));
@@ -1505,6 +1507,16 @@ void seed_scene_summaries(Analyzer& A) {
   add_eff(sz, false, true, A.with_field(rth, "height"), CVal::unk());
   add_eff(sz, false, true, A.with_field(rth, "#frame"), CVal::unk());
   A.sums["farm_Renderer_setSize"] = sz;
+
+  Summary acc; acc.seeded = true;
+  add_eff(acc, false, true, A.with_field(rth, "#frame"), CVal::unk());
+  A.sums["farm_Renderer_resetAccumulation"] = acc;
+  Summary ss; ss.seeded = true;
+  add_eff(ss, false, true, A.with_field(rth, "samples"), CVal::unk());
+  A.sums["farm_Renderer_setSamples"] = ss;
+  Summary sb; sb.seeded = true;
+  add_eff(sb, false, true, A.with_field(rth, "maxBounces"), CVal::unk());
+  A.sums["farm_Renderer_setMaxBounces"] = sb;
 
   auto disp = [&](const std::string& cls, const std::string& key) {
     Summary d; d.seeded = true;
@@ -1529,6 +1541,12 @@ void seed_scene_summaries(Analyzer& A) {
   matset("farm_MeshStandardMaterial", "set", "color");
   matset("farm_MeshStandardMaterial", "setRoughness", "roughness");
   matset("farm_MeshStandardMaterial", "setMetalness", "metalness");
+  matset("farm_MeshStandardMaterial", "setTransmission", "transmission");
+  matset("farm_MeshStandardMaterial", "setIor", "ior");
+  matset("farm_MeshStandardMaterial", "setEmissive", "emissive");
+  matset("farm_MeshStandardMaterial", "setEmissive_hex", "emissive");
+  matset("farm_MeshStandardMaterial", "setEmissiveIntensity", "emissiveIntensity");
+  matset("farm_MeshStandardMaterial", "setMap", "map");
 }
 
 static std::vector<FunctionDecl*> all_fns(Program& p) {
@@ -1984,7 +2002,7 @@ void scan_uses_expr(Analyzer& A, ExprPtr e, std::map<int, UseInfo>& uses) {
             if (x.kind == Origin::Site) uses[x.id].other = true;
           }
         }
-      } else if (n == "render" && e->args.size() >= 2) {
+      } else if ((n == "render" || n == "renderPath") && e->args.size() >= 2) {
         Origin s = orig_from_expr(A, e->args[0]);
         Origin c = orig_from_expr(A, e->args[1]);
         if (s.kind == Origin::Site) uses[s.id].render_ok = true;

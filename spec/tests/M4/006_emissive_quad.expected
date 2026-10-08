@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: d96a4c770d87b3806d87f4886421736c0f2ae587ad33be5eb7db2690127a2687
+## 24x24, samples 1, maxBounces 0, emissive (0.2,0.4,0.05)*2
+# stdout:
+# end

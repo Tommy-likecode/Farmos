@@ -89,6 +89,7 @@ struct Sema {
            c_sym == "farm_PlaneGeometry" || c_sym == "farm_MeshBasicMaterial" ||
            c_sym == "farm_MeshStandardMaterial" || c_sym == "farm_AmbientLight" ||
            c_sym == "farm_DirectionalLight" || c_sym == "farm_PointLight" ||
+           c_sym == "farm_RectAreaLight" || c_sym == "farm_Texture" ||
            c_sym == "farm_Renderer";
   }
 
@@ -581,6 +582,9 @@ struct Sema {
                   e->mangled = "farm_Object3D_lookAt_xyz";
                 else if (md->name == "lookAt" && e->args.size() == 1)
                   e->mangled = "farm_Object3D_lookAt_v";
+                else if (md->name == "setEmissive" && e->args.size() == 1 &&
+                         e->args[0]->type && e->args[0]->type->kind == TypeKind::Int)
+                  e->mangled = "farm_MeshStandardMaterial_setEmissive_hex";
                 else if (md->name == "updateMatrixWorld" && cd->c_sym == "farm_PerspectiveCamera")
                   e->mangled = "farm_PerspectiveCamera_updateMatrixWorld";
                 else if (md->name == "add" || md->name == "remove" || md->name == "addAt" ||
@@ -719,6 +723,24 @@ struct Sema {
               } else if (nargs != 0) {
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0, 1, 2, or 4, found " + std::to_string(nargs));
               }
+            } else if (cd->c_sym == "farm_RectAreaLight") {
+              if (nargs == 2) {
+                if (e->args[0]->type->kind == TypeKind::Int) variant = "hex_i";
+                else error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int");
+                coerce_float(e->args[1]);
+              } else if (nargs == 4) {
+                if (e->args[0]->type->kind == TypeKind::Int) variant = "hex_i_wh";
+                else if (e->args[0]->type->kind == TypeKind::Struct && e->args[0]->type->name.find("Color") != std::string::npos) variant = "color_i_wh";
+                else error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int or Color");
+                for (int i = 1; i < 4; ++i) coerce_float(e->args[i]);
+              } else if (nargs != 0) {
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0, 2, or 4, found " + std::to_string(nargs));
+              }
+            } else if (cd->c_sym == "farm_Texture") {
+              if (nargs != 1)
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 1, found " + std::to_string(nargs));
+              else if (e->args[0]->type->kind != TypeKind::String)
+                error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected string");
             } else if (cd->c_sym == "farm_AmbientLight" || cd->c_sym == "farm_DirectionalLight") {
               if (nargs == 1) {
                 if (e->args[0]->type->kind == TypeKind::Int) variant = "hex";

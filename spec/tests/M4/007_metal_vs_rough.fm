@@ -1,0 +1,32 @@
+import { Scene, PerspectiveCamera, SphereGeometry, MeshStandardMaterial, Mesh,
+         DirectionalLight, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0xcc3322));
+  const camera: PerspectiveCamera = new PerspectiveCamera(40, 1.3333333333333333, 0.1, 100);
+  camera.position.set(0, 0, 2.4);
+  camera.lookAt(0, 0, 0);
+  const leftMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.9, 0.9, 0.95));
+  leftMat.setRoughness(0);
+  leftMat.setMetalness(1);
+  const left: Mesh = new Mesh(new SphereGeometry(0.38, 8, 4), leftMat);
+  left.position.x = -0.55;
+  scene.add(left);
+  const rightMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.9, 0.9, 0.95));
+  rightMat.setRoughness(0.45);
+  rightMat.setMetalness(1);
+  const right: Mesh = new Mesh(new SphereGeometry(0.38, 8, 4), rightMat);
+  right.position.x = 0.55;
+  scene.add(right);
+  const sun: DirectionalLight = new DirectionalLight(0xffffff, 3);
+  sun.lookAt(0.2, -0.3, -1);
+  scene.add(sun);
+  const renderer: Renderer = new Renderer(32, 24);
+  renderer.setSamples(1);
+  renderer.setMaxBounces(1);
+  renderer.renderPath(scene, camera);
+  renderer.savePNG("out.png");
+  return 0;
+}

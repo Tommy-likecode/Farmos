@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: 0bbf67dab2b18cb0f0ac2668cf292af370535747cc468f8def37f504538a4b9e
+## 16x16, two samples then resetAccumulation then one sample; equals sampleIndex 0
+# stdout:
+# end

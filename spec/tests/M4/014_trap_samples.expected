@@ -1,0 +1,5 @@
+# kind: runtime_trap
+# exit: 112
+# stderr:
+runtime error: invalid sample count
+# end

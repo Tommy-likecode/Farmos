@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: b7a1bc913c7875519216395bde0da6c45df0f3c0463fed8c8d6533e752c8a6c3
+## 16x16, two renderPath calls of setSamples(1); mean of sampleIndex 0 and 1
+# stdout:
+# end

@@ -1,0 +1,8 @@
+# kind: run_png
+# exit: 0
+# threads: 1,4
+# png: out.png
+# sha256: 2af33ba39dae62c5b3df30970794d7d92213f51a2997ef7f82860910638ecd04
+## 32x32, samples 1, maxBounces 2, roughness 0 metal mirror
+# stdout:
+# end

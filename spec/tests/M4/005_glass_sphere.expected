@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: f4615d08b4ae849e2c2c64320410e8b996d4066cfb12da5cdbf40ea0868d8b24
+## 32x32, samples 1, maxBounces 3, sphere 8x4, ior 1.5
+# stdout:
+# end

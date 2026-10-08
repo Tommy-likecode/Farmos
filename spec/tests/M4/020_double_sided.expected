@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: 1d1cbda60b4112540c6f740a84c48816c30466ae8f80d4dc1f9ecaf0f54aa1cb
+## 24x24, camera on -Z sees the back of a +Z plane
+# stdout:
+# end

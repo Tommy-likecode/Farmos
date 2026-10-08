@@ -21,6 +21,8 @@ typedef struct farm_MeshStandardMaterial farm_MeshStandardMaterial;
 typedef struct farm_AmbientLight farm_AmbientLight;
 typedef struct farm_DirectionalLight farm_DirectionalLight;
 typedef struct farm_PointLight farm_PointLight;
+typedef struct farm_RectAreaLight farm_RectAreaLight;
+typedef struct farm_Texture farm_Texture;
 typedef struct farm_Renderer farm_Renderer;
 
 // Forward declarations for sync functions (used by generated code)
@@ -35,7 +37,8 @@ typedef enum {
   FARM_OBJECT3D_TYPE_MESH = 3,
   FARM_OBJECT3D_TYPE_AMBIENT_LIGHT = 4,
   FARM_OBJECT3D_TYPE_DIRECTIONAL_LIGHT = 5,
-  FARM_OBJECT3D_TYPE_POINT_LIGHT = 6
+  FARM_OBJECT3D_TYPE_POINT_LIGHT = 6,
+  FARM_OBJECT3D_TYPE_RECT_AREA_LIGHT = 7
 } farm_Object3DType;
 
 typedef struct {
@@ -47,6 +50,7 @@ typedef struct {
 typedef struct {
   double* positions;  // 3 doubles per vertex
   double* normals;    // 3 doubles per vertex
+  double* uvs;        // 2 doubles per vertex (M4 albedo)
   int32_t* indices;   // triangle indices
   int32_t vertex_count;
   int32_t index_count;
@@ -142,11 +146,22 @@ struct farm_MeshBasicMaterial {
   bool disposed;
 };
 
+struct farm_Texture {
+  int32_t width;
+  int32_t height;
+  double* rgb;  // width*height*3, byte/255, no sRGB
+};
+
 struct farm_MeshStandardMaterial {
   uint8_t material_type; // 1 for Standard
   farm_Color f_color;
   double roughness;
   double metalness;
+  double transmission;
+  double ior;
+  farm_Color f_emissive;
+  double emissiveIntensity;
+  farm_Texture* map;
   bool disposed;
 };
 
@@ -237,10 +252,34 @@ struct farm_PointLight {
   double f_decay;
 };
 
+struct farm_RectAreaLight {
+  farm_Object3DType type;
+  farm_Vector3 f_position;
+  farm_Euler f_rotation;
+  farm_Quaternion f_quaternion;
+  farm_Vector3 f_scale;
+  farm_Matrix4 f_matrix;
+  farm_Matrix4 f_matrixWorld;
+  bool matrixAutoUpdate;
+  bool f_visible;
+  farm_Object3D* parent;
+  farm_ChildList children;
+  bool rotation_dirty;
+  bool quaternion_dirty;
+  farm_Color f_color;
+  double f_intensity;
+  double width;
+  double height;
+};
+
 // Renderer
 struct farm_Renderer {
   uint8_t* framebuffer;  // RGB8
   float* depthbuffer;
+  double* accum;         // float64 RGB mean sums (path tracer)
+  int32_t accum_count;
+  int32_t samples;
+  int32_t max_bounces;
   int32_t width;
   int32_t height;
   bool disposed;
@@ -324,7 +363,15 @@ void farm_MeshStandardMaterial__setMetalness(farm_MeshStandardMaterial* self, do
 void farm_MeshStandardMaterial_set(farm_MeshStandardMaterial* self, farm_Color color);
 void farm_MeshStandardMaterial_setRoughness(farm_MeshStandardMaterial* self, double r);
 void farm_MeshStandardMaterial_setMetalness(farm_MeshStandardMaterial* self, double m);
+void farm_MeshStandardMaterial_setTransmission(farm_MeshStandardMaterial* self, double v);
+void farm_MeshStandardMaterial_setIor(farm_MeshStandardMaterial* self, double v);
+void farm_MeshStandardMaterial_setEmissive(farm_MeshStandardMaterial* self, farm_Color c);
+void farm_MeshStandardMaterial_setEmissive_hex(farm_MeshStandardMaterial* self, int64_t hex);
+void farm_MeshStandardMaterial_setEmissiveIntensity(farm_MeshStandardMaterial* self, double v);
+void farm_MeshStandardMaterial_setMap(farm_MeshStandardMaterial* self, farm_Texture* tex);
 void farm_MeshStandardMaterial_dispose(farm_MeshStandardMaterial* self);
+
+farm_Texture* farm_Texture_new(FarmString path);
 
 // Mesh methods
 farm_Mesh* farm_Mesh_new(void* geometry, void* material);
@@ -350,13 +397,28 @@ farm_PointLight* farm_PointLight_new_color_i(farm_Color color, double intensity)
 farm_PointLight* farm_PointLight_new_full(farm_Color color, double intensity, double distance, double decay);
 farm_PointLight* farm_PointLight_new_hex_full(int64_t hex, double intensity, double distance, double decay);
 
+farm_RectAreaLight* farm_RectAreaLight_new();
+farm_RectAreaLight* farm_RectAreaLight_new_hex_i(int64_t hex, double intensity);
+farm_RectAreaLight* farm_RectAreaLight_new_hex_i_wh(int64_t hex, double intensity, double width, double height);
+farm_RectAreaLight* farm_RectAreaLight_new_color_i_wh(farm_Color color, double intensity, double width, double height);
+
 // Renderer methods
 farm_Renderer* farm_Renderer_new();
 farm_Renderer* farm_Renderer_new_wh(int64_t width, int64_t height);
 void farm_Renderer_setSize(farm_Renderer* self, int64_t width, int64_t height);
 void farm_Renderer_render(farm_Renderer* self, farm_Scene* scene, farm_PerspectiveCamera* camera);
+void farm_Renderer_setSamples(farm_Renderer* self, int64_t n);
+void farm_Renderer_setMaxBounces(farm_Renderer* self, int64_t n);
+void farm_Renderer_resetAccumulation(farm_Renderer* self);
+void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_PerspectiveCamera* camera);
 void farm_Renderer_savePNG(farm_Renderer* self, FarmString path);
 void farm_Renderer_dispose(farm_Renderer* self);
+
+static inline farm_GeometryData* farm_mesh_geometry_data(farm_Mesh* mesh) {
+  if (mesh->geometry_type == 0) return &((farm_BoxGeometry*)mesh->f_geometry)->data;
+  if (mesh->geometry_type == 1) return &((farm_SphereGeometry*)mesh->f_geometry)->data;
+  return &((farm_PlaneGeometry*)mesh->f_geometry)->data;
+}
 
 #ifdef __cplusplus
 }

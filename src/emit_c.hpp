@@ -6,4 +6,6 @@ std::string emit_c(Program& prog);
 bool program_uses_scene(Program& prog);
 // True when a reachable user function contains a `parallel` statement.
 bool program_uses_parallel(Program& prog);
+// True when a user module calls Renderer.renderPath (gates farm_ray.c).
+bool program_uses_ray(Program& prog);
 }

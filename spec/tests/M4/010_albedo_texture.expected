@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: 02f14f54d35b4682be553e9d86e277e60f18053b76bdc1d0ee2974a6711a2885
+## 32x32, samples 1, maxBounces 0, Texture _ref/albedo.png; harness CWD is spec/tests/M4
+# stdout:
+# end

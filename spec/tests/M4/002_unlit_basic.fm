@@ -1,0 +1,24 @@
+import { Scene, PerspectiveCamera, BoxGeometry, MeshBasicMaterial, Mesh,
+         DirectionalLight, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x202020));
+  const camera: PerspectiveCamera = new PerspectiveCamera(45, 1, 0.1, 100);
+  camera.position.set(1.6, 1.2, 2.4);
+  camera.lookAt(0, 0, 0);
+  const geometry: BoxGeometry = new BoxGeometry(1, 1, 1);
+  const material: MeshBasicMaterial = new MeshBasicMaterial(0x00cc66);
+  const cube: Mesh = new Mesh(geometry, material);
+  scene.add(cube);
+  const sun: DirectionalLight = new DirectionalLight(0xffffff, 5);
+  sun.lookAt(-0.3, -1, -0.2);
+  scene.add(sun);
+  const renderer: Renderer = new Renderer(24, 24);
+  renderer.setSamples(1);
+  renderer.setMaxBounces(0);
+  renderer.renderPath(scene, camera);
+  renderer.savePNG("out.png");
+  return 0;
+}

@@ -1,0 +1,9 @@
+import { RectAreaLight } from "farmos:scene";
+
+function main(): int {
+  const light: RectAreaLight = new RectAreaLight(0xffffff, 2, 3, 4);
+  println(light.width);
+  println(light.height);
+  println(light.intensity);
+  return 0;
+}

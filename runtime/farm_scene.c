@@ -189,14 +189,14 @@ void farm_Object3D_updateMatrixWorld(farm_Object3D* self, bool force) {
 void farm_Object3D_lookAt_xyz(farm_Object3D* self, double x, double y, double z) {
   farm_Vector3 target = farm_Vector3_new(x, y, z);
   farm_Vector3 up = farm_Vector3_new(0, 1, 0);
-  
-  // Direction from this to target
-  farm_Vector3 dir = farm_Vector3_sub(target, self->f_position);
-  dir = farm_Vector3_normalize(dir);
-  
-  // Build rotation matrix to look down -Z toward target
-  farm_Vector3 z_axis = farm_Vector3_multiplyScalar(dir, -1);
-  farm_Vector3 x_axis = farm_Vector3_normalize(farm_Vector3_cross(up, z_axis));
+  // M4 §6.1: z = normalize(eye - target); local +Z. Zero → (0,0,1).
+  farm_Vector3 z_axis = farm_Vector3_sub(self->f_position, target);
+  double zlen = farm_Vector3_length(z_axis);
+  if (zlen == 0.0) z_axis = farm_Vector3_new(0, 0, 1);
+  else z_axis = farm_Vector3_normalize(z_axis);
+  farm_Vector3 x_axis = farm_Vector3_cross(up, z_axis);
+  if (farm_Vector3_length(x_axis) == 0.0) x_axis = farm_Vector3_new(1, 0, 0);
+  else x_axis = farm_Vector3_normalize(x_axis);
   farm_Vector3 y_axis = farm_Vector3_cross(z_axis, x_axis);
   
   farm_Matrix4 rot_mat = farm_Matrix4_identity();
@@ -350,6 +350,19 @@ static void build_box_geometry(farm_GeometryData* data, double width, double hei
   };
   
   memcpy(data->normals, normals, 24 * 3 * sizeof(double));
+
+  data->uvs = (double*)farm_arena_alloc(24 * 2 * sizeof(double));
+  {
+    double uvs[] = {
+      0,0, 1,0, 1,1, 0,1,
+      0,0, 1,0, 1,1, 0,1,
+      0,0, 1,0, 1,1, 0,1,
+      0,0, 1,0, 1,1, 0,1,
+      0,0, 1,0, 1,1, 0,1,
+      0,0, 1,0, 1,1, 0,1
+    };
+    memcpy(data->uvs, uvs, 24 * 2 * sizeof(double));
+  }
   
   // 12 triangles (2 per face)
   data->index_count = 36;
@@ -391,6 +404,12 @@ static void build_plane_geometry(farm_GeometryData* data, double width, double h
     0, 0, 1
   };
   memcpy(data->normals, normals, 4 * 3 * sizeof(double));
+
+  data->uvs = (double*)farm_arena_alloc(4 * 2 * sizeof(double));
+  {
+    double uvs[] = {0,0, 1,0, 1,1, 0,1};
+    memcpy(data->uvs, uvs, 4 * 2 * sizeof(double));
+  }
   
   // 2 triangles, CCW from +Z
   data->index_count = 6;
@@ -408,36 +427,38 @@ static void build_sphere_geometry(farm_GeometryData* data, double radius, int32_
   data->vertex_count = vc;
   data->positions = (double*)farm_arena_alloc(vc * 3 * sizeof(double));
   data->normals = (double*)farm_arena_alloc(vc * 3 * sizeof(double));
+  data->uvs = (double*)farm_arena_alloc(vc * 2 * sizeof(double));
   
-  // Generate vertices
+  // Generate vertices (M4 §7.2 / Three.js-style)
   int32_t idx = 0;
   for (int32_t iy = 0; iy <= hs; iy++) {
     double v = (double)iy / (double)hs;
-    double phi = v * M_PI;
+    double theta = v * M_PI;
     
     for (int32_t ix = 0; ix <= ws; ix++) {
       double u = (double)ix / (double)ws;
-      double theta = u * 2.0 * M_PI;
+      double phi = u * 2.0 * M_PI;
       
-      double x = -radius * cos(theta) * sin(phi);
-      double y = radius * cos(phi);
-      double z = radius * sin(theta) * sin(phi);
+      double x = -radius * cos(phi) * sin(theta);
+      double y = radius * cos(theta);
+      double z = radius * sin(phi) * sin(theta);
       
-      data->positions[idx * 3 + 0] = (float)x;
-      data->positions[idx * 3 + 1] = (float)y;
-      data->positions[idx * 3 + 2] = (float)z;
+      data->positions[idx * 3 + 0] = x;
+      data->positions[idx * 3 + 1] = y;
+      data->positions[idx * 3 + 2] = z;
       
-      // Normal is normalized position for sphere
       double len = sqrt(x*x + y*y + z*z);
-      data->normals[idx * 3 + 0] = (float)(x / len);
-      data->normals[idx * 3 + 1] = (float)(y / len);
-      data->normals[idx * 3 + 2] = (float)(z / len);
+      data->normals[idx * 3 + 0] = (len == 0.0) ? 0.0 : x / len;
+      data->normals[idx * 3 + 1] = (len == 0.0) ? 0.0 : y / len;
+      data->normals[idx * 3 + 2] = (len == 0.0) ? 0.0 : z / len;
+      data->uvs[idx * 2 + 0] = u;
+      data->uvs[idx * 2 + 1] = 1.0 - v;
       
       idx++;
     }
   }
   
-  // Generate indices
+  // Generate indices (M4 §7.2): (a, b, a+1) and (b, b+1, a+1)
   int32_t tri_count = ws * hs * 2;
   data->index_count = tri_count * 3;
   data->indices = (int32_t*)farm_arena_alloc(data->index_count * sizeof(int32_t));
@@ -446,18 +467,13 @@ static void build_sphere_geometry(farm_GeometryData* data, double radius, int32_
   for (int32_t iy = 0; iy < hs; iy++) {
     for (int32_t ix = 0; ix < ws; ix++) {
       int32_t a = iy * (ws + 1) + ix;
-      int32_t b = a + 1;
-      int32_t c = a + (ws + 1);
-      int32_t d = c + 1;
-      
-      // Two triangles per quad
+      int32_t b = a + ws + 1;
       data->indices[idx++] = a;
       data->indices[idx++] = b;
-      data->indices[idx++] = c;
-      
+      data->indices[idx++] = a + 1;
       data->indices[idx++] = b;
-      data->indices[idx++] = d;
-      data->indices[idx++] = c;
+      data->indices[idx++] = b + 1;
+      data->indices[idx++] = a + 1;
     }
   }
   
@@ -550,6 +566,11 @@ farm_MeshStandardMaterial* farm_MeshStandardMaterial_new() {
   mat->f_color = farm_Color_new(1, 1, 1);
   mat->roughness = 1.0;
   mat->metalness = 0.0;
+  mat->transmission = 0.0;
+  mat->ior = 1.5;
+  mat->f_emissive = farm_Color_zero();
+  mat->emissiveIntensity = 1.0;
+  mat->map = NULL;
   mat->disposed = false;
   return mat;
 }
@@ -576,6 +597,30 @@ void farm_MeshStandardMaterial_setRoughness(farm_MeshStandardMaterial* self, dou
 
 void farm_MeshStandardMaterial_setMetalness(farm_MeshStandardMaterial* self, double m) {
   self->metalness = m;
+}
+
+void farm_MeshStandardMaterial_setTransmission(farm_MeshStandardMaterial* self, double v) {
+  self->transmission = v;
+}
+
+void farm_MeshStandardMaterial_setIor(farm_MeshStandardMaterial* self, double v) {
+  self->ior = v;
+}
+
+void farm_MeshStandardMaterial_setEmissive(farm_MeshStandardMaterial* self, farm_Color c) {
+  self->f_emissive = c;
+}
+
+void farm_MeshStandardMaterial_setEmissive_hex(farm_MeshStandardMaterial* self, int64_t hex) {
+  self->f_emissive = farm_Color_setHex((int32_t)hex);
+}
+
+void farm_MeshStandardMaterial_setEmissiveIntensity(farm_MeshStandardMaterial* self, double v) {
+  self->emissiveIntensity = v;
+}
+
+void farm_MeshStandardMaterial_setMap(farm_MeshStandardMaterial* self, farm_Texture* tex) {
+  self->map = tex;
 }
 
 void farm_MeshStandardMaterial_dispose(farm_MeshStandardMaterial* self) {
@@ -746,11 +791,159 @@ farm_PointLight* farm_PointLight_new_hex_full(int64_t hex, double intensity, dou
   return farm_PointLight_new_full(farm_Color_setHex((int32_t)hex), intensity, distance, decay);
 }
 
+farm_RectAreaLight* farm_RectAreaLight_new() {
+  farm_RectAreaLight* light = (farm_RectAreaLight*)farm_arena_alloc(sizeof(farm_RectAreaLight));
+  init_Object3D_fields((farm_Object3D*)light, FARM_OBJECT3D_TYPE_RECT_AREA_LIGHT);
+  light->f_color = farm_Color_new(1, 1, 1);
+  light->f_intensity = 1.0;
+  light->width = 1.0;
+  light->height = 1.0;
+  return light;
+}
+
+farm_RectAreaLight* farm_RectAreaLight_new_hex_i(int64_t hex, double intensity) {
+  farm_RectAreaLight* light = farm_RectAreaLight_new();
+  light->f_color = farm_Color_setHex((int32_t)hex);
+  light->f_intensity = intensity;
+  return light;
+}
+
+farm_RectAreaLight* farm_RectAreaLight_new_hex_i_wh(int64_t hex, double intensity, double width, double height) {
+  farm_RectAreaLight* light = farm_RectAreaLight_new_hex_i(hex, intensity);
+  light->width = width;
+  light->height = height;
+  return light;
+}
+
+farm_RectAreaLight* farm_RectAreaLight_new_color_i_wh(farm_Color color, double intensity, double width, double height) {
+  farm_RectAreaLight* light = farm_RectAreaLight_new();
+  light->f_color = color;
+  light->f_intensity = intensity;
+  light->width = width;
+  light->height = height;
+  return light;
+}
+
+static uint32_t tex_be32(const uint8_t* p) {
+  return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+static uint32_t tex_crc32(const uint8_t* data, size_t len) {
+  uint32_t crc = 0xFFFFFFFF;
+  for (size_t i = 0; i < len; i++) {
+    uint8_t b = data[i];
+    for (int j = 0; j < 8; j++) {
+      if ((crc ^ b) & 1) crc = (crc >> 1) ^ 0xEDB88320u;
+      else crc >>= 1;
+      b >>= 1;
+    }
+  }
+  return ~crc;
+}
+
+static int tex_inflate_stored(const uint8_t* src, size_t src_len, uint8_t* dst, size_t dst_len) {
+  if (src_len < 2) return 0;
+  size_t p = 2; /* zlib CMF/FLG */
+  size_t out = 0;
+  for (;;) {
+    if (p >= src_len) return 0;
+    uint8_t hdr = src[p++];
+    int bfinal = hdr & 1;
+    int btype = (hdr >> 1) & 3;
+    if (btype != 0) return 0;
+    if (p + 4 > src_len) return 0;
+    uint32_t len = (uint32_t)src[p] | ((uint32_t)src[p + 1] << 8);
+    uint32_t nlen = (uint32_t)src[p + 2] | ((uint32_t)src[p + 3] << 8);
+    p += 4;
+    if ((len ^ 0xFFFFu) != nlen) return 0;
+    if (p + len > src_len) return 0;
+    if (out + len > dst_len) return 0;
+    memcpy(dst + out, src + p, len);
+    out += len;
+    p += len;
+    if (bfinal) break;
+  }
+  return out == dst_len;
+}
+
+farm_Texture* farm_Texture_new(FarmString path) {
+  char* path_cstr = (char*)farm_arena_alloc(path.len + 1);
+  memcpy(path_cstr, path.ptr, path.len);
+  path_cstr[path.len] = '\0';
+  FILE* f = fopen(path_cstr, "rb");
+  if (!f) farm_trap(110, "texture load failed");
+  if (fseek(f, 0, SEEK_END) != 0) { fclose(f); farm_trap(110, "texture load failed"); }
+  long sz = ftell(f);
+  if (sz < 33) { fclose(f); farm_trap(110, "texture load failed"); }
+  if (fseek(f, 0, SEEK_SET) != 0) { fclose(f); farm_trap(110, "texture load failed"); }
+  uint8_t* file = (uint8_t*)farm_arena_alloc((size_t)sz);
+  if (fread(file, 1, (size_t)sz, f) != (size_t)sz) { fclose(f); farm_trap(110, "texture load failed"); }
+  fclose(f);
+  static const uint8_t sig[8] = {137, 80, 78, 71, 13, 10, 26, 10};
+  if (memcmp(file, sig, 8) != 0) farm_trap(110, "texture load failed");
+  int32_t tw = 0, th = 0;
+  uint8_t* idat = NULL;
+  size_t idat_len = 0;
+  size_t pos = 8;
+  int saw_ihdr = 0, saw_iend = 0;
+  while (pos + 12 <= (size_t)sz) {
+    uint32_t ln = tex_be32(file + pos);
+    if (pos + 12 + ln > (size_t)sz) farm_trap(110, "texture load failed");
+    const uint8_t* tag = file + pos + 4;
+    const uint8_t* chunk = file + pos + 8;
+    uint32_t crc_got = tex_be32(file + pos + 8 + ln);
+    if (tex_crc32(tag, 4 + ln) != crc_got) farm_trap(110, "texture load failed");
+    if (memcmp(tag, "IHDR", 4) == 0) {
+      if (ln != 13 || saw_ihdr) farm_trap(110, "texture load failed");
+      tw = (int32_t)tex_be32(chunk);
+      th = (int32_t)tex_be32(chunk + 4);
+      if (tw <= 0 || th <= 0) farm_trap(110, "texture load failed");
+      if (chunk[8] != 8 || chunk[9] != 2 || chunk[10] != 0 || chunk[11] != 0 || chunk[12] != 0)
+        farm_trap(110, "texture load failed");
+      saw_ihdr = 1;
+    } else if (memcmp(tag, "IDAT", 4) == 0) {
+      uint8_t* nbuf = (uint8_t*)farm_arena_alloc(idat_len + ln);
+      if (idat_len) memcpy(nbuf, idat, idat_len);
+      memcpy(nbuf + idat_len, chunk, ln);
+      idat = nbuf;
+      idat_len += ln;
+    } else if (memcmp(tag, "IEND", 4) == 0) {
+      saw_iend = 1;
+      break;
+    }
+    pos += 12 + ln;
+  }
+  if (!saw_ihdr || !saw_iend || !idat) farm_trap(110, "texture load failed");
+  size_t raw_size = (size_t)th * (1 + (size_t)tw * 3);
+  uint8_t* raw = (uint8_t*)farm_arena_alloc(raw_size);
+  if (!tex_inflate_stored(idat, idat_len, raw, raw_size)) farm_trap(110, "texture load failed");
+  farm_Texture* tex = (farm_Texture*)farm_arena_alloc(sizeof(farm_Texture));
+  tex->width = tw;
+  tex->height = th;
+  tex->rgb = (double*)farm_arena_alloc((size_t)tw * (size_t)th * 3 * sizeof(double));
+  for (int32_t y = 0; y < th; y++) {
+    size_t row = (size_t)y * (1 + (size_t)tw * 3);
+    if (raw[row] != 0) farm_trap(110, "texture load failed");
+    for (int32_t x = 0; x < tw; x++) {
+      size_t si = row + 1 + (size_t)x * 3;
+      size_t di = ((size_t)y * (size_t)tw + (size_t)x) * 3;
+      tex->rgb[di + 0] = raw[si + 0] / 255.0;
+      tex->rgb[di + 1] = raw[si + 1] / 255.0;
+      tex->rgb[di + 2] = raw[si + 2] / 255.0;
+    }
+  }
+  return tex;
+}
+
 // Renderer - rasterizer and PNG writer
 farm_Renderer* farm_Renderer_new() {
   farm_Renderer* r = (farm_Renderer*)farm_arena_alloc(sizeof(farm_Renderer));
   r->framebuffer = NULL;
   r->depthbuffer = NULL;
+  r->accum = NULL;
+  r->accum_count = 0;
+  r->samples = 1;
+  r->max_bounces = 4;
   r->width = 0;
   r->height = 0;
   r->disposed = false;
@@ -771,9 +964,28 @@ void farm_Renderer_setSize(farm_Renderer* self, int64_t width, int64_t height) {
   self->width = (int32_t)width;
   self->height = (int32_t)height;
   
-  // Allocate buffers
-  self->framebuffer = (uint8_t*)farm_arena_alloc(width * height * 3);
-  self->depthbuffer = (float*)farm_arena_alloc(width * height * sizeof(float));
+  int64_t n = width * height;
+  self->framebuffer = (uint8_t*)farm_arena_alloc((size_t)n * 3);
+  self->depthbuffer = (float*)farm_arena_alloc((size_t)n * sizeof(float));
+  self->accum = (double*)farm_arena_alloc((size_t)n * 3 * sizeof(double));
+  memset(self->framebuffer, 0, (size_t)n * 3);
+  memset(self->accum, 0, (size_t)n * 3 * sizeof(double));
+  self->accum_count = 0;
+}
+
+void farm_Renderer_setSamples(farm_Renderer* self, int64_t n) {
+  self->samples = (int32_t)n;
+}
+
+void farm_Renderer_setMaxBounces(farm_Renderer* self, int64_t n) {
+  self->max_bounces = (int32_t)n;
+}
+
+void farm_Renderer_resetAccumulation(farm_Renderer* self) {
+  if (self->accum && self->width > 0 && self->height > 0) {
+    memset(self->accum, 0, (size_t)self->width * (size_t)self->height * 3 * sizeof(double));
+  }
+  self->accum_count = 0;
 }
 
 // Helper: edge function for triangle rasterization

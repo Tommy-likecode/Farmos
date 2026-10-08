@@ -620,6 +620,10 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     cd.fields.push_back(FieldDecl{"color", Type::ty_struct("Color"), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"roughness", Type::ty_float(), SourceLoc{1, 1}});
     cd.fields.push_back(FieldDecl{"metalness", Type::ty_float(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"transmission", Type::ty_float(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"ior", Type::ty_float(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"emissive", Type::ty_struct("Color"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"emissiveIntensity", Type::ty_float(), SourceLoc{1, 1}});
     {
       MethodDecl md;
       md.name = cd.name;
@@ -658,6 +662,72 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       MethodDecl md;
       md.name = "setMetalness";
       md.params.push_back(Param{"metalness", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setTransmission";
+      md.params.push_back(Param{"v", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setIor";
+      md.params.push_back(Param{"v", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setEmissive";
+      md.params.push_back(Param{"c", Type::ty_struct("Color"), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setEmissive";
+      md.params.push_back(Param{"hex", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setEmissiveIntensity";
+      md.params.push_back(Param{"v", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setMap";
+      md.params.push_back(Param{"tex", Type::ty_class("Texture"), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();
@@ -855,6 +925,50 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     }
     {
       MethodDecl md;
+      md.name = "setSamples";
+      md.params.push_back(Param{"n", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setMaxBounces";
+      md.params.push_back(Param{"n", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "resetAccumulation";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "renderPath";
+      md.params.push_back(Param{"scene", Type::ty_class("Scene"), SourceLoc{1,1}});
+      md.params.push_back(Param{"camera", Type::ty_class("PerspectiveCamera"), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
       md.name = "dispose";
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
@@ -864,6 +978,54 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       cd.methods.push_back(std::move(md));
     }
     
+    m.classes.push_back(std::move(cd));
+  }
+
+  // RectAreaLight (M4)
+  {
+    ClassDecl cd;
+    cd.name = "RectAreaLight";
+    cd.c_sym = "farm_RectAreaLight";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    cd.base_class = "Object3D";
+    cd.fields.push_back(FieldDecl{"color", Type::ty_struct("Color"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"intensity", Type::ty_float(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"width", Type::ty_float(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"height", Type::ty_float(), SourceLoc{1, 1}});
+    {
+      MethodDecl md;
+      md.name = cd.name;
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      md.is_ctor = true;
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    m.classes.push_back(std::move(cd));
+  }
+
+  // Texture (M4)
+  {
+    ClassDecl cd;
+    cd.name = "Texture";
+    cd.c_sym = "farm_Texture";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    {
+      MethodDecl md;
+      md.name = cd.name;
+      md.params.push_back(Param{"path", Type::ty_string(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      md.is_ctor = true;
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
     m.classes.push_back(std::move(cd));
   }
   
@@ -2276,7 +2438,7 @@ static int run_cmd(const std::string& cmd_utf8) {
 
 static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const fs::path& rt_h_dir,
                             const fs::path& out_exe, bool verbose, bool link_scene,
-                            bool link_parallel) {
+                            bool link_parallel, bool link_ray) {
   std::string cc = find_c_compiler();
   if (cc.empty()) {
     std::cerr << "farmc: no C compiler found (set FARM_CC)\n";
@@ -2295,6 +2457,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   fs::path rt_math_c = rt_h_dir / "farm_math.c";
   fs::path rt_scene_c = rt_h_dir / "farm_scene.c";
   fs::path rt_par_c = rt_h_dir / "farm_par.c";
+  fs::path rt_ray_c = rt_h_dir / "farm_ray.c";
   const char* fp_contract = link_scene ? "-ffp-contract=off " : "";
   const char* thr_def = link_parallel ? "-DFARM_ENABLE_THREADS " : "";
 
@@ -2304,6 +2467,8 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
       if (fs::exists(rt_math_c)) o << "\"" << path_to_utf8(rt_math_c) << "\" ";
       if (fs::exists(rt_scene_c)) o << "\"" << path_to_utf8(rt_scene_c) << "\" ";
     }
+    if (link_ray && fs::exists(rt_ray_c))
+      o << "\"" << path_to_utf8(rt_ray_c) << "\" ";
     if (link_parallel && fs::exists(rt_par_c))
       o << "\"" << path_to_utf8(rt_par_c) << "\" ";
   };
@@ -2311,7 +2476,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   auto append_libs = [&](std::ostringstream& o) {
     o << "-Wl,--gc-sections -s -lm";
 #if !defined(_WIN32)
-    if (link_parallel) o << " -pthread";
+    if (link_parallel || link_ray) o << " -pthread";
 #endif
   };
 
@@ -2468,7 +2633,8 @@ static int cmd_build(std::vector<std::string> args) {
   fs::path link_out = scratch().file("link_out.exe");
   bool link_scene = program_uses_scene(loader.prog);
   bool link_parallel = program_uses_parallel(loader.prog);
-  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel);
+  bool link_ray = program_uses_ray(loader.prog);
+  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray);
   if (rc == 0) {
     std::error_code ec;
     fs::rename(link_out, out_req, ec);

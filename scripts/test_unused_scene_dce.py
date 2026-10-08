@@ -131,6 +131,8 @@ def assert_non_scene_link(label, log):
         fail(f"{label}: linked farm_math.c (non-scene must link farm_rt.c only)")
     if "farm_scene.c" in log:
         fail(f"{label}: linked farm_scene.c (non-scene must link farm_rt.c only)")
+    if "farm_ray.c" in log:
+        fail(f"{label}: linked farm_ray.c (non-ray must not link the path tracer)")
     if "farm_rt.c" not in log:
         fail(f"{label}: did not link farm_rt.c\n{log}")
 
@@ -142,6 +144,8 @@ def assert_scene_link(label, log):
         fail(f"{label}: scene program did not link farm_math.c")
     if "farm_scene.c" not in log:
         fail(f"{label}: scene program did not link farm_scene.c")
+    if "farm_ray.c" in log:
+        fail(f"{label}: raster-only scene program linked farm_ray.c")
     if "farm_rt.c" not in log:
         fail(f"{label}: scene program did not link farm_rt.c")
 
@@ -212,6 +216,7 @@ def main():
     unused_src = os.path.join(root, "spec/tests/M3/040_unused_scene_import.fm")
     m2_src = os.path.join(root, "spec/tests/M2/001_vector3_print.fm")
     m3_src = os.path.join(root, "spec/tests/M3/021_import_scene_module.fm")
+    m4_src = os.path.join(root, "spec/tests/M4/001_background_only.fm")
 
     with tempfile.TemporaryDirectory(prefix="farmc_dce_") as td:
         hello = os.path.join(td, "hello")
@@ -251,11 +256,17 @@ def main():
         ulog = verbose_cmd(farmc, unused_src, os.path.join(td, "unused_v"))
         m2log = verbose_cmd(farmc, m2_src, m2_out)
         m3log = verbose_cmd(farmc, m3_src, m3_out)
+        m4_out = os.path.join(td, "m4")
+        m4log = verbose_cmd(farmc, m4_src, m4_out)
 
         assert_non_scene_link("hello", hlog)
         assert_non_scene_link("unused scene import", ulog)
         assert_non_scene_link("M2 vector3", m2log)
         assert_scene_link("M3 used Scene", m3log)
+        if "farm_ray.c" not in m4log:
+            fail("M4 renderPath program did not link farm_ray.c")
+        if "farm_par" in m4log or "FARM_ENABLE_THREADS" in m4log:
+            fail("M4 renderPath program pulled user-parallel runtime")
 
         assert_no_thread_runtime("hello", hlog, hc, hb, hello)
         assert_no_thread_runtime("unused scene import", ulog, uc, ub, unused)

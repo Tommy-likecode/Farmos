@@ -1,0 +1,37 @@
+import { Scene, PerspectiveCamera, PlaneGeometry, MeshStandardMaterial, Mesh,
+         DirectionalLight, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  const camera: PerspectiveCamera = new PerspectiveCamera(45, 1, 0.1, 100);
+  camera.position.set(0, 0.4, 2.2);
+  camera.lookAt(0, 0.3, 0);
+  const floorMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.85, 0.85, 0.85));
+  floorMat.setRoughness(1);
+  const floor: Mesh = new Mesh(new PlaneGeometry(3, 3), floorMat);
+  floor.quaternion.x = -0.7071067811865476;
+  floor.quaternion.y = 0;
+  floor.quaternion.z = 0;
+  floor.quaternion.w = 0.7071067811865476;
+  scene.add(floor);
+  const redMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.9, 0.08, 0.06));
+  redMat.setRoughness(1);
+  const red: Mesh = new Mesh(new PlaneGeometry(1.5, 1.2), redMat);
+  red.position.set(-0.9, 0.6, 0.2);
+  red.quaternion.x = 0;
+  red.quaternion.y = 0.7071067811865476;
+  red.quaternion.z = 0;
+  red.quaternion.w = 0.7071067811865476;
+  scene.add(red);
+  const sun: DirectionalLight = new DirectionalLight(0xffffff, 2);
+  sun.lookAt(-0.4, -1, -0.2);
+  scene.add(sun);
+  const renderer: Renderer = new Renderer(16, 16);
+  renderer.setSamples(1);
+  renderer.setMaxBounces(1);
+  renderer.renderPath(scene, camera);
+  renderer.renderPath(scene, camera);
+  renderer.savePNG("out.png");
+  return 0;
+}

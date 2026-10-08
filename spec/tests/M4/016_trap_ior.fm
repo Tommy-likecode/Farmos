@@ -1,0 +1,16 @@
+import { Scene, PerspectiveCamera, SphereGeometry, MeshStandardMaterial, Mesh,
+         Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  const camera: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);
+  const mat: MeshStandardMaterial = new MeshStandardMaterial(new Color(1, 1, 1));
+  mat.setTransmission(1);
+  mat.setIor(0.5);
+  const sphere: Mesh = new Mesh(new SphereGeometry(0.5, 8, 4), mat);
+  scene.add(sphere);
+  const renderer: Renderer = new Renderer(16, 16);
+  renderer.renderPath(scene, camera);
+  return 0;
+}

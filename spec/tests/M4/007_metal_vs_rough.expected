@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: 29fee1100619acaa6c26666fdbcdc27d7cdc8ef26f73b12e64ee1f3115c79033
+## 32x24, samples 1, maxBounces 1, delta mirror vs rough metal
+# stdout:
+# end

@@ -1,0 +1,8 @@
+# kind: run_png
+# exit: 0
+# threads: 1,4
+# png: out.png
+# sha256: e179ea2d08faba40915a625b3fbbb8495ed85d0fb3345f3f92cc8263b8fc0f6c
+## 32x32, samples 1, maxBounces 0, hard directional shadow
+# stdout:
+# end
