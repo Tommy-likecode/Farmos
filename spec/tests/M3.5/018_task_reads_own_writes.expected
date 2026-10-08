@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+## Write/write and read-after-write inside ONE task are fine (6.6).
+# stdout:
+25
+4
+25
+4
+# end

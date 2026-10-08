@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+## Object-field granularity: two fields of one object are independent locations (5.1).
+# stdout:
+3
+9
+# end

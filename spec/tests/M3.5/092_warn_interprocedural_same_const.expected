@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## Summary of setOne = {write Formal0.on := Const 1} (7.3). Both call sites instantiate it on the same object with the same constant: warning at the call.
+# warning: 20:7: W0801
+# note: 17:7
+# stdout:
+1
+# end

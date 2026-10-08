@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## No constant propagation into callees: the summary writes Unknown (the parameter v), so even set(f,1) twice is an error (7.3). Contrast 092.
+# error: 20:7: E0801
+# note: 17:7

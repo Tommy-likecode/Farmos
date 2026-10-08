@@ -1,0 +1,6 @@
+function main(): int {
+  parallel {
+    let x: int = 1;
+  }
+  return 0;
+}

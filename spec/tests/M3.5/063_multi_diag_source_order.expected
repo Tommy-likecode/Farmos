@@ -1,0 +1,9 @@
+# kind: compile_error
+# exit: 1
+# repeat: 5
+# diag_exact: true
+## Two independent conflicts: reported in primary-source-position order (b = 2 is earlier in the file than a = 2), not by variable name or task-internal access order (6.10, 12.4). repeat = compiler output byte-identical every time.
+# error: 10:7: E0801
+# note: 7:7
+# error: 11:7: E0801
+# note: 6:7

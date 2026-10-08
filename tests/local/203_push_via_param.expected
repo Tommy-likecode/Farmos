@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## B1: addOne(xs) (push via param) vs push(xs, 9) is E0801, not E0802.
+# error: 12:7: E0801
+# note: 9:7

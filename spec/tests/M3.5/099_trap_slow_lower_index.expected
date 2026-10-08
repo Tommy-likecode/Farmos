@@ -1,0 +1,12 @@
+# kind: runtime_trap
+# exit: 101
+# repeat: 10
+# threads: 1,2,4
+## Task 2 traps almost immediately (102) but task 1 (slow) traps later (101): the lowest task index wins, so the runtime MUST let task 1 finish first. Task 1's output up to its trap is flushed; task 2's is dropped (10.2).
+# stdout:
+T1 begin
+44999850000
+# end
+# stderr:
+runtime error: division by zero
+# end

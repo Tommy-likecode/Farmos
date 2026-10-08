@@ -1,0 +1,15 @@
+function main(): int {
+  let i: int = 0;
+  while (i < 3) {
+    i += 1;
+    parallel {
+      task {
+        continue;
+      }
+      task {
+        println(i);
+      }
+    }
+  }
+  return 0;
+}

@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## q aliases p (same origin, 5.3): a DEFINITE same-object conflict found statically.
+# error: 17:7: E0801
+# note: 14:7

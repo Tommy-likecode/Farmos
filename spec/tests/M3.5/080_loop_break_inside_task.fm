@@ -1,0 +1,25 @@
+function main(): int {
+  let found: int = -1;
+  let evens: int = 0;
+  parallel {
+    task {
+      for (let i = 0; i < 100; i += 1) {
+        if (i * i > 50) {
+          found = i;
+          break;
+        }
+      }
+    }
+    task {
+      for (let i = 0; i < 10; i += 1) {
+        if (i % 2 == 1) {
+          continue;
+        }
+        evens += 1;
+      }
+    }
+  }
+  println(found);
+  println(evens);
+  return 0;
+}

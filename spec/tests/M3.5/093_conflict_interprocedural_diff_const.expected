@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Summaries carry constants (Const 1 vs Const 2): different statically-known values -> error (7.3).
+# error: 24:7: E0801
+# note: 21:7

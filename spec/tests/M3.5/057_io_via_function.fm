@@ -1,0 +1,18 @@
+import { Renderer } from "farmos:scene";
+
+function saveIt(r: Renderer): void {
+  r.savePNG("x.png");
+}
+
+function main(): int {
+  const renderer: Renderer = new Renderer(8, 8);
+  parallel {
+    task {
+      saveIt(renderer);
+    }
+    task {
+      println(1);
+    }
+  }
+  return 0;
+}

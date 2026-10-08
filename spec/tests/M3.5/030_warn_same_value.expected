@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## The PLAN example with EQUAL values: warning, compile succeeds, program runs (6.2).
+# warning: 8:7: W0801
+# note: 5:7
+# stdout:
+1
+# end

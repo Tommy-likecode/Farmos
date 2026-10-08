@@ -1,0 +1,26 @@
+class Counter {
+  n: int;
+
+  constructor(n: int) {
+    this.n = n;
+  }
+}
+
+function bumpBoth(x: Counter, y: Counter): void {
+  parallel {
+    task {
+      x.n = x.n + 1;
+    }
+    task {
+      y.n = y.n + 1;
+    }
+  }
+}
+
+function main(): int {
+  const a: Counter = new Counter(0);
+  const b: Counter = new Counter(0);
+  bumpBoth(a, b);
+  println(a.n);
+  return 0;
+}

@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## B3: published t.n vs mutAll(cs[1]) Unknown write is E0801.
+# error: 21:7: E0801
+# note: 18:7

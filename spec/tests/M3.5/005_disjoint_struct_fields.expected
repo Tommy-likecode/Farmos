@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## Sibling struct fields are distinct locations (5.5).
+# stdout:
+42
+58
+100
+# end

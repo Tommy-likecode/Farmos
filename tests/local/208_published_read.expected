@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## B3: published task-alloc write vs Unknown read is E0802.
+# error: 19:11: E0802
+# note: 15:7

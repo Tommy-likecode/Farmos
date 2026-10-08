@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Calls are never constant expressions, even f() that obviously returns 1 (5.6): a = f() vs a = f() is an error under option A.
+# error: 12:7: E0801
+# note: 9:7

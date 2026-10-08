@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Function summaries cross module boundaries (7.4).
+# error: 070_module_summary_conflict/main.fm:10:7: E0801
+# note: 070_module_summary_conflict/main.fm:7:7

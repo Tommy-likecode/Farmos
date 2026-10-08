@@ -1,0 +1,23 @@
+function main(): int {
+  let xs: int[] = [];
+  for (let i = 0; i < 6; i += 1) {
+    push(xs, i * i);
+  }
+  let lo: int = 0;
+  let hi: int = 0;
+  parallel {
+    task {
+      for (let i = 0; i < len(xs) / 2; i += 1) {
+        lo += xs[i];
+      }
+    }
+    task {
+      for (let i = len(xs) / 2; i < len(xs); i += 1) {
+        hi += xs[i];
+      }
+    }
+  }
+  println(lo);
+  println(hi);
+  return 0;
+}

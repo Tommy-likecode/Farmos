@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Task 1 reads a, task 2 writes a (6.4). Note = the read.
+# error: 9:7: E0802
+# note: 6:11

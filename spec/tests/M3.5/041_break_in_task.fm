@@ -1,0 +1,13 @@
+function main(): int {
+  for (let i = 0; i < 3; i += 1) {
+    parallel {
+      task {
+        break;
+      }
+      task {
+        println(i);
+      }
+    }
+  }
+  return 0;
+}

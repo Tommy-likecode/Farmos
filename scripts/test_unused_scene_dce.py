@@ -146,6 +146,62 @@ def assert_scene_link(label, log):
         fail(f"{label}: scene program did not link farm_rt.c")
 
 
+# Programs that never execute `parallel` must not pay for threads (M3.5 §11.2).
+# Link-line / generated-C markers. llvm-mingw UCRT hello (master too) still has a
+# PE .tls section and KERNEL32 InitializeCriticalSection from the CRT — those
+# are not farmc thread use and must not fail the Windows check.
+LINK_THREAD_MARKERS = (
+    "farm_par",
+    "FARM_ENABLE_THREADS",
+    "-pthread",
+)
+LINUX_C_THREAD_MARKERS = LINK_THREAD_MARKERS + (
+    "InitializeCriticalSection",
+    "pthread_",
+    "CreateThread",
+    "_beginthread",
+)
+
+
+def assert_no_thread_runtime(label, log, csrc, binary_bytes, binary_path):
+    for m in LINK_THREAD_MARKERS:
+        if m in log:
+            fail(f"{label}: verbose link command mentions thread API {m!r}\n{log}")
+    try:
+        text = csrc.decode("utf-8")
+    except UnicodeDecodeError:
+        text = csrc.decode("utf-8", errors="replace")
+    if sys.platform == "win32":
+        for m in LINK_THREAD_MARKERS:
+            if m in text:
+                fail(f"{label}: generated C contains thread API {m!r}")
+        # Mingw CRT: .tls / InitializeCriticalSection are present on master too.
+        if b"CreateThread" in binary_bytes:
+            fail(f"{label}: binary imports CreateThread")
+        if b"pthread" in binary_bytes:
+            fail(f"{label}: binary contains a pthread symbol")
+        return
+    for m in LINUX_C_THREAD_MARKERS:
+        if m in text:
+            fail(f"{label}: generated C contains thread API {m!r}")
+    import shutil
+    readelf = shutil.which("readelf")
+    nm = shutil.which("nm")
+    if readelf:
+        p = subprocess.run([readelf, "-W", "-S", binary_path], capture_output=True, text=True)
+        if p.returncode == 0:
+            for ln in p.stdout.splitlines():
+                if " .tls" in ln or " .tbss" in ln or " .tdata" in ln:
+                    fail(f"{label}: ELF has a TLS section\n{ln}")
+    if nm:
+        p = subprocess.run([nm, "-u", binary_path], capture_output=True, text=True)
+        if p.returncode == 0 and "pthread" in p.stdout:
+            fail(f"{label}: binary has pthread undefined symbols\n{p.stdout}")
+    else:
+        if b"pthread" in binary_bytes:
+            fail(f"{label}: binary contains pthread bytes")
+
+
 def main():
     if len(sys.argv) < 3:
         print("usage: test_unused_scene_dce.py <farmc> <repo-root>", file=sys.stderr)
@@ -200,6 +256,9 @@ def main():
         assert_non_scene_link("unused scene import", ulog)
         assert_non_scene_link("M2 vector3", m2log)
         assert_scene_link("M3 used Scene", m3log)
+
+        assert_no_thread_runtime("hello", hlog, hc, hb, hello)
+        assert_no_thread_runtime("unused scene import", ulog, uc, ub, unused)
 
     print(f"PASS unused_scene_dce: hello={hs} unused={us} binaries identical")
     return 0

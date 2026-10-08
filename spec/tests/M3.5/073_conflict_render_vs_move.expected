@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## render reads every node field of the scene tree; the checker cannot know `mesh` is a child, so it MAY be in the tree: 'may' error (8.3, 5.3).
+# error: 14:7: E0802
+# note: 11:7

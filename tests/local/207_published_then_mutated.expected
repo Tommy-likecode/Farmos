@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## B3: after cs[0]=t the object is published; t.n vs Unknown u.n is E0801.
+# error: 18:7: E0801
+# note: 14:7

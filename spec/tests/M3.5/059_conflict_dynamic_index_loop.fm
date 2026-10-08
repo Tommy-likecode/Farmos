@@ -1,0 +1,17 @@
+function main(): int {
+  let a: int[4] = [0, 0, 0, 0];
+  for (let round = 0; round < 3; round += 1) {
+    let i: int = round;
+    let j: int = 2 - round;
+    parallel {
+      task {
+        a[i] = 1;
+      }
+      task {
+        a[j] = 2;
+      }
+    }
+    println(round);
+  }
+  return 0;
+}

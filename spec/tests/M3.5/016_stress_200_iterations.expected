@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+# repeat: 5
+# threads: 1,2,4,8
+## 200 fork/joins inside one process (AC-M35-10). Any schedule dependence would perturb the checksum.
+# stdout:
+802732
+149
+# end

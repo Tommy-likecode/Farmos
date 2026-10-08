@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Struct methods take `this` by reference (M2 3.2): effect lands on receiver path a.total (7.1).
+# error: 16:7: E0801
+# note: 13:7

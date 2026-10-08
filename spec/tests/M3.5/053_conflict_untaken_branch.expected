@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Analysis is flow-insensitive (6.8): a write that never executes still counts.
+# error: 11:7: E0801
+# note: 7:9

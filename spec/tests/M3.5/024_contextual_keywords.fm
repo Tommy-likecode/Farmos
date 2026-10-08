@@ -1,0 +1,20 @@
+function parallel(x: int): int {
+  return x + 1;
+}
+
+function main(): int {
+  let task: int = 3;
+  let out: int = 0;
+  task = parallel(task);
+  println(task);
+  parallel {
+    task {
+      out = task * 2;
+    }
+    task {
+      println(parallel(task));
+    }
+  }
+  println(out);
+  return 0;
+}

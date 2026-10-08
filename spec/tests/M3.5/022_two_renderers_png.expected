@@ -1,0 +1,11 @@
+# kind: run_png
+# exit: 0
+# repeat: 5
+# threads: 1,2
+# png: out.png
+# sha256: 667223dfd9984713ee4ddadf2a41fa448efe8be267c6c5a88b1783a8ae1702d1
+## Image A is byte-identical to M3 fixture 002_unlit_cube; image B renders concurrently and is discarded.
+## Distinct renderer/scene/camera `new` sites: Disjoint (8.3). The shared geometry/material are only read by both renders. savePNG is outside the block (E0805 applies inside tasks only).
+# stdout:
+done
+# end

@@ -1,0 +1,10 @@
+# kind: run
+# exit: 0
+# repeat: 20
+# threads: 1,2
+## Reference 2-task demo for the AC-M35-16 size budget (no output in tasks, no dynamic checks: none exist in M3.5, section 6).
+# stdout:
+6765
+10946
+17711
+# end

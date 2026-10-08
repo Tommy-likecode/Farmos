@@ -1,0 +1,15 @@
+function main(): int {
+  let s1: string = "";
+  let s2: string = "";
+  parallel {
+    task {
+      s1 = "alpha" + "-" + str(1);
+    }
+    task {
+      s2 = "beta" + "-" + str(2);
+    }
+  }
+  println(s1 + "," + s2);
+  println(len(s1) + len(s2));
+  return 0;
+}

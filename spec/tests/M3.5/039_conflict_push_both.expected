@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## push writes the whole array with an unknown value, even push(xs,1) twice (6.7).
+# error: 8:7: E0801
+# note: 5:7

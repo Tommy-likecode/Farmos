@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+## B3: unpublished task-local new C() mutations do not conflict.
+# stdout:
+5
+6
+# end

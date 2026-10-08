@@ -1,0 +1,14 @@
+function main(): int {
+  const K: int = 3;
+  let a: int = 0;
+  parallel {
+    task {
+      a = 1 + 2;
+    }
+    task {
+      a = K;
+    }
+  }
+  println(a);
+  return 0;
+}

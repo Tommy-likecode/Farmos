@@ -1,0 +1,16 @@
+function main(): int {
+  let a: int = 0;
+  let b: int = 0;
+  for (let round = 1; round <= 3; round += 1) {
+    parallel {
+      task {
+        a = a + round;
+      }
+      task {
+        b = b + round * 10;
+      }
+    }
+    println(a + b);
+  }
+  return 0;
+}

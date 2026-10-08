@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## B2: project p=new P(1,2) onto p.b; equal constant 2 => W0801.
+# warning: 13:7: W0801
+# note: 10:7
+# stdout:
+1
+# end

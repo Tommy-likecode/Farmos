@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+## Fork sees parent state (4.5); join publishes task writes (4.5); a second block sees the first block's results.
+# stdout:
+10
+105
+116
+117
+# end

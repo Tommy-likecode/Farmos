@@ -1,0 +1,15 @@
+function main(): int {
+  let a: int[8] = [0, 0, 0, 0, 0, 0, 0, 0];
+  let i: int = 2;
+  parallel {
+    task {
+      a[i] = 1;
+    }
+    task {
+      a[i + 1] = 2;
+    }
+  }
+  println(a[2]);
+  println(a[3]);
+  return 0;
+}

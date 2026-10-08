@@ -1,0 +1,14 @@
+function main(): int {
+  let xs: int[] = [1, 2, 3];
+  let n: int = 0;
+  parallel {
+    task {
+      push(xs, 4);
+    }
+    task {
+      n = len(xs);
+    }
+  }
+  println(n);
+  return 0;
+}

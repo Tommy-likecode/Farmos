@@ -2,7 +2,16 @@
 
 namespace farm {
 
-void Parser::advance() { prev_ = cur_; cur_ = lex_.next(); }
+void Parser::advance() {
+  prev_ = cur_;
+  if (have_peek_) { cur_ = peek_tok_; have_peek_ = false; }
+  else cur_ = lex_.next();
+}
+
+Token Parser::peek_token() {
+  if (!have_peek_) { peek_tok_ = lex_.next(); have_peek_ = true; }
+  return peek_tok_;
+}
 
 bool Parser::match(TokKind k) {
   if (check(k)) { advance(); return true; }
@@ -463,10 +472,60 @@ StmtPtr Parser::parse_let_like(bool is_const) {
   return s;
 }
 
+StmtPtr Parser::parse_parallel() {
+  auto s = std::make_shared<Stmt>();
+  s->kind = StmtKind::Parallel;
+  s->loc = cur_.loc;
+  advance(); // parallel
+  expect(TokKind::LBrace, "E0202", "expected `{`");
+  int ntasks = 0;
+  bool too_many = false;
+  while (!check(TokKind::RBrace) && !check(TokKind::Eof)) {
+    if (check(TokKind::Ident) && cur_.text == "task" && peek_token().kind == TokKind::LBrace) {
+      auto t = std::make_shared<Stmt>();
+      t->kind = StmtKind::Task;
+      t->loc = cur_.loc;
+      ntasks++;
+      t->task_index = ntasks;
+      if (ntasks > 256 && !too_many) {
+        error_at(lex_.path(), cur_.loc, "E0807", "too many tasks in `parallel` block (limit 256)");
+        too_many = true;
+      }
+      advance(); // task
+      t->then_b = parse_block();
+      if (ntasks <= 256) s->stmts.push_back(t);
+    } else {
+      error_at(lex_.path(), cur_.loc, "E0202", "unexpected token in `parallel` block (expected `task`)");
+      if (check(TokKind::RBrace) || check(TokKind::Eof)) break;
+      // recover: skip one statement-like chunk
+      if (check(TokKind::LBrace)) parse_block();
+      else parse_stmt();
+    }
+  }
+  SourceLoc end = cur_.loc;
+  if (s->stmts.empty() && check(TokKind::RBrace)) {
+    error_at(lex_.path(), cur_.loc, "E0202", "unexpected token");
+  }
+  expect(TokKind::RBrace, "E0202", "expected `}`");
+  s->end_loc = (prev_.kind == TokKind::RBrace) ? prev_.loc : end;
+  (void)end;
+  return s;
+}
+
+StmtPtr Parser::parse_task_outside() {
+  error_at(lex_.path(), cur_.loc, "E0806", "`task` is only allowed directly inside `parallel { }`");
+  advance(); // task
+  return parse_block();
+}
+
 StmtPtr Parser::parse_stmt() {
   if (check(TokKind::KwLet)) return parse_let_like(false);
   if (check(TokKind::KwConst)) return parse_let_like(true);
   if (check(TokKind::LBrace)) return parse_block();
+  if (check(TokKind::Ident) && cur_.text == "parallel" && peek_token().kind == TokKind::LBrace)
+    return parse_parallel();
+  if (check(TokKind::Ident) && cur_.text == "task" && peek_token().kind == TokKind::LBrace)
+    return parse_task_outside();
   if (match(TokKind::KwIf)) {
     auto s = std::make_shared<Stmt>(); s->kind = StmtKind::If; s->loc = prev_.loc;
     expect(TokKind::LParen, "E0202", "expected `(`");

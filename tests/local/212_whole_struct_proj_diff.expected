@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## B2: project p=new P(1,2) onto p.b; 2 vs 9 => E0801.
+# error: 13:7: E0801
+# note: 10:7

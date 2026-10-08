@@ -1,0 +1,11 @@
+# kind: run
+# exit: 0
+# repeat: 20
+# threads: 1,2,4
+## Nested blocks (6.9): accesses of an inner block count for the enclosing task; here outer tasks touch {r0,r1} and {r2,r3}.
+# stdout:
+21
+2
+43
+4
+# end

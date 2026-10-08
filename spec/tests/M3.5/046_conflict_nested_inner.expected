@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Conflict inside the inner block (6.9); the outer block has none.
+# error: 10:11: E0801
+# note: 7:11

@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+# repeat: 10
+# threads: 1,2
+## Both tasks read xs[*] and len(xs); nobody writes xs.
+# stdout:
+5
+50
+# end

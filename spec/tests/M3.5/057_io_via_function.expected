@@ -1,0 +1,4 @@
+# kind: compile_error
+# exit: 1
+## The file-output flag is part of the function summary (7.5): reported at the call inside the task.
+# error: 11:7: E0805

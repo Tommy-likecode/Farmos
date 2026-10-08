@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+## Same field, same constant: warning; the extra write p.right in task 2 conflicts with nothing.
+# warning: 13:7: W0801
+# note: 10:7
+# stdout:
+5
+6
+# end

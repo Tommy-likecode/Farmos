@@ -88,7 +88,8 @@ struct Expr {
 };
 
 enum class StmtKind {
-  Let, Const, Assign, Expr, If, While, For, Break, Continue, Return, Block
+  Let, Const, Assign, Expr, If, While, For, Break, Continue, Return, Block,
+  Parallel, Task
 };
 
 struct Stmt {
@@ -108,6 +109,13 @@ struct Stmt {
   StmtPtr for_update; // as assign or expr stmt
   ExprPtr ret;
   bool has_type_ann = false;
+  // M3.5: parallel/task
+  int parallel_id = -1;
+  int task_index = 0;
+  std::vector<std::string> captures;
+  std::vector<TypePtr> capture_types;
+  bool capture_this = false;
+  TypePtr this_cap_type;
 };
 
 struct Param {

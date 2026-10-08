@@ -1,0 +1,4 @@
+# kind: compile_error
+# exit: 1
+## M1 rules apply unchanged inside tasks; conflict analysis does not run after checker errors (12.5).
+# error: 6:7: E0504

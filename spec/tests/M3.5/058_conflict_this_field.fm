@@ -1,0 +1,25 @@
+class Box {
+  n: int;
+
+  constructor() {
+    this.n = 0;
+  }
+
+  run(): void {
+    parallel {
+      task {
+        this.n = 1;
+      }
+      task {
+        this.n = 2;
+      }
+    }
+  }
+}
+
+function main(): int {
+  const b: Box = new Box();
+  b.run();
+  println(b.n);
+  return 0;
+}

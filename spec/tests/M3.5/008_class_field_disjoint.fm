@@ -1,0 +1,24 @@
+class Stats {
+  lo: int;
+  hi: int;
+
+  constructor() {
+    this.lo = 0;
+    this.hi = 0;
+  }
+}
+
+function main(): int {
+  const s: Stats = new Stats();
+  parallel {
+    task {
+      s.lo = 3;
+    }
+    task {
+      s.hi = 9;
+    }
+  }
+  println(s.lo);
+  println(s.hi);
+  return 0;
+}

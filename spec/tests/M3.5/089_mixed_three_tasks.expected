@@ -1,0 +1,8 @@
+# kind: compile_error
+# exit: 1
+# diag_exact: true
+## Task 2 vs task 1: equal constants -> warning. Task 3 conflicts with both earlier tasks with a DIFFERENT value: one error, paired with the lowest task (task 1) (6.10).
+# warning: 8:7: W0801
+# note: 5:7
+# error: 11:7: E0801
+# note: 5:7

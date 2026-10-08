@@ -1,0 +1,18 @@
+function main(): int {
+  let a: int[4] = [5, 6, 7, 8];
+  let i: int = 2;
+  let j: int = 2;
+  let o1: int = 0;
+  let o2: int = 0;
+  parallel {
+    task {
+      o1 = a[i];
+    }
+    task {
+      o2 = a[j] * 2;
+    }
+  }
+  println(o1);
+  println(o2);
+  return 0;
+}

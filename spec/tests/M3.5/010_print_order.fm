@@ -1,0 +1,29 @@
+function work(n: int): int {
+  let s: int = 0;
+  for (let i = 0; i < n; i += 1) {
+    s += i;
+  }
+  return s;
+}
+
+function main(): int {
+  println("before");
+  parallel {
+    task {
+      println("t1 start");
+      println(work(200000));
+      println("t1 end");
+    }
+    task {
+      println("t2 start");
+      println(work(10));
+      println("t2 end");
+    }
+    task {
+      print("t3 ");
+      println("only");
+    }
+  }
+  println("after");
+  return 0;
+}

@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## `this` is one shared read-only binding inside tasks; this.n is one object field.
+# error: 14:9: E0801
+# note: 11:9

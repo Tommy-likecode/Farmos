@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Tasks 1 and 2 only read (no conflict between them). Task 3's write is reported once, against the LOWEST conflicting earlier task (task 1) (6.10).
+# error: 16:7: E0802
+# note: 10:12

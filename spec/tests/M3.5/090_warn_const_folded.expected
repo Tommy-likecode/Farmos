@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## `1 + 2` and a const bound to 3 both fold to int 3 (5.6): equal statically-known values.
+# warning: 9:7: W0801
+# note: 6:7
+# stdout:
+3
+# end

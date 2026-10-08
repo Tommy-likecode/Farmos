@@ -1,0 +1,24 @@
+struct Pair {
+  left: int;
+  right: int;
+}
+
+function main(): int {
+  const p: Pair = new Pair(1, 2);
+  let o1: int = 0;
+  let o2: int = 0;
+  parallel {
+    task {
+      let q: Pair = p;
+      q.left = 99;
+      o1 = q.left + q.right;
+    }
+    task {
+      o2 = p.left + p.right;
+    }
+  }
+  println(o1);
+  println(o2);
+  println(p.left);
+  return 0;
+}

@@ -1,0 +1,6 @@
+function main(): int {
+  task {
+    println(1);
+  }
+  return 0;
+}

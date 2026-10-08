@@ -1,0 +1,4 @@
+# kind: compile_error
+# exit: 1
+# error: 13:7: E0801
+# note: 10:7

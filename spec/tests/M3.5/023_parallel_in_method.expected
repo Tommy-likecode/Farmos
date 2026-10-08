@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## `this` is a shared read-only binding inside tasks; this.a and this.b are distinct object fields.
+# stdout:
+16
+81
+97
+# end

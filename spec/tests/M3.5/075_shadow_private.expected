@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## Each task declares its own `a`: writes go to task-private locals, the outer `a` is untouched.
+# stdout:
+21
+1
+11
+# end

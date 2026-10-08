@@ -1,0 +1,20 @@
+function main(): int {
+  let a: int = 0;
+  let b: int = 0;
+  parallel {
+    task {
+      parallel {
+        task {
+          a = 1;
+        }
+        task {
+          b = 2;
+        }
+      }
+    }
+    task {
+      a = 3;
+    }
+  }
+  return 0;
+}

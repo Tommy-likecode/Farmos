@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+# repeat: 10
+# threads: 1,2
+## Read/read is never a conflict, however the indices are computed (6.1 class 1).
+# stdout:
+7
+14
+# end

@@ -165,6 +165,30 @@ function Assert-SceneLink([string]$label, [string]$log) {
   }
 }
 
+function Assert-NoThreadRuntime([string]$label, [string]$log, [byte[]]$csrc, [byte[]]$bin) {
+  # farmc thread use only. llvm-mingw UCRT hello (master too) has a PE .tls
+  # section and KERNEL32 InitializeCriticalSection from the CRT — ignore those.
+  $markers = @("farm_par", "FARM_ENABLE_THREADS", "-pthread")
+  foreach ($m in $markers) {
+    if ($log.IndexOf($m, [StringComparison]::Ordinal) -ge 0) {
+      Fail-Dce "${label}: verbose link command mentions thread API '$m'`n$log"
+    }
+  }
+  $text = [System.Text.Encoding]::UTF8.GetString($csrc)
+  foreach ($m in $markers) {
+    if ($text.IndexOf($m, [StringComparison]::Ordinal) -ge 0) {
+      Fail-Dce "${label}: generated C contains thread API '$m'"
+    }
+  }
+  $binText = [System.Text.Encoding]::ASCII.GetString($bin)
+  if ($binText.IndexOf("CreateThread", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Dce "${label}: binary imports CreateThread"
+  }
+  if ($binText.IndexOf("pthread", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Dce "${label}: binary contains a pthread symbol"
+  }
+}
+
 $helloSrc = Join-Path $RepoRoot "spec/tests/M1/001_hello.fm"
 $unusedSrc = Join-Path $RepoRoot "spec/tests/M3/040_unused_scene_import.fm"
 $m2Src = Join-Path $RepoRoot "spec/tests/M2/001_vector3_print.fm"
@@ -208,6 +232,9 @@ try {
   Assert-NonSceneLink "unused scene import" $ulog
   Assert-NonSceneLink "M2 vector3" $m2log
   Assert-SceneLink "M3 used Scene" $m3log
+
+  Assert-NoThreadRuntime "hello" $hlog $hc $hb
+  Assert-NoThreadRuntime "unused scene import" $ulog $uc $ub
 
   Write-Host "PASS unused_scene_dce: hello=$hs unused=$us binaries identical"
 } finally {

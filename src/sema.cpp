@@ -34,9 +34,13 @@ struct Sema {
   Module* cur_mod = nullptr;
   std::string path;
   ClassDecl* cur_class = nullptr;
+  StructDecl* cur_struct = nullptr;
   TypePtr cur_ret;
   std::string cur_fn;
   int loop_depth = 0;
+  int task_depth = 0;
+  std::vector<int> task_loop_mark;
+  int next_parallel_id = 1;
   bool in_ctor = false;
   Scope* scope = nullptr;
 
@@ -313,9 +317,16 @@ struct Sema {
       case ExprKind::BoolLit: e->type = Type::ty_bool(); break;
       case ExprKind::StringLit: e->type = Type::ty_string(); break;
       case ExprKind::This: {
-        if (!cur_class) { error_at(path, e->loc, "E0417", "`this` not allowed outside class method/constructor"); e->type=Type::ty_error(); }
-        else e->type = Type::ty_class(cur_class->c_sym);
-        e->is_lvalue = true;
+        if (cur_class) {
+          e->type = Type::ty_class(cur_class->c_sym);
+          e->is_lvalue = true;
+        } else if (cur_struct) {
+          e->type = Type::ty_struct(cur_struct->c_sym);
+          e->is_lvalue = true;
+        } else {
+          error_at(path, e->loc, "E0417", "`this` not allowed outside class method/constructor");
+          e->type=Type::ty_error();
+        }
         break;
       }
       case ExprKind::Ident: {
@@ -949,12 +960,24 @@ struct Sema {
         if (returns) *returns = false;
         break;
       }
-      case StmtKind::Break: case StmtKind::Continue:
-        if (loop_depth <= 0) error_at(path, s->loc, "E0510", "`break`/`continue` outside loop");
+      case StmtKind::Break: case StmtKind::Continue: {
+        int loops_in_task = task_depth > 0 ? (loop_depth - task_loop_mark.back()) : loop_depth;
+        if (task_depth > 0 && loops_in_task <= 0) {
+          if (task_loop_mark.back() > 0)
+            error_at(path, s->loc, "E0804", "`break`/`continue` cannot leave a task");
+          else
+            error_at(path, s->loc, "E0510", "`break`/`continue` outside loop");
+        } else if (loop_depth <= 0) {
+          error_at(path, s->loc, "E0510", "`break`/`continue` outside loop");
+        }
         if (returns) *returns = false;
         break;
+      }
       case StmtKind::Return: {
-        if (s->ret) {
+        if (task_depth > 0) {
+          error_at(path, s->loc, "E0803", "`return` is not allowed inside a task");
+          if (s->ret) check_expr(s->ret);
+        } else if (s->ret) {
           check_expr(s->ret);
           if (cur_ret->kind == TypeKind::Void)
             error_at(path, s->loc, "E0408", "type mismatch: expected `void`, found value");
@@ -967,11 +990,66 @@ struct Sema {
         if (returns) *returns = true;
         break;
       }
+      case StmtKind::Parallel: {
+        s->parallel_id = next_parallel_id++;
+        for (auto& t : s->stmts) check_stmt(t, nullptr);
+        if (returns) *returns = false;
+        break;
+      }
+      case StmtKind::Task: {
+        task_depth++;
+        task_loop_mark.push_back(loop_depth);
+        check_stmt(s->then_b, nullptr);
+        // Capture outer names used in the task (not task-local, not mangled consts/fns).
+        std::unordered_set<std::string> declared;
+        std::function<void(StmtPtr)> decls = [&](StmtPtr st) {
+          if (!st) return;
+          if (st->kind == StmtKind::Let || st->kind == StmtKind::Const) declared.insert(st->name);
+          if (st->kind == StmtKind::For && st->for_init) decls(st->for_init);
+          if (st->then_b) decls(st->then_b);
+          if (st->else_b) decls(st->else_b);
+          if (st->for_update) decls(st->for_update);
+          for (auto& x : st->stmts) decls(x);
+        };
+        decls(s->then_b);
+        std::unordered_set<std::string> seen;
+        std::function<void(ExprPtr)> uses = [&](ExprPtr e) {
+          if (!e) return;
+          if (e->kind == ExprKind::Ident) {
+            if (e->mangled.empty() && !declared.count(e->name) && !seen.count(e->name)) {
+              if (scope && scope->find(e->name)) {
+                seen.insert(e->name);
+                s->captures.push_back(e->name);
+                s->capture_types.push_back(e->type);
+              }
+            }
+          }
+          if (e->kind == ExprKind::This) {
+            s->capture_this = true;
+            s->this_cap_type = e->type;
+          }
+          uses(e->lhs); uses(e->rhs);
+          for (auto& a : e->args) uses(a);
+          for (auto& fv : e->fields) uses(fv.second);
+        };
+        std::function<void(StmtPtr)> walk = [&](StmtPtr st) {
+          if (!st) return;
+          uses(st->init); uses(st->cond); uses(st->lhs); uses(st->rhs);
+          uses(st->for_cond); uses(st->ret);
+          walk(st->then_b); walk(st->else_b); walk(st->for_init); walk(st->for_update);
+          for (auto& x : st->stmts) walk(x);
+        };
+        walk(s->then_b);
+        task_loop_mark.pop_back();
+        task_depth--;
+        if (returns) *returns = false;
+        break;
+      }
     }
   }
 
   void check_function(FunctionDecl& f) {
-    cur_fn = f.name; cur_ret = f.ret; cur_class = nullptr; in_ctor = false;
+    cur_fn = f.name; cur_ret = f.ret; cur_class = nullptr; cur_struct = nullptr; in_ctor = false;
     Scope sc; scope = &sc;
     for (auto& p : f.params) sc.declare(p.name, VarInfo{p.type, false, p.loc}, path);
     bool ret=false;
@@ -984,7 +1062,7 @@ struct Sema {
   }
 
   void check_struct_method(StructDecl& s, MethodDecl& m) {
-    cur_fn = m.name; cur_ret = m.ret; cur_class = nullptr; in_ctor = false;
+    cur_fn = m.name; cur_ret = m.ret; cur_class = nullptr; cur_struct = &s; in_ctor = false;
     Scope sc; scope = &sc;
     // M2: `this` for struct methods is available but refers to a by-reference binding
     // For now, skip body checking for synthetic methods (empty body)
@@ -1051,7 +1129,7 @@ struct Sema {
     op.c_sym = "fn_m" + std::to_string(cur_mod->id) + "_" + op_name;
     
     // Check body
-    cur_fn = "operator"; cur_ret = op.ret; cur_class = nullptr; in_ctor = false;
+    cur_fn = "operator"; cur_ret = op.ret; cur_class = nullptr; cur_struct = nullptr; in_ctor = false;
     Scope sc; scope = &sc;
     for (auto& p : op.params) {
       sc.declare(p.name, VarInfo{p.type, false, p.loc}, path);
@@ -1065,7 +1143,7 @@ struct Sema {
   }
 
   void check_method(ClassDecl& c, MethodDecl& m) {
-    cur_fn = m.name; cur_ret = m.ret; cur_class = &c; in_ctor = m.is_ctor;
+    cur_fn = m.name; cur_ret = m.ret; cur_class = &c; cur_struct = nullptr; in_ctor = m.is_ctor;
     Scope sc; scope = &sc;
     // M3: Synthetic farmos:scene methods are empty stubs implemented in runtime/farm_scene.c.
     if (is_scene_class_sym(c.c_sym) && m.body && m.body->kind == StmtKind::Block && m.body->stmts.empty()) {
@@ -1192,9 +1270,31 @@ struct Sema {
   }
 };
 
+static bool stmt_has_parallel(StmtPtr s) {
+  if (!s) return false;
+  if (s->kind == StmtKind::Parallel) return true;
+  if (stmt_has_parallel(s->then_b) || stmt_has_parallel(s->else_b) ||
+      stmt_has_parallel(s->for_init) || stmt_has_parallel(s->for_update))
+    return true;
+  for (auto& x : s->stmts) if (stmt_has_parallel(x)) return true;
+  return false;
+}
+
+bool program_uses_parallel(Program& prog) {
+  for (auto& m : prog.modules) {
+    if (m.path == "farmos:math" || m.path == "farmos:scene") continue;
+    for (auto& f : m.functions) if (stmt_has_parallel(f.body)) return true;
+    for (auto& c : m.classes) for (auto& md : c.methods) if (stmt_has_parallel(md.body)) return true;
+    for (auto& s : m.structs) for (auto& md : s.methods) if (stmt_has_parallel(md.body)) return true;
+    for (auto& op : m.operators) if (stmt_has_parallel(op.body)) return true;
+  }
+  return false;
+}
+
 bool analyze_program(Program& prog) {
   Sema s(prog);
   s.run();
+  if (!has_errors()) analyze_conflicts(prog);
   return !has_errors();
 }
 

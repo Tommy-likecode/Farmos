@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Summary of bump = {read+write Formal0.n := Unknown} (7.1); instantiated on the same object twice: error at the call (position = start of call expression).
+# error: 20:7: E0801
+# note: 17:7

@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+## Sequential equivalence (4.6): a conflict-free block equals running its tasks one after another in index order.
+# stdout:
+2001
+3999
+5999
+true
+# end

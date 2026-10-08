@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## 0.0 and -0.0 compare equal in IEEE but have different bit patterns: different statically-known values (5.6).
+# error: 8:7: E0801
+# note: 5:7

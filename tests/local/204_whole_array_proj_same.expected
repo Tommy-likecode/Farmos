@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## B2: project r=[1,2] onto r[1]; equal constant 2 => W0801.
+# warning: 8:7: W0801
+# note: 5:7
+# stdout:
+2
+# end

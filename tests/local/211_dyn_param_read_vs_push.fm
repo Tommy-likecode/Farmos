@@ -1,0 +1,18 @@
+function first(v: int[]): int {
+  return v[0];
+}
+
+function main(): int {
+  let xs: int[] = [1, 2];
+  let n: int = 0;
+  parallel {
+    task {
+      n = first(xs);
+    }
+    task {
+      push(xs, 3);
+    }
+  }
+  println(n);
+  return 0;
+}

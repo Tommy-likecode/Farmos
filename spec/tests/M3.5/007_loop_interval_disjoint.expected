@@ -1,0 +1,10 @@
+# kind: run
+# exit: 0
+# repeat: 20
+# threads: 1,2,4
+## Counted-loop intervals [0,3] and [4,7] are provably disjoint (5.4). This is the ONLY way dynamic-looking indices are accepted under OQ-M35-02 option A.
+# stdout:
+140
+9
+49
+# end

@@ -1,0 +1,15 @@
+import { Mesh, BoxGeometry, MeshBasicMaterial } from "farmos:scene";
+
+function main(): int {
+  const cube: Mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(0xff0000));
+  parallel {
+    task {
+      cube.rotation.x = 0.5;
+    }
+    task {
+      cube.quaternion.w = 1;
+    }
+  }
+  println(cube.rotation.x);
+  return 0;
+}

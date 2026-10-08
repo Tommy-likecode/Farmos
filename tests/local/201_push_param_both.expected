@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## B1: push through a dynamic-array parameter vs another push is E0801.
+# error: 12:7: E0801
+# note: 9:7

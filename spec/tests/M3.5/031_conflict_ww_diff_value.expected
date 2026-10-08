@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## The PLAN.md example a=1 vs a=2 (6.3). Primary = access in the higher-numbered task, note = the earlier one.
+# error: 8:7: E0801
+# note: 5:7

@@ -1,0 +1,4 @@
+# kind: compile_error
+# exit: 1
+## `parallel` requires at least one `task` (3.3): the closing brace is unexpected.
+# error: 3:3: E0202

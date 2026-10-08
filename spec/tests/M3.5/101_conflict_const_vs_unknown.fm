@@ -1,0 +1,14 @@
+function main(): int {
+  let a: int = 0;
+  let y: int = 1;
+  parallel {
+    task {
+      a = 1;
+    }
+    task {
+      a = y;
+    }
+  }
+  println(a);
+  return 0;
+}

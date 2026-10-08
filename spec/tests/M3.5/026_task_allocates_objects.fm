@@ -1,0 +1,35 @@
+class Counter {
+  n: int;
+
+  constructor(n: int) {
+    this.n = n;
+  }
+
+  inc(): void {
+    this.n = this.n + 1;
+  }
+
+  get(): int {
+    return this.n;
+  }
+}
+
+function main(): int {
+  let cs: Counter[2] = [new Counter(0), new Counter(0)];
+  parallel {
+    task {
+      let t: Counter = new Counter(1);
+      t.inc();
+      t.inc();
+      cs[0] = t;
+    }
+    task {
+      let t: Counter = new Counter(10);
+      t.inc();
+      cs[1] = t;
+    }
+  }
+  println(cs[0].get());
+  println(cs[1].get());
+  return 0;
+}

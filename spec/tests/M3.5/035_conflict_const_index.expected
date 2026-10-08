@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## `k` is a const bound to an integer literal: constant index 0 (5.4).
+# error: 9:7: E0801
+# note: 6:7

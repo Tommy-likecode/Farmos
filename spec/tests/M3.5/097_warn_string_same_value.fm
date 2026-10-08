@@ -1,0 +1,13 @@
+function main(): int {
+  let s: string = "";
+  parallel {
+    task {
+      s = "hi" + "!";
+    }
+    task {
+      s = "hi!";
+    }
+  }
+  println(s);
+  return 0;
+}

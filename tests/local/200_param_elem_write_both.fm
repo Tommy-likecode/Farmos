@@ -1,0 +1,17 @@
+function setE(v: int[], k: int): void {
+  v[0] = k;
+}
+
+function main(): int {
+  let xs: int[] = [1, 2];
+  parallel {
+    task {
+      setE(xs, 1);
+    }
+    task {
+      setE(xs, 2);
+    }
+  }
+  println(xs[0]);
+  return 0;
+}

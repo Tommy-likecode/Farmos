@@ -1,0 +1,9 @@
+# kind: compile_error
+# exit: 1
+# repeat: 5
+# diag_exact: true
+## Warnings and errors share one source-ordered stream (12.4); a warning does not suppress or reorder the later error.
+# warning: 9:7: W0801
+# note: 6:7
+# error: 17:7: E0801
+# note: 14:7

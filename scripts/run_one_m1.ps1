@@ -42,13 +42,22 @@ function Parse-Expected([string]$path) {
   $stdout = $null; $hasStdout = $false
   $stderr = $null; $hasStderr = $false
   $stderrExact = $null
-  $errors = @()
+  $diags = New-Object System.Collections.Generic.List[object]
   $pngPath = $null
   $sha256 = $null
   $mode = $null
   $buf = New-Object System.Collections.Generic.List[string]
+  $flags = @()
+  $repeat = 1
+  $threads = $null
+  $diagExact = $false
 
   foreach ($line in $lines) {
+    if ($null -eq $line) { $line = "" }
+    $line = [string]$line
+    # PS 5.1 Get-Content leaves CR on CRLF files and may keep a UTF-8 BOM on line 1.
+    if ($line.Length -gt 0 -and [int][char]$line[0] -eq 0xFEFF) { $line = $line.Substring(1) }
+    $line = $line.TrimEnd([char]13)
     if ($null -ne $mode) {
       # README: "Everything between `# stdout:` and `# end` is compared exactly".
       # Only a `# end` line terminates a block; any other line (including `#`/`##` lines) is literal.
@@ -68,15 +77,69 @@ function Parse-Expected([string]$path) {
 
     if ($line -cmatch '^# kind:[ \t]*(\S+)[ \t]*$') { $kind = $Matches[1]; continue }
     if ($line -cmatch '^# exit:[ \t]*(-?\d+)[ \t]*$') { $exitCode = [int]$Matches[1]; continue }
+    if ($line -cmatch '^# flags:[ \t]*(.+)[ \t]*$') {
+      $flags = @($Matches[1].Trim() -split '[ \t]+' | Where-Object { $_ -ne '' })
+      continue
+    }
+    if ($line.StartsWith('# repeat:', [StringComparison]::Ordinal)) {
+      if ($line -cmatch '^# repeat:[ \t]*(\d+)[ \t]*$') {
+        $repeat = [int]$Matches[1]
+        if ($repeat -lt 1 -or $repeat -gt 1000) {
+          Write-Host "FAIL ${Name}: # repeat: must be in 1..1000"
+          exit 1
+        }
+      } else {
+        Write-Host "FAIL ${Name}: malformed # repeat: line"
+        exit 1
+      }
+      continue
+    }
+    if ($line.StartsWith('# threads:', [StringComparison]::Ordinal)) {
+      if ($line -cmatch '^# threads:[ \t]*(\d+)([ \t]*,[ \t]*\d+)*[ \t]*$') {
+        $threads = @()
+        $rest = ($line.Substring(10)).Trim()
+        foreach ($part in ($rest -split ',')) {
+          $t = $part.Trim()
+          if ($t -eq '') { continue }
+          $n = [int]$t
+          if ($n -lt 1) {
+            Write-Host "FAIL ${Name}: malformed # threads: line"
+            exit 1
+          }
+          $threads += $n
+        }
+        if ($threads.Count -eq 0) {
+          Write-Host "FAIL ${Name}: malformed # threads: line"
+          exit 1
+        }
+      } else {
+        Write-Host "FAIL ${Name}: malformed # threads: line"
+        exit 1
+      }
+      continue
+    }
+    if ($line -cmatch '^# diag_exact:[ \t]*true[ \t]*$') { $diagExact = $true; continue }
     if ($line -cmatch '^# png:[ \t]*(.+)[ \t]*$') { $pngPath = $Matches[1].Trim(); continue }
     if ($line -cmatch '^# sha256:[ \t]*([0-9a-fA-F]{64})[ \t]*$') { $sha256 = $Matches[1].ToLower(); continue }
     if ($line -cmatch '^# stderr_exact:[ \t]*(true|false)[ \t]*$') { $stderrExact = (Same $Matches[1] 'true'); continue }
-    if ($line -cmatch '^# error:[ \t]*(\d+):(\d+):[ \t]*(E\d{4})[ \t]*$') {
-      $errors += @{ line=[int]$Matches[1]; col=[int]$Matches[2]; code=$Matches[3]; path="" }
+    if ($line -cmatch '^# (error|warning):[ \t]*(\d+):(\d+):[ \t]*([EW]\d{4})[ \t]*$') {
+      $diags.Add(@{ sev=$Matches[1]; line=[int]$Matches[2]; col=[int]$Matches[3]; code=$Matches[4]; path=""; note=$null })
       continue
     }
-    if ($line -cmatch '^# error:[ \t]*(.+):(\d+):(\d+):[ \t]*(E\d{4})[ \t]*$') {
-      $errors += @{ line=[int]$Matches[2]; col=[int]$Matches[3]; code=$Matches[4]; path=$Matches[1] }
+    if ($line -cmatch '^# (error|warning):[ \t]*(.+):(\d+):(\d+):[ \t]*([EW]\d{4})[ \t]*$') {
+      $diags.Add(@{ sev=$Matches[1]; line=[int]$Matches[3]; col=[int]$Matches[4]; code=$Matches[5]; path=$Matches[2]; note=$null })
+      continue
+    }
+    if ($line -cmatch '^# note:[ \t]*(\d+):(\d+)[ \t]*$') {
+      if ($diags.Count -gt 0) {
+        $diags[$diags.Count - 1].note = @{ path=""; line=[int]$Matches[1]; col=[int]$Matches[2] }
+      }
+      continue
+    }
+    if ($line -cmatch '^# note:[ \t]*(.+):(\d+):(\d+)[ \t]*$') {
+      if ($diags.Count -gt 0) {
+        $diags[$diags.Count - 1].note = @{ path=$Matches[1]; line=[int]$Matches[2]; col=[int]$Matches[3] }
+      }
       continue
     }
     if ($line -cmatch '^# stdout:[ \t]*$') { $mode = 'stdout'; $buf.Clear(); continue }
@@ -92,8 +155,9 @@ function Parse-Expected([string]$path) {
     stdout=$stdout; hasStdout=$hasStdout
     stderr=$stderr; hasStderr=$hasStderr
     stderrExact=$stderrExact
-    errors=$errors
+    diags=$diags
     pngPath=$pngPath; sha256=$sha256
+    flags=$flags; repeat=$repeat; threads=$threads; diagExact=$diagExact
   }
 }
 
@@ -112,43 +176,263 @@ $outFile = Join-Path $env:TEMP ("farmc_test_" + $Name + ".out.txt")
 $errFile = Join-Path $env:TEMP ("farmc_test_" + $Name + ".err.txt")
 
 function Read-Text([string]$f) {
-  $t = Get-Content -LiteralPath $f -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-  if ($null -eq $t) { return "" }
-  return $t
+  if ([string]::IsNullOrEmpty($f) -or -not (Test-Path -LiteralPath $f)) { return "" }
+  # Byte read: PS 5.1 Get-Content -Encoding UTF8 expects a BOM and Start-Process
+  # redirection may write UTF-16. Decode BOM-aware, then drop CR.
+  $bytes = [System.IO.File]::ReadAllBytes($f)
+  if ($null -eq $bytes -or $bytes.Length -eq 0) { return "" }
+  $text = $null
+  if ($bytes.Length -ge 2 -and $bytes[0] -eq 255 -and $bytes[1] -eq 254) {
+    $enc = New-Object System.Text.UnicodeEncoding $false, $false
+    $text = $enc.GetString($bytes, 2, $bytes.Length - 2)
+  } elseif ($bytes.Length -ge 2 -and $bytes[0] -eq 254 -and $bytes[1] -eq 255) {
+    $enc = New-Object System.Text.UnicodeEncoding $true, $false
+    $text = $enc.GetString($bytes, 2, $bytes.Length - 2)
+  } else {
+    # UTF-16 LE without BOM (odd bytes mostly NUL) — PS 5.1 Start-Process sometimes omits BOM.
+    $utf16le = $false
+    if ($bytes.Length -ge 4 -and ($bytes.Length % 2) -eq 0) {
+      $nuls = 0
+      $lim = $bytes.Length
+      if ($lim -gt 200) { $lim = 200 }
+      for ($i = 1; $i -lt $lim; $i += 2) { if ($bytes[$i] -eq 0) { $nuls++ } }
+      if (($nuls * 2) -ge ($lim / 2)) { $utf16le = $true }
+    }
+    if ($utf16le) {
+      $enc = New-Object System.Text.UnicodeEncoding $false, $false
+      $text = $enc.GetString($bytes)
+    } else {
+      $start = 0
+      if ($bytes.Length -ge 3 -and $bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191) { $start = 3 }
+      $enc = New-Object System.Text.UTF8Encoding $false, $false
+      $text = $enc.GetString($bytes, $start, $bytes.Length - $start)
+    }
+  }
+  if ($null -eq $text) { return "" }
+  if ($text.Length -gt 0 -and [int][char]$text[0] -eq 0xFEFF) { $text = $text.Substring(1) }
+  return $text
+}
+
+function Write-Utf8File([string]$f, [string]$text) {
+  if ($null -eq $text) { $text = "" }
+  $enc = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($f, $text, $enc)
+}
+
+function Quote-CmdArg([string]$s) {
+  if ($null -eq $s) { return '""' }
+  # cmd.exe: double a quote inside quoted args; quote if whitespace or cmd metacharacters.
+  if ($s -match '[ \t&<>^|()@!"]') {
+    return '"' + ($s.Replace('"','""')) + '"'
+  }
+  return $s
+}
+
+function Quote-ProcArg([string]$s) {
+  if ($null -eq $s) { return '""' }
+  if ($s -match '[ \t"]') {
+    return '"' + ($s.Replace('\','\\').Replace('"','\"')) + '"'
+  }
+  return $s
+}
+
+# Capture native stdout/stderr without PS wrapping them as ErrorRecords (PS 5.1).
+# Prefer cmd.exe 2> file (raw child bytes). Fallback: Process + UTF-8 StreamReader.
+function Invoke-Native {
+  param(
+    [string]$FilePath,
+    [string[]]$ArgumentList,
+    [string]$WorkingDirectory,
+    [string]$StdOutFile,
+    [string]$StdErrFile
+  )
+  Remove-Item -Force $StdOutFile,$StdErrFile -ErrorAction SilentlyContinue
+  $nativeArgs = @()
+  if ($null -ne $ArgumentList) { $nativeArgs = @($ArgumentList) }
+
+  $comspec = $env:ComSpec
+  if (-not [string]::IsNullOrEmpty($comspec) -and (Test-Path -LiteralPath $comspec)) {
+    $q = New-Object System.Collections.Generic.List[string]
+    [void]$q.Add((Quote-CmdArg $FilePath))
+    foreach ($a in $nativeArgs) { [void]$q.Add((Quote-CmdArg $a)) }
+    $exeLine = [string]::Join(' ', $q.ToArray())
+    # Single ArgumentList string avoids PS 5.1 array-join quoting. cmd 1>/2> captures raw child bytes.
+    $arg = '/c ' + $exeLine + ' 1> ' + (Quote-CmdArg $StdOutFile) + ' 2> ' + (Quote-CmdArg $StdErrFile)
+    $p = Start-Process -FilePath $comspec -ArgumentList $arg -WorkingDirectory $WorkingDirectory -Wait -PassThru -NoNewWindow
+    if (-not (Test-Path -LiteralPath $StdOutFile)) { Write-Utf8File $StdOutFile "" }
+    if (-not (Test-Path -LiteralPath $StdErrFile)) { Write-Utf8File $StdErrFile "" }
+    return @{ ExitCode = $p.ExitCode }
+  }
+
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $FilePath
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.RedirectStandardInput = $true
+  $psi.CreateNoWindow = $true
+  $psi.WorkingDirectory = $WorkingDirectory
+  $utf8 = New-Object System.Text.UTF8Encoding $false
+  try { $psi.StandardOutputEncoding = $utf8 } catch { }
+  try { $psi.StandardErrorEncoding = $utf8 } catch { }
+  $q = New-Object System.Collections.Generic.List[string]
+  foreach ($a in $nativeArgs) { [void]$q.Add((Quote-ProcArg $a)) }
+  $psi.Arguments = [string]::Join(' ', $q.ToArray())
+  $proc = New-Object System.Diagnostics.Process
+  $proc.StartInfo = $psi
+  [void]$proc.Start()
+  try { $proc.StandardInput.Close() } catch { }
+  $stdout = ""
+  $stderr = ""
+  try {
+    $outTask = $proc.StandardOutput.ReadToEndAsync()
+    $errTask = $proc.StandardError.ReadToEndAsync()
+    $proc.WaitForExit()
+    $stdout = $outTask.Result
+    $stderr = $errTask.Result
+  } catch {
+    $stderr = $proc.StandardError.ReadToEnd()
+    $stdout = $proc.StandardOutput.ReadToEnd()
+    $proc.WaitForExit()
+  }
+  if ($null -eq $stdout) { $stdout = "" }
+  if ($null -eq $stderr) { $stderr = "" }
+  Write-Utf8File $StdOutFile $stdout
+  Write-Utf8File $StdErrFile $stderr
+  return @{ ExitCode = $proc.ExitCode }
 }
 
 function Invoke-FarmcBuild {
   Remove-Item -Force $outFile,$errFile,$tmp -ErrorAction SilentlyContinue
-  return (Start-Process -FilePath $Farmc -ArgumentList @('build', $mainArg, '-o', $tmp) `
-    -WorkingDirectory $TestsDir -NoNewWindow -Wait -PassThru `
-    -RedirectStandardOutput $outFile -RedirectStandardError $errFile)
+  $al = New-Object System.Collections.Generic.List[string]
+  [void]$al.Add('build')
+  [void]$al.Add($mainArg)
+  [void]$al.Add('-o')
+  [void]$al.Add($tmp)
+  if ($null -ne $exp.flags) {
+    foreach ($f in $exp.flags) { [void]$al.Add($f) }
+  }
+  return Invoke-Native $Farmc $al.ToArray() $TestsDir $outFile $errFile
 }
 
-if (Same $exp.kind 'compile_error') {
-  $p = Invoke-FarmcBuild
-  $errText = Read-Text $errFile
-  # README: `farmc build` fails with exit code 1.
-  if ($p.ExitCode -ne 1) { Write-Host "FAIL ${Name}: expected farmc exit 1, got $($p.ExitCode)"; Write-Host $errText; Exit-Farmc 1 }
-  if ($exp.errors.Count -eq 0) { Write-Host "FAIL ${Name}: compile_error fixture lists no # error: lines"; Exit-Farmc 1 }
-  $diags = @()
-  foreach ($ln in ($errText -split "`r?`n")) {
-    if ($ln -cmatch '^(.*):(\d+):(\d+): error\[(E\d{4})\]:') {
-      $diags += @{ path=(Norm-DiagPath $Matches[1]); line=[int]$Matches[2]; col=[int]$Matches[3]; code=$Matches[4] }
+function Sanitize-DiagLine([string]$ln) {
+  if ($null -eq $ln) { return "" }
+  $ln = [string]$ln
+  if ($ln.Length -gt 0 -and [int][char]$ln[0] -eq 0xFEFF) { $ln = $ln.Substring(1) }
+  $ln = $ln.TrimEnd([char]13).Trim()
+  # PS 5.1 NativeCommandError: "farmc : path:line:col: error[E0408]: ..."
+  if ($ln -cmatch '^[^\s:]+\.(exe|EXE) : (.*)$') { $ln = $Matches[2].Trim() }
+  elseif ($ln -cmatch '^[^\s:]+ : (.*)$') {
+    $rest = $Matches[1].Trim()
+    if ($rest -cmatch '\.fm:\d+:\d+:') { $ln = $rest }
+  }
+  return $ln
+}
+
+function Parse-FarmcDiags([string]$errText) {
+  $got = New-Object System.Collections.Generic.List[object]
+  if ($null -eq $errText) { $errText = "" }
+  $errText = Norm-Newlines $errText
+  if ($errText.Length -gt 0 -and [int][char]$errText[0] -eq 0xFEFF) { $errText = $errText.Substring(1) }
+  # @() keeps a single line from unwrapping to a char enumerable (PS 5.1).
+  foreach ($raw in @($errText -split "`n")) {
+    $ln = Sanitize-DiagLine $raw
+    if ($ln.Length -eq 0) { continue }
+    # Count only real farmc primaries. Notes and PS wrapper noise (CategoryInfo, etc.) are ignored.
+    if ($ln -cmatch '^((?:[A-Za-z]:)?[^\s:]+\.fm):(\d+):(\d+): (error|warning)\[([EW]\d{4})\]:') {
+      $got.Add(@{ sev=$Matches[4]; path=(Norm-DiagPath $Matches[1]); line=[int]$Matches[2]; col=[int]$Matches[3]; code=$Matches[5]; note=$null })
+      continue
+    }
+    if ($ln -cmatch '^((?:[A-Za-z]:)?[^\s:]+\.fm):(\d+):(\d+): note:') {
+      if ($got.Count -gt 0) {
+        $last = $got[$got.Count - 1]
+        if ($null -eq $last.note) {
+          $last.note = @{ path=(Norm-DiagPath $Matches[1]); line=[int]$Matches[2]; col=[int]$Matches[3] }
+        }
+      }
+      continue
     }
   }
-  # README: verify path (when present), line, column, and code. Single-file: implied path is the .fm under test.
-  foreach ($e in $exp.errors) {
-    $wantPath = Norm-DiagPath $e.path
-    if ([string]::IsNullOrEmpty($wantPath)) { $wantPath = Norm-DiagPath $mainArg }
-    $found = $false
-    foreach ($d in $diags) {
-      if ((Same $d.path $wantPath) -and ($d.line -eq $e.line) -and ($d.col -eq $e.col) -and (Same $d.code $e.code)) { $found = $true; break }
-    }
-    if (-not $found) {
-      Write-Host ("FAIL {0}: missing diagnostic {1}:{2}:{3}: error[{4}]" -f $Name, $wantPath, $e.line, $e.col, $e.code)
+  # Unary comma: a 1-element List must not unwrap to a hashtable (Count would be 6 keys).
+  return ,$got
+}
+
+function Want-Path([string]$p) {
+  $wp = Norm-DiagPath $p
+  if ([string]::IsNullOrEmpty($wp)) { $wp = Norm-DiagPath $mainArg }
+  return $wp
+}
+
+function Test-PrimaryMatch($g, $w) {
+  $wp = Want-Path $w.path
+  return ((Same $g.path $wp) -and ($g.line -eq $w.line) -and ($g.col -eq $w.col) -and (Same $g.code $w.code) -and (Same $g.sev $w.sev))
+}
+
+function Test-NoteMatch($gnote, $wnote) {
+  if ($null -eq $wnote) { return $true }
+  if ($null -eq $gnote) { return $false }
+  $wp = Want-Path $wnote.path
+  return ((Same $gnote.path $wp) -and ($gnote.line -eq $wnote.line) -and ($gnote.col -eq $wnote.col))
+}
+
+function Assert-CompileDiags($got, $want, [bool]$exact, [string]$errText) {
+  if ($exact) {
+    if ($got.Count -ne $want.Count) {
+      Write-Host "FAIL ${Name}: diag_exact: got $($got.Count) primaries, want $($want.Count)"
       Write-Host $errText
       Exit-Farmc 1
     }
+    for ($i = 0; $i -lt $want.Count; $i++) {
+      if (-not (Test-PrimaryMatch $got[$i] $want[$i])) {
+        Write-Host ("FAIL {0}: diag_exact mismatch {1}[{2}] {3}:{4}:{5}" -f $Name, $want[$i].sev, $want[$i].code, (Want-Path $want[$i].path), $want[$i].line, $want[$i].col)
+        Write-Host $errText
+        Exit-Farmc 1
+      }
+      if (-not (Test-NoteMatch $got[$i].note $want[$i].note)) {
+        Write-Host "FAIL ${Name}: note mismatch for $($want[$i].code) at $($want[$i].line):$($want[$i].col)"
+        Write-Host $errText
+        Exit-Farmc 1
+      }
+    }
+    return
+  }
+  $gi = 0
+  foreach ($w in $want) {
+    $found = $null
+    while ($gi -lt $got.Count) {
+      $g = $got[$gi]
+      $gi++
+      if (Test-PrimaryMatch $g $w) { $found = $g; break }
+    }
+    if ($null -eq $found) {
+      Write-Host ("FAIL {0}: missing diagnostic {1}:{2}:{3}: {4}[{5}]" -f $Name, (Want-Path $w.path), $w.line, $w.col, $w.sev, $w.code)
+      Write-Host $errText
+      Exit-Farmc 1
+    }
+    if (-not (Test-NoteMatch $found.note $w.note)) {
+      Write-Host "FAIL ${Name}: note mismatch for $($w.code) at $($w.line):$($w.col)"
+      Write-Host $errText
+      Exit-Farmc 1
+    }
+  }
+}
+
+if (Same $exp.kind 'compile_error') {
+  if ($exp.diags.Count -eq 0) { Write-Host "FAIL ${Name}: compile_error fixture lists no # error: lines"; Exit-Farmc 1 }
+  $prevRaw = $null
+  for ($ri = 0; $ri -lt $exp.repeat; $ri++) {
+    $p = Invoke-FarmcBuild
+    $errText = Read-Text $errFile
+    if ($null -ne $prevRaw) {
+      if (-not (Same $errText $prevRaw)) {
+        Write-Host "FAIL ${Name}: compile_error repeat: farmc stderr not byte-identical"
+        Exit-Farmc 1
+      }
+    }
+    $prevRaw = $errText
+    if ($p.ExitCode -ne 1) { Write-Host "FAIL ${Name}: expected farmc exit 1, got $($p.ExitCode)"; Write-Host $errText; Exit-Farmc 1 }
+    $got = Parse-FarmcDiags $errText
+    Assert-CompileDiags $got $exp.diags $exp.diagExact $errText
   }
   Write-Host "PASS ${Name}"
   Exit-Farmc 0
@@ -160,6 +444,27 @@ if (-not ((Same $exp.kind 'run') -or (Same $exp.kind 'run_approx') -or (Same $ex
 $p = Invoke-FarmcBuild
 if ($p.ExitCode -ne 0) { Write-Host "FAIL ${Name}: compile failed ($($p.ExitCode))"; Write-Host (Read-Text $errFile); Exit-Farmc 1 }
 
+$farmcErr = Read-Text $errFile
+$gotFarmc = Parse-FarmcDiags $farmcErr
+$wantWarns = @($exp.diags | Where-Object { $_.sev -eq 'warning' })
+if ($gotFarmc.Count -ne $wantWarns.Count) {
+  Write-Host "FAIL ${Name}: farmc stderr diagnostics mismatch (got $($gotFarmc.Count), want $($wantWarns.Count) warnings)"
+  Write-Host $farmcErr
+  Exit-Farmc 1
+}
+for ($wi = 0; $wi -lt $wantWarns.Count; $wi++) {
+  if (-not (Test-PrimaryMatch $gotFarmc[$wi] $wantWarns[$wi])) {
+    Write-Host "FAIL ${Name}: farmc warning mismatch $($wantWarns[$wi].code) at $($wantWarns[$wi].line):$($wantWarns[$wi].col)"
+    Write-Host $farmcErr
+    Exit-Farmc 1
+  }
+  if (-not (Test-NoteMatch $gotFarmc[$wi].note $wantWarns[$wi].note)) {
+    Write-Host "FAIL ${Name}: farmc warning note mismatch for $($wantWarns[$wi].code)"
+    Write-Host $farmcErr
+    Exit-Farmc 1
+  }
+}
+
 Remove-Item -Force $outFile,$errFile -ErrorAction SilentlyContinue
 $runCwd = $TestsDir
 $script:PngScratch = $null
@@ -168,10 +473,22 @@ if (Same $exp.kind 'run_png') {
   New-Item -ItemType Directory -Force -Path $script:PngScratch | Out-Null
   $runCwd = $script:PngScratch
 }
-$p2 = Start-Process -FilePath $tmp -WorkingDirectory $runCwd -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
-$ec = $p2.ExitCode
-$stdoutGot = Norm-Newlines (Read-Text $outFile)
-$stderrGot = Norm-Newlines (Read-Text $errFile)
+
+$threadCfgs = @($null)
+if ($null -ne $exp.threads) { $threadCfgs = @($exp.threads) }
+$oldThr = $env:FARMOS_THREADS
+$script:stdoutGot = $null
+$script:stderrGot = $null
+$script:ec = 0
+foreach ($W in $threadCfgs) {
+  if ($null -eq $W) { Remove-Item Env:FARMOS_THREADS -ErrorAction SilentlyContinue }
+  else { $env:FARMOS_THREADS = [string]$W }
+  for ($ri = 0; $ri -lt $exp.repeat; $ri++) {
+    Remove-Item -Force $outFile,$errFile -ErrorAction SilentlyContinue
+    $p2 = Invoke-Native $tmp @() $runCwd $outFile $errFile
+    $ec = $p2.ExitCode
+    $stdoutGot = Norm-Newlines (Read-Text $outFile)
+    $stderrGot = Norm-Newlines (Read-Text $errFile)
 
 if ($ec -ne $exp.exit) {
   Write-Host "FAIL ${Name}: exit $ec expected $($exp.exit)"
@@ -329,6 +646,11 @@ if (Same $exp.kind 'run_png') {
   
   # Scratch dir is removed by Exit-Farmc (including on failure).
 }
+
+    } # repeat
+  } # threads
+if ($null -eq $oldThr) { Remove-Item Env:FARMOS_THREADS -ErrorAction SilentlyContinue }
+else { $env:FARMOS_THREADS = $oldThr }
 
 Write-Host "PASS ${Name}"
 Exit-Farmc 0

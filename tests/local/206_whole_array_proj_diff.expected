@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## B2: project r=[1,2] onto r[0]; 1 vs 5 => E0801.
+# error: 8:7: E0801
+# note: 5:7

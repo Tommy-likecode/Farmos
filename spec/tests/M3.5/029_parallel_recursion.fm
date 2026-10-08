@@ -1,0 +1,28 @@
+function fib(n: int): int {
+  if (n < 2) {
+    return n;
+  }
+  return fib(n - 1) + fib(n - 2);
+}
+
+function pfib(n: int): int {
+  if (n < 12) {
+    return fib(n);
+  }
+  let a: int = 0;
+  let b: int = 0;
+  parallel {
+    task {
+      a = pfib(n - 1);
+    }
+    task {
+      b = pfib(n - 2);
+    }
+  }
+  return a + b;
+}
+
+function main(): int {
+  println(pfib(22));
+  return 0;
+}

@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Possible read/write overlap through dynamic indices: error (6.4, 5.4).
+# error: 11:7: E0802
+# note: 8:13

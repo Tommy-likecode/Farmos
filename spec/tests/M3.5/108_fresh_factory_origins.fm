@@ -1,0 +1,35 @@
+class Counter {
+  n: int;
+
+  constructor(n: int) {
+    this.n = n;
+  }
+
+  inc(): void {
+    this.n = this.n + 1;
+  }
+
+  get(): int {
+    return this.n;
+  }
+}
+
+function make(v: int): Counter {
+  return new Counter(v);
+}
+
+function main(): int {
+  const a: Counter = make(1);
+  const b: Counter = make(2);
+  parallel {
+    task {
+      a.inc();
+    }
+    task {
+      b.inc();
+    }
+  }
+  println(a.get());
+  println(b.get());
+  return 0;
+}

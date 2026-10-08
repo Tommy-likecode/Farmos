@@ -2275,7 +2275,8 @@ static int run_cmd(const std::string& cmd_utf8) {
 }
 
 static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const fs::path& rt_h_dir,
-                            const fs::path& out_exe, bool verbose, bool link_scene) {
+                            const fs::path& out_exe, bool verbose, bool link_scene,
+                            bool link_parallel) {
   std::string cc = find_c_compiler();
   if (cc.empty()) {
     std::cerr << "farmc: no C compiler found (set FARM_CC)\n";
@@ -2290,36 +2291,48 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   cc = cc_command_prefix(cc);
   // Size-oriented flags; NO -ffast-math. GNU statement-expressions require clang/gcc.
   // -ffp-contract=off: M3 PNG determinism only. Non-scene programs match master flags.
+  // Threading runtime/flags are gated on actual `parallel` use, like farmos:scene.
   fs::path rt_math_c = rt_h_dir / "farm_math.c";
   fs::path rt_scene_c = rt_h_dir / "farm_scene.c";
+  fs::path rt_par_c = rt_h_dir / "farm_par.c";
   const char* fp_contract = link_scene ? "-ffp-contract=off " : "";
+  const char* thr_def = link_parallel ? "-DFARM_ENABLE_THREADS " : "";
 
-  auto append_scene_rt = [&](std::ostringstream& o) {
+  auto append_extra_rt = [&](std::ostringstream& o) {
     // Link farm_math.c / farm_scene.c only when a scene type is actually used.
     if (link_scene) {
       if (fs::exists(rt_math_c)) o << "\"" << path_to_utf8(rt_math_c) << "\" ";
       if (fs::exists(rt_scene_c)) o << "\"" << path_to_utf8(rt_scene_c) << "\" ";
     }
+    if (link_parallel && fs::exists(rt_par_c))
+      o << "\"" << path_to_utf8(rt_par_c) << "\" ";
+  };
+
+  auto append_libs = [&](std::ostringstream& o) {
+    o << "-Wl,--gc-sections -s -lm";
+#if !defined(_WIN32)
+    if (link_parallel) o << " -pthread";
+#endif
   };
 
   std::ostringstream cmd;
-  cmd << cc << " -std=c11 -Os -flto -ffunction-sections -fdata-sections " << fp_contract
+  cmd << cc << " -std=c11 -Os -flto -ffunction-sections -fdata-sections " << fp_contract << thr_def
       << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
       << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
-  append_scene_rt(cmd);
-  cmd << "-o \"" << path_to_utf8(out_exe) << "\" "
-      << "-Wl,--gc-sections -s -lm";
+  append_extra_rt(cmd);
+  cmd << "-o \"" << path_to_utf8(out_exe) << "\" ";
+  append_libs(cmd);
   if (verbose) std::cerr << "farmc: " << cmd.str() << "\n";
   int rc = run_cmd(cmd.str());
   if (rc != 0) {
     // retry without LTO
     std::ostringstream cmd2;
-    cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections " << fp_contract
+    cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections " << fp_contract << thr_def
          << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
          << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
-    append_scene_rt(cmd2);
-    cmd2 << "-o \"" << path_to_utf8(out_exe) << "\" "
-         << "-Wl,--gc-sections -s -lm";
+    append_extra_rt(cmd2);
+    cmd2 << "-o \"" << path_to_utf8(out_exe) << "\" ";
+    append_libs(cmd2);
     if (verbose) std::cerr << "farmc: retry " << cmd2.str() << "\n";
     rc = run_cmd(cmd2.str());
   }
@@ -2358,7 +2371,7 @@ static fs::path default_runtime_dir() {
 
 static int cmd_build(std::vector<std::string> args) {
   std::string infile, outfile;
-  bool do_emit_c = false, keep_c = false, verbose = false;
+  bool do_emit_c = false, keep_c = false, verbose = false, werror = false;
   std::string emit_c_path;
   for (size_t i=0;i<args.size();++i) {
     if (args[i]=="-o" && i+1<args.size()) outfile = args[++i];
@@ -2367,6 +2380,7 @@ static int cmd_build(std::vector<std::string> args) {
       if (i+1<args.size() && args[i+1][0]!='-') emit_c_path = args[++i];
     } else if (args[i]=="--keep-c") keep_c = true;
     else if (args[i]=="-v") verbose = true;
+    else if (args[i]=="--werror") werror = true;
     else if (args[i][0]!='-') infile = args[i];
     else {
       std::cerr << "farmc: unknown option " << args[i] << "\n";
@@ -2410,7 +2424,11 @@ static int cmd_build(std::vector<std::string> args) {
   loader.bind_imports();
   if (has_errors()) { emit_diagnostics(); return 1; }
   analyze_program(loader.prog);
-  if (has_errors()) { emit_diagnostics(); return 1; }
+  if (has_errors() || (werror && has_warnings())) {
+    emit_diagnostics(werror);
+    return 1;
+  }
+  emit_diagnostics(false);
 
   std::string csrc = farm::emit_c(loader.prog);
 
@@ -2449,7 +2467,8 @@ static int cmd_build(std::vector<std::string> args) {
   fs::path out_req(outfile);
   fs::path link_out = scratch().file("link_out.exe");
   bool link_scene = program_uses_scene(loader.prog);
-  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene);
+  bool link_parallel = program_uses_parallel(loader.prog);
+  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel);
   if (rc == 0) {
     std::error_code ec;
     fs::rename(link_out, out_req, ec);

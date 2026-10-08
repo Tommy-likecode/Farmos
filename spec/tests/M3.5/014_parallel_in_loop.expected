@@ -1,0 +1,8 @@
+# kind: run
+# exit: 0
+## Each execution of the parallel statement is an independent fork/join; `round` is a shared read.
+# stdout:
+11
+33
+66
+# end

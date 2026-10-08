@@ -1,0 +1,32 @@
+function f(n: int): int {
+  let s: int = 0;
+  for (let i = 0; i < n; i += 1) {
+    s += i * i % 7;
+  }
+  return s;
+}
+
+function main(): int {
+  let p0: int = 0;
+  let p1: int = 0;
+  let p2: int = 0;
+  parallel {
+    task {
+      p0 = f(1000);
+    }
+    task {
+      p1 = f(2000);
+    }
+    task {
+      p2 = f(3000);
+    }
+  }
+  let q0: int = f(1000);
+  let q1: int = f(2000);
+  let q2: int = f(3000);
+  println(p0);
+  println(p1);
+  println(p2);
+  println(p0 == q0 && p1 == q1 && p2 == q2);
+  return 0;
+}
