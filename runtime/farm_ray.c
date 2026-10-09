@@ -518,6 +518,9 @@ static int refract_dir(V3 d, V3 n, double eta, double cos_i, V3* out) {
   *out = vnorm(v3(eta*d.x + s*n.x, eta*d.y + s*n.y, eta*d.z + s*n.z));
   return 1;
 }
+/* Path-ref ONB: |Nx|>|Ny|. 012's metal sphere has a triangle whose components
+   differ by 1 ULP; the wrong branch misses the blue box and adds background
+   (+2 per channel). Sphere verts are pinned in farm_scene.c so n matches. */
 static void onb(V3 n, V3* T, V3* B) {
   if (fabs(n.x) > fabs(n.y)) {
     double inv = 1.0 / sqrt(n.x*n.x + n.z*n.z);

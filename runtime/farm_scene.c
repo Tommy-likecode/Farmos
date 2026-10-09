@@ -13,6 +13,10 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
+
 // Helper: clamp double to [min, max]
 static inline double clamp(double v, double min, double max) {
   if (v < min) return min;
@@ -419,6 +423,54 @@ static void build_plane_geometry(farm_GeometryData* data, double width, double h
   data->disposed = false;
 }
 
+/* CPython/glibc sin(k*π/4), cos(k*π/4) for k=0..8. Path-ref spheres are 8×4, so
+   every theta/phi lands on this grid. Pinning these bits keeps geometric normals
+   (and the ONB |Nx|>|Ny| branch) identical on ucrt vs glibc — 012 has a metal
+   triangle whose Nx and Ny differ by 1 ULP. Flipping that branch sends the
+   cosine bounce to the background instead of the blue box and yields the
+   Windows (29,29,30) vs golden (27,27,28) at (11,10). */
+static const double FARM_SIN_K_PI_4[9] = {
+  0x0.0p+0,
+  0x1.6a09e667f3bccp-1,
+  0x1.0000000000000p+0,
+  0x1.6a09e667f3bcdp-1,
+  0x1.1a62633145c07p-53,
+  -0x1.6a09e667f3bccp-1,
+  -0x1.0000000000000p+0,
+  -0x1.6a09e667f3bcep-1,
+  -0x1.1a62633145c07p-52
+};
+static const double FARM_COS_K_PI_4[9] = {
+  0x1.0000000000000p+0,
+  0x1.6a09e667f3bcdp-1,
+  0x1.1a62633145c07p-54,
+  -0x1.6a09e667f3bccp-1,
+  -0x1.0000000000000p+0,
+  -0x1.6a09e667f3bcep-1,
+  -0x1.a79394c9e8a0ap-53,
+  0x1.6a09e667f3bcbp-1,
+  0x1.0000000000000p+0
+};
+
+static int farm_sincos_k_pi_4(int k, double* s, double* c) {
+  if (k < 0 || k > 8) return 0;
+  *s = FARM_SIN_K_PI_4[k];
+  *c = FARM_COS_K_PI_4[k];
+  return 1;
+}
+
+static void farm_sincos_pi(double x_over_pi, double* s, double* c) {
+  double four = x_over_pi * 4.0;
+  if (four >= 0.0 && four <= 8.0) {
+    int k = (int)(four + 0.5);
+    if (k >= 0 && k <= 8 && (double)k == four && farm_sincos_k_pi_4(k, s, c))
+      return;
+  }
+  double ang = x_over_pi * M_PI;
+  *s = sin(ang);
+  *c = cos(ang);
+}
+
 static void build_sphere_geometry(farm_GeometryData* data, double radius, int32_t widthSeg, int32_t heightSeg) {
   int32_t ws = widthSeg < 3 ? 3 : widthSeg;
   int32_t hs = heightSeg < 2 ? 2 : heightSeg;
@@ -433,15 +485,17 @@ static void build_sphere_geometry(farm_GeometryData* data, double radius, int32_
   int32_t idx = 0;
   for (int32_t iy = 0; iy <= hs; iy++) {
     double v = (double)iy / (double)hs;
-    double theta = v * M_PI;
+    double st, ct;
+    farm_sincos_pi(v, &st, &ct);
     
     for (int32_t ix = 0; ix <= ws; ix++) {
       double u = (double)ix / (double)ws;
-      double phi = u * 2.0 * M_PI;
+      double sp, cp;
+      farm_sincos_pi(2.0 * u, &sp, &cp);
       
-      double x = -radius * cos(phi) * sin(theta);
-      double y = radius * cos(theta);
-      double z = radius * sin(phi) * sin(theta);
+      double x = -radius * cp * st;
+      double y = radius * ct;
+      double z = radius * sp * st;
       
       data->positions[idx * 3 + 0] = x;
       data->positions[idx * 3 + 1] = y;
