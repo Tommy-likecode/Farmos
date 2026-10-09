@@ -1,0 +1,26 @@
+import { Scene, PerspectiveCamera, PlaneGeometry, BoxGeometry,
+         MeshStandardMaterial, MeshBasicMaterial, Mesh, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x224488));
+  const camera: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);
+  camera.position.set(0, 0, 3);
+  camera.lookAt(0, 0, 0);
+  const mirrorMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(1, 1, 1));
+  mirrorMat.setRoughness(0);
+  mirrorMat.setMetalness(1);
+  const mirror: Mesh = new Mesh(new PlaneGeometry(2, 2), mirrorMat);
+  scene.add(mirror);
+  const boxMat: MeshBasicMaterial = new MeshBasicMaterial(0xdd2233);
+  const box: Mesh = new Mesh(new BoxGeometry(1.8, 1.8, 1.8), boxMat);
+  box.position.set(0, 0, 4.2);
+  scene.add(box);
+  const renderer: Renderer = new Renderer(32, 32);
+  renderer.setSamples(1);
+  renderer.setMaxBounces(2);
+  renderer.renderPath(scene, camera);
+  renderer.savePNG("out.png");
+  return 0;
+}

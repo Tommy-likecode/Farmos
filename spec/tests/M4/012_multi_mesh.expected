@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: 471a9d719ca78d905dd33a06d1db6ce0fca43a0fd35e15c73f33af399966f3aa
+## 24x24, samples 1, maxBounces 1, 4 boxes + sphere (multi-BLAS)
+# stdout:
+# end

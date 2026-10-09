@@ -1,0 +1,23 @@
+import { Scene, PerspectiveCamera, PlaneGeometry, MeshStandardMaterial, Mesh,
+         AmbientLight, Texture, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  const camera: PerspectiveCamera = new PerspectiveCamera(55, 1, 0.1, 100);
+  camera.position.set(0, 0, 1.4);
+  camera.lookAt(0, 0, 0);
+  const tex: Texture = new Texture("_ref/albedo.png");
+  const mat: MeshStandardMaterial = new MeshStandardMaterial(new Color(1, 1, 1));
+  mat.setRoughness(1);
+  mat.setMap(tex);
+  const plane: Mesh = new Mesh(new PlaneGeometry(2, 2), mat);
+  scene.add(plane);
+  scene.add(new AmbientLight(0xffffff, 1));
+  const renderer: Renderer = new Renderer(32, 32);
+  renderer.setSamples(1);
+  renderer.setMaxBounces(0);
+  renderer.renderPath(scene, camera);
+  renderer.savePNG("out.png");
+  return 0;
+}

@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: f17bac401b669b2889830cfccc3cee1a86172924e729d8278f51477e609ecdaf
+## 24x24, samples 1, maxBounces 0, MeshBasic cube ignores the directional
+# stdout:
+# end

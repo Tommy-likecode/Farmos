@@ -1,5 +1,15 @@
 # Farmos
 
+## M4 — path tracing
+
+`Renderer.renderPath(scene, camera)` is a CPU path tracer on the existing M3 `Renderer`. `render()` stays the M3 rasterizer. Spec: `spec/M4-ray.md`. Fixtures: `spec/tests/M4/` (ctest `m4_*`).
+
+The BVH/integrator/tile pool live in `runtime/farm_ray.c` and are linked only when `renderPath` is used. Unused `farmos:scene` imports still DCE. `FARMOS_THREADS` unset means 1 worker for `renderPath` (not the M3.5 CPU default).
+
+Linux: `bash scripts/run_suite_linux.sh build/farmc spec/tests/M4`
+
+---
+
 ## M3 — `farmos:scene`
 
 Three.js-like scene graph and CPU rasterizer (`import { … } from "farmos:scene"`). Spec: `spec/M3-scene.md`. Fixtures: `spec/tests/M3/` (`run_png` goldens plus API tests).

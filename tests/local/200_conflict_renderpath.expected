@@ -1,0 +1,5 @@
+# kind: compile_error
+# exit: 1
+## Two user tasks calling renderPath on one renderer write #frame (M4 §11 / AC-M4-20).
+# error: 12:7: E0801
+# note: 9:7

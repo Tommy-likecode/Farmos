@@ -1,0 +1,6 @@
+import { Texture } from "farmos:scene";
+
+function main(): int {
+  const tex: Texture = new Texture("no_such_texture.png");
+  return 0;
+}

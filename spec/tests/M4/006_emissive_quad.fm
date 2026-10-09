@@ -1,0 +1,22 @@
+import { Scene, PerspectiveCamera, PlaneGeometry, MeshStandardMaterial, Mesh,
+         Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  const camera: PerspectiveCamera = new PerspectiveCamera(45, 1, 0.1, 100);
+  camera.position.set(0, 0, 1.8);
+  camera.lookAt(0, 0, 0);
+  const mat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0, 0, 0));
+  mat.setRoughness(1);
+  mat.setEmissive(new Color(0.2, 0.4, 0.05));
+  mat.setEmissiveIntensity(2);
+  const quad: Mesh = new Mesh(new PlaneGeometry(1.2, 1.2), mat);
+  scene.add(quad);
+  const renderer: Renderer = new Renderer(24, 24);
+  renderer.setSamples(1);
+  renderer.setMaxBounces(0);
+  renderer.renderPath(scene, camera);
+  renderer.savePNG("out.png");
+  return 0;
+}

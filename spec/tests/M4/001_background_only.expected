@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: e7655a2c9a205f90786991219a3b558e27b2314377a4f5d4a66891b5b25915dd
+## 16x16, samples 1, maxBounces 4, empty scene, background 0x4488ff
+# stdout:
+# end

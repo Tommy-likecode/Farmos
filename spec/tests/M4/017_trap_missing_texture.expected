@@ -1,0 +1,5 @@
+# kind: runtime_trap
+# exit: 110
+# stderr:
+runtime error: texture load failed
+# end

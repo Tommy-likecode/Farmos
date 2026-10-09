@@ -259,6 +259,9 @@ run_cwd = tests_dir
 if exp["kind"] == "run_png":
     png_scratch = tempfile.mkdtemp(prefix=f"farmc_png_{name}_")
     run_cwd = png_scratch
+    ref = os.path.join(tests_dir, "_ref")
+    if os.path.isdir(ref):
+        shutil.copytree(ref, os.path.join(png_scratch, "_ref"))
 
 thread_cfgs = exp["threads"] if exp["threads"] else [None]
 

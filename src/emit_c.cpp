@@ -16,6 +16,7 @@ static bool is_scene_class_sym(const std::string& n) {
          n == "farm_PlaneGeometry" || n == "farm_MeshBasicMaterial" ||
          n == "farm_MeshStandardMaterial" || n == "farm_AmbientLight" ||
          n == "farm_DirectionalLight" || n == "farm_PointLight" ||
+         n == "farm_RectAreaLight" || n == "farm_Texture" ||
          n == "farm_Renderer";
 }
 
@@ -48,6 +49,42 @@ static bool stmt_uses_scene(StmtPtr s) {
       stmt_uses_scene(s->for_init) || stmt_uses_scene(s->for_update))
     return true;
   for (auto& x : s->stmts) if (stmt_uses_scene(x)) return true;
+  return false;
+}
+
+static bool expr_uses_ray(ExprPtr e) {
+  if (!e) return false;
+  if (e->kind == ExprKind::Call && e->lhs && e->lhs->kind == ExprKind::Field &&
+      e->lhs->name == "renderPath")
+    return true;
+  if (expr_uses_ray(e->lhs) || expr_uses_ray(e->rhs)) return true;
+  for (auto& a : e->args) if (expr_uses_ray(a)) return true;
+  for (auto& fv : e->fields) if (expr_uses_ray(fv.second)) return true;
+  return false;
+}
+
+static bool stmt_uses_ray(StmtPtr s) {
+  if (!s) return false;
+  if (expr_uses_ray(s->init) || expr_uses_ray(s->cond) || expr_uses_ray(s->lhs) ||
+      expr_uses_ray(s->rhs) || expr_uses_ray(s->for_cond) || expr_uses_ray(s->ret))
+    return true;
+  if (stmt_uses_ray(s->then_b) || stmt_uses_ray(s->else_b) ||
+      stmt_uses_ray(s->for_init) || stmt_uses_ray(s->for_update))
+    return true;
+  for (auto& x : s->stmts) if (stmt_uses_ray(x)) return true;
+  return false;
+}
+
+bool program_uses_ray(Program& prog) {
+  for (auto& m : prog.modules) {
+    if (m.path == "farmos:math" || m.path == "farmos:scene") continue;
+    for (auto& f : m.functions) if (stmt_uses_ray(f.body)) return true;
+    for (auto& c : m.classes)
+      for (auto& md : c.methods) if (stmt_uses_ray(md.body)) return true;
+    for (auto& s : m.structs)
+      for (auto& md : s.methods) if (stmt_uses_ray(md.body)) return true;
+    for (auto& op : m.operators) if (stmt_uses_ray(op.body)) return true;
+  }
   return false;
 }
 
@@ -134,7 +171,7 @@ struct Emitter {
   static bool is_object3d_sym(const std::string& n) {
     return n == "farm_Object3D" || n == "farm_Scene" || n == "farm_PerspectiveCamera" ||
            n == "farm_Mesh" || n == "farm_AmbientLight" || n == "farm_DirectionalLight" ||
-           n == "farm_PointLight";
+           n == "farm_PointLight" || n == "farm_RectAreaLight";
   }
 
   static bool is_math_type_name(const std::string& n) {
@@ -179,7 +216,8 @@ struct Emitter {
   std::string scene_class_field(const std::string& field) {
     if (field == "matrixAutoUpdate") return "matrixAutoUpdate";
     if (field == "parent" || field == "children" || field == "type") return field;
-    if (field == "roughness" || field == "metalness") return field;
+    if (field == "roughness" || field == "metalness" || field == "transmission" ||
+        field == "ior" || field == "emissiveIntensity" || field == "map") return field;
     if (field == "disposed" || field == "width" || field == "height") return field;
     if (field == "hasBackground" || field == "background") return field;
     if (field == "matrixWorldInverse" || field == "projectionMatrix") return field;

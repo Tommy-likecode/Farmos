@@ -1,0 +1,38 @@
+import { Scene, PerspectiveCamera, PlaneGeometry, BoxGeometry, SphereGeometry,
+         MeshStandardMaterial, MeshBasicMaterial, Mesh, DirectionalLight,
+         AmbientLight, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x101014));
+  const camera: PerspectiveCamera = new PerspectiveCamera(40, 1, 0.1, 100);
+  camera.position.set(0, 0, 2.6);
+  camera.lookAt(0, 0, 0);
+  const wallMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.15, 0.65, 0.25));
+  wallMat.setRoughness(1);
+  const wall: Mesh = new Mesh(new PlaneGeometry(4, 4), wallMat);
+  wall.position.z = -1.6;
+  scene.add(wall);
+  const box: Mesh = new Mesh(new BoxGeometry(0.55, 0.55, 0.55), new MeshBasicMaterial(0xdd2218));
+  box.position.z = -0.95;
+  scene.add(box);
+  const glassMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(1, 1, 1));
+  glassMat.setRoughness(0);
+  glassMat.setMetalness(0);
+  glassMat.setTransmission(1);
+  glassMat.setIor(1.5);
+  const sphere: Mesh = new Mesh(new SphereGeometry(0.5, 8, 4), glassMat);
+  scene.add(sphere);
+  const sun: DirectionalLight = new DirectionalLight(0xffffff, 1.4);
+  sun.lookAt(0, 0, -1);
+  scene.add(sun);
+  const ambient: AmbientLight = new AmbientLight(0xffffff, 0.05);
+  scene.add(ambient);
+  const renderer: Renderer = new Renderer(32, 32);
+  renderer.setSamples(1);
+  renderer.setMaxBounces(3);
+  renderer.renderPath(scene, camera);
+  renderer.savePNG("out.png");
+  return 0;
+}

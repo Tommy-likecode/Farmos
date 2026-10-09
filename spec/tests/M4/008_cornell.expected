@@ -1,0 +1,8 @@
+# kind: run_png
+# exit: 0
+# threads: 1,4
+# png: out.png
+# sha256: 3f29eb72e3b47f6108fa455e315a4d6a97228f47fdf1e9dac030ea42a4b9608f
+## 32x32, samples 4, maxBounces 2, open Cornell, RectAreaLight
+# stdout:
+# end

@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: fb2aba19506aae7470266a9f9c5ab5a08a41700a922cd8cd6136931007f1aa15
+## 24x24, occluding box visible=false does not cast a shadow
+# stdout:
+# end

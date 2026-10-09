@@ -1,0 +1,4 @@
+# kind: compile_error
+# exit: 1
+## savePNG in a user task remains E0805 (M4 AC-M4-20). Internal tile threads are not tasks.
+# error: 7:7: E0805

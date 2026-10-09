@@ -145,6 +145,9 @@ function Assert-NonSceneLink([string]$label, [string]$log) {
   if ($log -like "*farm_scene.c*") {
     Fail-Dce "${label}: linked farm_scene.c (non-scene must link farm_rt.c only)"
   }
+  if ($log -like "*farm_ray.c*") {
+    Fail-Dce "${label}: linked farm_ray.c (non-ray must not link the path tracer)"
+  }
   if ($log -notlike "*farm_rt.c*") {
     Fail-Dce "${label}: did not link farm_rt.c`n$log"
   }
@@ -159,6 +162,9 @@ function Assert-SceneLink([string]$label, [string]$log) {
   }
   if ($log -notlike "*farm_scene.c*") {
     Fail-Dce "${label}: scene program did not link farm_scene.c"
+  }
+  if ($log -like "*farm_ray.c*") {
+    Fail-Dce "${label}: raster-only scene program linked farm_ray.c"
   }
   if ($log -notlike "*farm_rt.c*") {
     Fail-Dce "${label}: scene program did not link farm_rt.c"
@@ -193,6 +199,7 @@ $helloSrc = Join-Path $RepoRoot "spec/tests/M1/001_hello.fm"
 $unusedSrc = Join-Path $RepoRoot "spec/tests/M3/040_unused_scene_import.fm"
 $m2Src = Join-Path $RepoRoot "spec/tests/M2/001_vector3_print.fm"
 $m3Src = Join-Path $RepoRoot "spec/tests/M3/021_import_scene_module.fm"
+$m4Src = Join-Path $RepoRoot "spec/tests/M4/001_background_only.fm"
 
 $td = Join-Path $env:TEMP ("farmc_dce_" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $td | Out-Null
@@ -203,6 +210,7 @@ try {
   $unusedC = Join-Path $td "unused.c"
   $m2Out = Join-Path $td "m2.exe"
   $m3Out = Join-Path $td "m3.exe"
+  $m4Out = Join-Path $td "m4.exe"
 
   Invoke-FarmcBuild -FarmcArgs @("build", $helloSrc, "-o", $hello, "--emit-c", $helloC) -Label "hello" | Out-Null
   Invoke-FarmcBuild -FarmcArgs @("build", $unusedSrc, "-o", $unused, "--emit-c", $unusedC) -Label "unused" | Out-Null
@@ -227,11 +235,18 @@ try {
   $ulog = Get-VerboseLog -FarmcArgs @("build", $unusedSrc, "-o", (Join-Path $td "unused_v.exe"), "-v") -Label "unused_v"
   $m2log = Get-VerboseLog -FarmcArgs @("build", $m2Src, "-o", $m2Out, "-v") -Label "m2"
   $m3log = Get-VerboseLog -FarmcArgs @("build", $m3Src, "-o", $m3Out, "-v") -Label "m3"
+  $m4log = Get-VerboseLog -FarmcArgs @("build", $m4Src, "-o", $m4Out, "-v") -Label "m4"
 
   Assert-NonSceneLink "hello" $hlog
   Assert-NonSceneLink "unused scene import" $ulog
   Assert-NonSceneLink "M2 vector3" $m2log
   Assert-SceneLink "M3 used Scene" $m3log
+  if ($m4log -notlike "*farm_ray.c*") {
+    Fail-Dce "M4 renderPath program did not link farm_ray.c"
+  }
+  if ($m4log -like "*farm_par*" -or $m4log -like "*FARM_ENABLE_THREADS*") {
+    Fail-Dce "M4 renderPath program pulled user-parallel runtime"
+  }
 
   Assert-NoThreadRuntime "hello" $hlog $hc $hb
   Assert-NoThreadRuntime "unused scene import" $ulog $uc $ub
