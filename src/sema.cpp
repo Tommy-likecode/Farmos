@@ -93,6 +93,16 @@ struct Sema {
            c_sym == "farm_Renderer";
   }
 
+  static bool is_physics_class_sym(const std::string& c_sym) {
+    return c_sym == "farm_World" || c_sym == "farm_RigidBody" ||
+           c_sym == "farm_SphereCollider" || c_sym == "farm_BoxCollider" ||
+           c_sym == "farm_PlaneCollider";
+  }
+
+  static bool is_runtime_class_sym(const std::string& c_sym) {
+    return is_scene_class_sym(c_sym) || is_physics_class_sym(c_sym);
+  }
+
   bool types_assignable(TypePtr actual, TypePtr expected) {
     if (type_eq(actual, expected)) return true;
     if (actual->kind == TypeKind::Class && expected->kind == TypeKind::Class) {
@@ -190,11 +200,13 @@ struct Sema {
       // M2 §4A (OQ-M2-11): int literal coercion in binary arithmetic
       // Coerce int LITERALS to float when the other operand has type float
       // (including when the other operand is itself a float literal: 1 + 2.0 MUST succeed)
+      // M5 010 / Appendix A also mix a non-literal int with float; wrap those
+      // operands as float() so the fixtures compile. Call/assign stay E0408.
       if (lt->kind == TypeKind::Float && rt->kind == TypeKind::Int) {
-        e.rhs = try_coerce_int_to_float(e.rhs);
+        e.rhs = coerce_int_operand_to_float(e.rhs);
         rt = e.rhs->type;
       } else if (rt->kind == TypeKind::Float && lt->kind == TypeKind::Int) {
-        e.lhs = try_coerce_int_to_float(e.lhs);
+        e.lhs = coerce_int_operand_to_float(e.lhs);
         lt = e.lhs->type;
       }
       if ((lt->kind==TypeKind::Int && rt->kind==TypeKind::Float) || (lt->kind==TypeKind::Float && rt->kind==TypeKind::Int)) {
@@ -310,6 +322,28 @@ struct Sema {
     return f;
   }
 
+  // Wrap a non-literal int operand as the built-in `float()` conversion.
+  // M5 010 and Appendix A write `0.05 * (i + 1)` / `i * 1.02`; assignment
+  // and call arguments of non-literal int still use E0408 (M2 054).
+  ExprPtr coerce_int_operand_to_float(ExprPtr e) {
+    if (!e) return e;
+    auto lit = try_coerce_int_to_float(e);
+    if (lit->type && lit->type->kind == TypeKind::Float) return lit;
+    if (!e->type || e->type->kind != TypeKind::Int) return e;
+    auto id = std::make_shared<Expr>();
+    id->kind = ExprKind::Ident;
+    id->name = "float";
+    id->loc = e->loc;
+    auto c = std::make_shared<Expr>();
+    c->kind = ExprKind::Call;
+    c->lhs = id;
+    c->args.push_back(e);
+    c->type = Type::ty_float();
+    c->mangled = "float";
+    c->loc = e->loc;
+    return c;
+  }
+
   ExprPtr check_expr(ExprPtr e) {
     if (!e) return e;
     switch (e->kind) {
@@ -421,7 +455,7 @@ struct Sema {
             for (auto& f : search_class->fields) if (f.name==e->name) { e->type=f.type; found=true; break; }
             if (!found) {
               for (auto& md : search_class->methods) if (!md.is_ctor && md.name==e->name) {
-                std::string sep = is_scene_class_sym(search_class->c_sym) ? "_" : "__";
+                std::string sep = is_runtime_class_sym(search_class->c_sym) ? "_" : "__";
                 e->mangled = search_class->c_sym + sep + e->name;
                 e->type = Type::ty_error();
                 found = true; break;
@@ -530,7 +564,7 @@ struct Sema {
             auto* cd = find_class_any(rt->name);
             MethodDecl* md = nullptr;
             ClassDecl* owner = cd;
-            if (cd && is_scene_class_sym(cd->c_sym)) {
+            if (cd && is_runtime_class_sym(cd->c_sym)) {
               // M3: Overload + Object3D base-chain lookup (lookAt, add, ...).
               std::vector<std::pair<ClassDecl*, MethodDecl*>> candidates;
               auto* search_class = cd;
@@ -569,14 +603,16 @@ struct Sema {
                       e->args[i]->type->kind == TypeKind::Int) {
                     e->args[i] = try_coerce_int_to_float(e->args[i]);
                   }
-                  bool ok = is_scene_class_sym(cd->c_sym)
+                  bool ok = is_runtime_class_sym(cd->c_sym)
                     ? types_assignable(e->args[i]->type, md->params[i].type)
                     : type_eq(e->args[i]->type, md->params[i].type);
                   if (!ok)
                     error_at(path, e->args[i]->loc, "E0408", "type mismatch");
                 }
               }
-              if (is_scene_class_sym(cd->c_sym)) {
+              if (is_physics_class_sym(cd->c_sym)) {
+                e->mangled = cd->c_sym + "_" + md->name;
+              } else if (is_scene_class_sym(cd->c_sym)) {
                 // Runtime scene methods use a single underscore: farm_Object3D_add.
                 if (md->name == "lookAt" && e->args.size() == 3)
                   e->mangled = "farm_Object3D_lookAt_xyz";
@@ -681,8 +717,8 @@ struct Sema {
       case ExprKind::New: {
         for (auto& a : e->args) check_expr(a);
         if (auto* cd = find_class(e->type_name)) {
-          if (is_scene_class_sym(cd->c_sym)) {
-            // M3: Runtime constructor overloads (not the single AST ctor).
+          if (is_runtime_class_sym(cd->c_sym)) {
+            // M3/M5: Runtime constructor overloads (not the single AST ctor).
             std::string variant = "";
             size_t nargs = e->args.size();
             auto coerce_float = [&](ExprPtr& a) {
@@ -793,6 +829,31 @@ struct Sema {
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 4, found " + std::to_string(nargs));
               else
                 for (int i=0;i<4;++i) coerce_float(e->args[i]);
+            } else if (cd->c_sym == "farm_SphereCollider") {
+              if (nargs != 1)
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 1, found " + std::to_string(nargs));
+              else coerce_float(e->args[0]);
+            } else if (cd->c_sym == "farm_BoxCollider") {
+              if (nargs == 3) {
+                variant = "xyz";
+                for (int i = 0; i < 3; ++i) coerce_float(e->args[i]);
+              } else if (nargs == 1) {
+                if (e->args[0]->type->kind == TypeKind::Struct &&
+                    e->args[0]->type->name.find("Vector3") != std::string::npos)
+                  variant = "v";
+                else
+                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected Vector3");
+              } else {
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 1 or 3, found " + std::to_string(nargs));
+              }
+            } else if (cd->c_sym == "farm_PlaneCollider" || cd->c_sym == "farm_World") {
+              if (nargs != 0)
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0, found " + std::to_string(nargs));
+            } else if (cd->c_sym == "farm_RigidBody") {
+              if (nargs != 1)
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 1, found " + std::to_string(nargs));
+              else if (e->args[0]->type->kind != TypeKind::Int)
+                error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int");
             } else if (nargs != 0 && cd->ctor_index >= 0) {
               auto& ctor = cd->methods[cd->ctor_index];
               if (e->args.size()!=ctor.params.size())
@@ -1168,7 +1229,7 @@ struct Sema {
     cur_fn = m.name; cur_ret = m.ret; cur_class = &c; cur_struct = nullptr; in_ctor = m.is_ctor;
     Scope sc; scope = &sc;
     // M3: Synthetic farmos:scene methods are empty stubs implemented in runtime/farm_scene.c.
-    if (is_scene_class_sym(c.c_sym) && m.body && m.body->kind == StmtKind::Block && m.body->stmts.empty()) {
+    if (is_runtime_class_sym(c.c_sym) && m.body && m.body->kind == StmtKind::Block && m.body->stmts.empty()) {
       scope = nullptr;
       return;
     }
@@ -1304,7 +1365,7 @@ static bool stmt_has_parallel(StmtPtr s) {
 
 bool program_uses_parallel(Program& prog) {
   for (auto& m : prog.modules) {
-    if (m.path == "farmos:math" || m.path == "farmos:scene") continue;
+    if (m.path == "farmos:math" || m.path == "farmos:scene" || m.path == "farmos:physics") continue;
     for (auto& f : m.functions) if (stmt_has_parallel(f.body)) return true;
     for (auto& c : m.classes) for (auto& md : c.methods) if (stmt_has_parallel(md.body)) return true;
     for (auto& s : m.structs) for (auto& md : s.methods) if (stmt_has_parallel(md.body)) return true;

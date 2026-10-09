@@ -8,4 +8,6 @@ bool program_uses_scene(Program& prog);
 bool program_uses_parallel(Program& prog);
 // True when a user module calls Renderer.renderPath (gates farm_ray.c).
 bool program_uses_ray(Program& prog);
+// True when a user module actually uses a farmos:physics type or BODY_* const.
+bool program_uses_physics(Program& prog);
 }

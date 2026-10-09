@@ -1970,6 +1970,139 @@ static Module create_farmos_math_module() {
   return m;
 }
 
+static MethodDecl farm_stub_method(const std::string& name, TypePtr ret, std::vector<Param> params = {}) {
+  MethodDecl md;
+  md.name = name;
+  md.params = std::move(params);
+  md.ret = std::move(ret);
+  md.loc = SourceLoc{1, 1};
+  auto block = std::make_unique<Stmt>();
+  block->kind = StmtKind::Block;
+  md.body = std::move(block);
+  return md;
+}
+
+static MethodDecl farm_stub_ctor(const std::string& cls, std::vector<Param> params = {}) {
+  MethodDecl md = farm_stub_method(cls, Type::ty_void(), std::move(params));
+  md.is_ctor = true;
+  return md;
+}
+
+static Module create_farmos_physics_module() {
+  Module m;
+  m.path = "farmos:physics";
+  m.diag_path = "farmos:physics";
+  m.is_main = false;
+
+  auto add_const = [&](const char* name, int64_t v) {
+    ConstDecl c;
+    c.name = name;
+    c.exported = true;
+    c.has_type_ann = true;
+    c.type = Type::ty_int();
+    c.loc = SourceLoc{1, 1};
+    auto e = std::make_shared<Expr>();
+    e->kind = ExprKind::IntLit;
+    e->int_val = v;
+    e->type = Type::ty_int();
+    e->loc = SourceLoc{1, 1};
+    c.init = e;
+    m.consts.push_back(std::move(c));
+  };
+  add_const("BODY_DYNAMIC", 0);
+  add_const("BODY_STATIC", 1);
+  add_const("BODY_KINEMATIC", 2);
+
+  {
+    ClassDecl cd;
+    cd.name = "World";
+    cd.c_sym = "farm_World";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    cd.methods.push_back(farm_stub_ctor("World"));
+    cd.methods.push_back(farm_stub_method("setGravity", Type::ty_void(),
+      {Param{"v", Type::ty_struct("Vector3"), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("setFixedTimeStep", Type::ty_void(),
+      {Param{"dt", Type::ty_float(), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("add", Type::ty_void(),
+      {Param{"body", Type::ty_class("RigidBody"), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("remove", Type::ty_void(),
+      {Param{"body", Type::ty_class("RigidBody"), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("bodyCount", Type::ty_int()));
+    cd.methods.push_back(farm_stub_method("step", Type::ty_void()));
+    cd.methods.push_back(farm_stub_method("dispose", Type::ty_void()));
+    m.classes.push_back(std::move(cd));
+  }
+
+  {
+    ClassDecl cd;
+    cd.name = "RigidBody";
+    cd.c_sym = "farm_RigidBody";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    cd.fields.push_back(FieldDecl{"position", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"quaternion", Type::ty_struct("Quaternion"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"linearVelocity", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"angularVelocity", Type::ty_struct("Vector3"), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"id", Type::ty_int(), SourceLoc{1, 1}});
+    cd.fields.push_back(FieldDecl{"bodyType", Type::ty_int(), SourceLoc{1, 1}});
+    cd.methods.push_back(farm_stub_ctor("RigidBody",
+      {Param{"bodyType", Type::ty_int(), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("setMass", Type::ty_void(),
+      {Param{"m", Type::ty_float(), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("setRestitution", Type::ty_void(),
+      {Param{"e", Type::ty_float(), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("setFriction", Type::ty_void(),
+      {Param{"f", Type::ty_float(), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("setLinearDamping", Type::ty_void(),
+      {Param{"d", Type::ty_float(), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("setAngularDamping", Type::ty_void(),
+      {Param{"d", Type::ty_float(), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("setCollider", Type::ty_void(),
+      {Param{"c", Type::ty_class("SphereCollider"), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("setCollider", Type::ty_void(),
+      {Param{"c", Type::ty_class("BoxCollider"), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("setCollider", Type::ty_void(),
+      {Param{"c", Type::ty_class("PlaneCollider"), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("setObject", Type::ty_void(),
+      {Param{"obj", Type::ty_class("Object3D"), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("clearObject", Type::ty_void()));
+    cd.methods.push_back(farm_stub_method("getBodyType", Type::ty_int()));
+    m.classes.push_back(std::move(cd));
+  }
+
+  {
+    ClassDecl cd;
+    cd.name = "SphereCollider";
+    cd.c_sym = "farm_SphereCollider";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    cd.methods.push_back(farm_stub_ctor("SphereCollider",
+      {Param{"radius", Type::ty_float(), SourceLoc{1,1}}}));
+    m.classes.push_back(std::move(cd));
+  }
+  {
+    ClassDecl cd;
+    cd.name = "BoxCollider";
+    cd.c_sym = "farm_BoxCollider";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    // 0-arg AST ctor; overloads (hx,hy,hz) and Vector3 are resolved in sema.
+    cd.methods.push_back(farm_stub_ctor("BoxCollider"));
+    m.classes.push_back(std::move(cd));
+  }
+  {
+    ClassDecl cd;
+    cd.name = "PlaneCollider";
+    cd.c_sym = "farm_PlaneCollider";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    cd.methods.push_back(farm_stub_ctor("PlaneCollider"));
+    m.classes.push_back(std::move(cd));
+  }
+  return m;
+}
+
 struct Loader {
   Program prog;
   std::unordered_map<std::string, int> loaded; // canonical path -> index
@@ -2045,6 +2178,26 @@ struct Loader {
               loaded["farmos:scene"] = mid;
             }
             continue;
+          } else if (im.path == "farmos:physics") {
+            if (!loaded.count("farmos:math")) {
+              Module math_mod = create_farmos_math_module();
+              int math_mid = (int)prog.modules.size();
+              prog.modules.push_back(std::move(math_mod));
+              loaded["farmos:math"] = math_mid;
+            }
+            if (!loaded.count("farmos:scene")) {
+              Module scene_mod = create_farmos_scene_module(prog.modules);
+              int mid = (int)prog.modules.size();
+              prog.modules.push_back(std::move(scene_mod));
+              loaded["farmos:scene"] = mid;
+            }
+            if (!loaded.count("farmos:physics")) {
+              Module phys_mod = create_farmos_physics_module();
+              int mid = (int)prog.modules.size();
+              prog.modules.push_back(std::move(phys_mod));
+              loaded["farmos:physics"] = mid;
+            }
+            continue;
           } else {
             error_at(prog.modules[idx].diag_path, im.loc, "E0304",
                      "unknown builtin module `" + im.path + "`");
@@ -2107,12 +2260,14 @@ struct Loader {
       }
     }
 
-    // Special handling: wire farmos:scene to see farmos:math structs
+    // Special handling: wire farmos:scene / farmos:physics to see farmos:math structs
     Module* scene_mod = nullptr;
     Module* math_mod = nullptr;
+    Module* phys_mod = nullptr;
     for (auto& m : prog.modules) {
       if (m.path == "farmos:scene") scene_mod = &m;
       else if (m.path == "farmos:math") math_mod = &m;
+      else if (m.path == "farmos:physics") phys_mod = &m;
     }
     if (scene_mod && math_mod) {
       // Make all math structs visible to scene module
@@ -2140,6 +2295,16 @@ struct Loader {
         s.methods.push_back(std::move(md));
         break;
       }
+    }
+    if (phys_mod && math_mod) {
+      for (auto& pair : math_mod->vis_structs)
+        phys_mod->vis_structs[pair.first] = pair.second;
+    }
+    if (phys_mod && scene_mod) {
+      auto it = scene_mod->vis_classes.find("Object3D");
+      if (it != scene_mod->vis_classes.end())
+        phys_mod->vis_classes["Object3D"] = it->second;
+      // Physics methods name RigidBody / colliders defined in this module; already in vis_classes.
     }
 
     for (auto& mod : prog.modules) {
@@ -2438,7 +2603,7 @@ static int run_cmd(const std::string& cmd_utf8) {
 
 static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const fs::path& rt_h_dir,
                             const fs::path& out_exe, bool verbose, bool link_scene,
-                            bool link_parallel, bool link_ray) {
+                            bool link_parallel, bool link_ray, bool link_physics) {
   std::string cc = find_c_compiler();
   if (cc.empty()) {
     std::cerr << "farmc: no C compiler found (set FARM_CC)\n";
@@ -2458,7 +2623,8 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   fs::path rt_scene_c = rt_h_dir / "farm_scene.c";
   fs::path rt_par_c = rt_h_dir / "farm_par.c";
   fs::path rt_ray_c = rt_h_dir / "farm_ray.c";
-  const char* fp_contract = link_scene ? "-ffp-contract=off " : "";
+  fs::path rt_phys_c = rt_h_dir / "farm_physics.c";
+  const char* fp_contract = (link_scene || link_physics) ? "-ffp-contract=off " : "";
   /* Ray-only: keep BVH walks out of strict-aliasing / Windows LTO surprises.
      Non-ray programs keep master's flags (hello C/link line unchanged). */
   const char* ray_fp = link_ray ? "-fno-strict-aliasing " : "";
@@ -2471,10 +2637,16 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
 
   auto append_extra_rt = [&](std::ostringstream& o) {
     // Link farm_math.c / farm_scene.c only when a scene type is actually used.
-    if (link_scene) {
+    // Physics is a separate unit; it pulls farm_math.c for Euler/Quat sync helpers
+    // when used, without pulling farm_scene.c unless the program also uses scene.
+    if (link_scene || link_physics) {
       if (fs::exists(rt_math_c)) o << "\"" << path_to_utf8(rt_math_c) << "\" ";
+    }
+    if (link_scene) {
       if (fs::exists(rt_scene_c)) o << "\"" << path_to_utf8(rt_scene_c) << "\" ";
     }
+    if (link_physics && fs::exists(rt_phys_c))
+      o << "\"" << path_to_utf8(rt_phys_c) << "\" ";
     if (link_ray && fs::exists(rt_ray_c))
       o << "\"" << path_to_utf8(rt_ray_c) << "\" ";
     if (link_parallel && fs::exists(rt_par_c))
@@ -2642,7 +2814,8 @@ static int cmd_build(std::vector<std::string> args) {
   bool link_scene = program_uses_scene(loader.prog);
   bool link_parallel = program_uses_parallel(loader.prog);
   bool link_ray = program_uses_ray(loader.prog);
-  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray);
+  bool link_physics = program_uses_physics(loader.prog);
+  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray, link_physics);
   if (rc == 0) {
     std::error_code ec;
     fs::rename(link_out, out_req, ec);

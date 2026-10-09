@@ -133,6 +133,8 @@ def assert_non_scene_link(label, log):
         fail(f"{label}: linked farm_scene.c (non-scene must link farm_rt.c only)")
     if "farm_ray.c" in log:
         fail(f"{label}: linked farm_ray.c (non-ray must not link the path tracer)")
+    if "farm_physics.c" in log:
+        fail(f"{label}: linked farm_physics.c (non-physics must not link physics)")
     if "farm_rt.c" not in log:
         fail(f"{label}: did not link farm_rt.c\n{log}")
 
@@ -146,6 +148,8 @@ def assert_scene_link(label, log):
         fail(f"{label}: scene program did not link farm_scene.c")
     if "farm_ray.c" in log:
         fail(f"{label}: raster-only scene program linked farm_ray.c")
+    if "farm_physics.c" in log:
+        fail(f"{label}: raster-only scene program linked farm_physics.c")
     if "farm_rt.c" not in log:
         fail(f"{label}: scene program did not link farm_rt.c")
 
@@ -267,6 +271,40 @@ def main():
             fail("M4 renderPath program did not link farm_ray.c")
         if "farm_par" in m4log or "FARM_ENABLE_THREADS" in m4log:
             fail("M4 renderPath program pulled user-parallel runtime")
+        if "farm_physics.c" in m4log:
+            fail("M4 renderPath program linked farm_physics.c")
+
+        unused_phys_src = os.path.join(td, "unused_phys.fm")
+        with open(unused_phys_src, "w", encoding="utf-8") as f:
+            f.write('import { World } from "farmos:physics";\n'
+                    "function main(): int {\n  println(\"Hello, Farmos\");\n  return 0;\n}\n")
+        unused_phys = os.path.join(td, "unused_phys")
+        unused_phys_c = os.path.join(td, "unused_phys.c")
+        build(farmc, unused_phys_src, unused_phys, extra=["--emit-c", unused_phys_c])
+        ps = os.path.getsize(unused_phys)
+        if hs != ps:
+            fail(f"hello size {hs} != unused-physics-import size {ps}")
+        with open(unused_phys, "rb") as f:
+            pb = f.read()
+        if not binaries_equal(hb, pb):
+            fail("hello binary differs from unused-physics-import binary")
+        with open(unused_phys_c, "rb") as f:
+            pc = f.read()
+        if hc != pc:
+            fail("generated C for unused physics import differs from hello")
+        plog = verbose_cmd(farmc, unused_phys_src, os.path.join(td, "unused_phys_v"))
+        assert_non_scene_link("unused physics import", plog)
+        assert_no_thread_runtime("unused physics import", plog, pc, pb, unused_phys)
+
+        used_phys_src = os.path.join(root, "spec/tests/M5/001_world_step_empty.fm")
+        phys_out = os.path.join(td, "phys")
+        physlog = verbose_cmd(farmc, used_phys_src, phys_out)
+        if "farm_physics.c" not in physlog:
+            fail("M5 physics program did not link farm_physics.c")
+        if "farm_par" in physlog or "FARM_ENABLE_THREADS" in physlog:
+            fail("M5 physics program pulled user-parallel runtime")
+        if "-pthread" in physlog:
+            fail("M5 physics program linked with -pthread")
 
         assert_no_thread_runtime("hello", hlog, hc, hb, hello)
         assert_no_thread_runtime("unused scene import", ulog, uc, ub, unused)
