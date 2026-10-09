@@ -19,6 +19,10 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+#if defined(__clang__)
+#pragma clang fp contract(off)
+#endif
+
 #define RAY_EPS 1e-4
 #define T_MIN 1e-6
 #define DET_EPS 1e-12
@@ -118,11 +122,13 @@ typedef struct {
   double cx, cy, cz;
 } BlasPrim;
 
+typedef struct { int32_t* ids; int32_t n; } LeafList;
+
 typedef struct {
   farm_GeometryData* geo;
   BlasPrim* prims;
   int32_t nprims;
-  int32_t* leaf_idx;
+  LeafList* leaves;
   BvhNode* nodes;
   int32_t nnodes;
   int32_t root;
@@ -131,7 +137,7 @@ typedef struct {
 typedef struct {
   farm_Mesh* mesh;
   farm_GeometryData* geo;
-  Blas* blas;
+  int32_t blas_i;
   const double* mw;
   int32_t mesh_index;
   double cx, cy, cz;
@@ -166,7 +172,7 @@ typedef struct {
   V3 background;
   Instance* inst;
   int32_t ninst;
-  int32_t* tlas_idx;
+  LeafList* tlas_leaves;
   BvhNode* tlas_nodes;
   int32_t tlas_nnodes;
   int32_t tlas_root;
@@ -180,6 +186,7 @@ typedef struct {
   int32_t nrect;
   Blas* blases;
   int32_t nblas;
+  int32_t cap_blas;
   int32_t max_bounces;
 } PathWorld;
 
@@ -213,17 +220,23 @@ static int aabb_hit(const BvhNode* n, V3 o, V3 d, double tmin, double tmax) {
 }
 
 typedef struct { double key; int32_t orig; int32_t idx; } SortItem;
-static int sort_cmp(const void* a, const void* b) {
-  const SortItem* pa = (const SortItem*)a;
-  const SortItem* pb = (const SortItem*)b;
-  if (pa->key < pb->key) return -1;
-  if (pa->key > pb->key) return 1;
-  if (pa->orig < pb->orig) return -1;
-  if (pa->orig > pb->orig) return 1;
-  return 0;
-}
 
-typedef struct { int32_t* ids; int32_t n; } LeafList;
+/* Spec §9.1: stable-sort by centroid, equal keys keep earlier triangle index.
+   Insertion sort is stable and independent of libc qsort. */
+static void sort_items(SortItem* keys, int32_t n) {
+  for (int32_t i = 1; i < n; i++) {
+    SortItem tmp = keys[i];
+    int32_t j = i;
+    while (j > 0) {
+      const SortItem* p = &keys[j - 1];
+      int greater = (p->key > tmp.key) || (p->key == tmp.key && p->orig > tmp.orig);
+      if (!greater) break;
+      keys[j] = keys[j - 1];
+      j--;
+    }
+    keys[j] = tmp;
+  }
+}
 
 static int32_t bvh_build(BvhNode* nodes, int32_t* nnodes, LeafList* leaves,
                          int32_t* idx, int32_t n,
@@ -266,7 +279,7 @@ static int32_t bvh_build(BvhNode* nodes, int32_t* nnodes, LeafList* leaves,
         keys[i].orig = orig[p];
         keys[i].idx = p;
       }
-      qsort(keys, (size_t)n, sizeof(SortItem), sort_cmp);
+      sort_items(keys, n);
       for (int32_t i = 0; i < n; i++) idx[i] = keys[i].idx;
       int32_t mid = n / 2;
       if (mid == 0 || mid == n) make_leaf = 1;
@@ -288,13 +301,14 @@ static int32_t bvh_build(BvhNode* nodes, int32_t* nnodes, LeafList* leaves,
   return node_i;
 }
 
-static Blas* find_or_build_blas(PathWorld* w, farm_GeometryData* geo) {
+static void grow_ptr(void** p, int32_t* cap, int32_t n, size_t elem);
+
+static int32_t find_or_build_blas(PathWorld* w, farm_GeometryData* geo) {
   for (int32_t i = 0; i < w->nblas; i++)
-    if (w->blases[i].geo == geo) return &w->blases[i];
-  Blas* nb = (Blas*)farm_arena_alloc((size_t)(w->nblas + 1) * sizeof(Blas));
-  if (w->nblas) memcpy(nb, w->blases, (size_t)w->nblas * sizeof(Blas));
-  w->blases = nb;
-  Blas* b = &w->blases[w->nblas++];
+    if (w->blases[i].geo == geo) return i;
+  grow_ptr((void**)&w->blases, &w->cap_blas, w->nblas + 1, sizeof(Blas));
+  int32_t id = w->nblas++;
+  Blas* b = &w->blases[id];
   memset(b, 0, sizeof(Blas));
   b->geo = geo;
   int32_t nt = geo->index_count / 3;
@@ -330,13 +344,11 @@ static Blas* find_or_build_blas(PathWorld* w, farm_GeometryData* geo) {
   LeafList* leaves = (LeafList*)farm_arena_alloc((size_t)maxn * sizeof(LeafList));
   memset(leaves, 0, (size_t)maxn * sizeof(LeafList));
   b->nnodes = 0;
-  if (nt == 0) { b->root = -1; b->leaf_idx = (int32_t*)leaves; return b; }
+  if (nt == 0) { b->root = -1; b->leaves = leaves; return id; }
   b->root = bvh_build(b->nodes, &b->nnodes, leaves, idx, nt, cx, cy, cz, orig, pmin, pmax);
-  b->leaf_idx = (int32_t*)leaves; /* store LeafList* in leaf_idx pointer */
-  return b;
+  b->leaves = leaves;
+  return id;
 }
-
-static LeafList* blas_leaves(Blas* b) { return (LeafList*)b->leaf_idx; }
 
 static int intersect_tri_world(V3 o, V3 d, V3 a, V3 b, V3 c, double* t, double* u, double* v) {
   V3 e1 = vsub(b, a), e2 = vsub(c, a);
@@ -365,11 +377,12 @@ static int better_hit(double t, int32_t mesh, int32_t tri, const Hit* best) {
 }
 
 static void intersect_blas(PathWorld* w, Instance* inst, V3 o, V3 d, double t_max, Hit* best, int any_hit) {
-  Blas* b = inst->blas;
+  if (inst->blas_i < 0 || inst->blas_i >= w->nblas) return;
+  Blas* b = &w->blases[inst->blas_i];
   if (!b || b->root < 0) return;
   const double* mw = inst->mw;
   farm_GeometryData* geo = b->geo;
-  LeafList* leaves = blas_leaves(b);
+  LeafList* leaves = b->leaves;
   (void)w;
   int32_t stack[64];
   int32_t sp = 0;
@@ -427,7 +440,7 @@ static void closest_hit(PathWorld* w, V3 o, V3 d, Hit* best) {
     BvhNode* node = &w->tlas_nodes[ni];
     if (!aabb_hit(node, o, d, T_MIN, best->t)) continue;
     if (node->left < 0) {
-      LeafList* L = &((LeafList*)w->tlas_idx)[node->first];
+      LeafList* L = &w->tlas_leaves[node->first];
       for (int32_t k = 0; k < L->n; k++) {
         Instance* inst = &w->inst[L->ids[k]];
         intersect_blas(w, inst, o, d, best->t, best, 0);
@@ -450,7 +463,7 @@ static int any_hit(PathWorld* w, V3 o, V3 d, double t_max) {
     BvhNode* node = &w->tlas_nodes[ni];
     if (!aabb_hit(node, o, d, T_MIN, t_max)) continue;
     if (node->left < 0) {
-      LeafList* L = &((LeafList*)w->tlas_idx)[node->first];
+      LeafList* L = &w->tlas_leaves[node->first];
       for (int32_t k = 0; k < L->n; k++) {
         Hit tmp; memset(&tmp, 0, sizeof(tmp));
         intersect_blas(w, &w->inst[L->ids[k]], o, d, t_max, &tmp, 1);
@@ -518,7 +531,7 @@ static void onb(V3 n, V3* T, V3* B) {
 static V3 cosine_sample(double u1, double u2) {
   double r = sqrt(u1);
   double phi = 2.0 * FARM_PI * u2;
-  return v3(r*cos(phi), r*sin(phi), sqrt(fmax(0.0, 1.0-u1)));
+  return v3(r * cos(phi), r * sin(phi), sqrt(fmax(0.0, 1.0 - u1)));
 }
 
 static V3 sample_bilinear(farm_Texture* tex, double u, double v) {
@@ -791,7 +804,7 @@ static void collect_scene(PathWorld* w, farm_Object3D* obj, int32_t* mesh_i,
     Instance* in = &w->inst[w->ninst++];
     in->mesh = mesh;
     in->geo = farm_mesh_geometry_data(mesh);
-    in->blas = find_or_build_blas(w, in->geo);
+    in->blas_i = find_or_build_blas(w, in->geo);
     in->mw = mesh->f_matrixWorld.elements;
     in->mesh_index = (*mesh_i)++;
   } else if (obj->type == FARM_OBJECT3D_TYPE_AMBIENT_LIGHT) {
@@ -832,7 +845,7 @@ static void build_tlas(PathWorld* w) {
   V3* pmax = (V3*)farm_arena_alloc((size_t)n * sizeof(V3));
   for (int32_t i = 0; i < n; i++) {
     Instance* in = &w->inst[i];
-    Blas* b = in->blas;
+    Blas* b = (in->blas_i >= 0 && in->blas_i < w->nblas) ? &w->blases[in->blas_i] : NULL;
     BvhNode local;
     aabb_init(&local);
     if (b && b->root >= 0) local = b->nodes[b->root];
@@ -858,7 +871,7 @@ static void build_tlas(PathWorld* w) {
   memset(leaves, 0, (size_t)maxn * sizeof(LeafList));
   w->tlas_nnodes = 0;
   w->tlas_root = bvh_build(w->tlas_nodes, &w->tlas_nnodes, leaves, idx, n, cx, cy, cz, orig, pmin, pmax);
-  w->tlas_idx = (int32_t*)leaves;
+  w->tlas_leaves = leaves;
 }
 
 static int parse_path_threads(void) {

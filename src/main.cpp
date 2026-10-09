@@ -2459,6 +2459,14 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   fs::path rt_par_c = rt_h_dir / "farm_par.c";
   fs::path rt_ray_c = rt_h_dir / "farm_ray.c";
   const char* fp_contract = link_scene ? "-ffp-contract=off " : "";
+  /* Ray-only: keep BVH walks out of strict-aliasing / Windows LTO surprises.
+     Non-ray programs keep master's flags (hello C/link line unchanged). */
+  const char* ray_fp = link_ray ? "-fno-strict-aliasing " : "";
+#if defined(_WIN32)
+  const char* lto = link_ray ? "" : "-flto ";
+#else
+  const char* lto = "-flto ";
+#endif
   const char* thr_def = link_parallel ? "-DFARM_ENABLE_THREADS " : "";
 
   auto append_extra_rt = [&](std::ostringstream& o) {
@@ -2481,7 +2489,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   };
 
   std::ostringstream cmd;
-  cmd << cc << " -std=c11 -Os -flto -ffunction-sections -fdata-sections " << fp_contract << thr_def
+  cmd << cc << " -std=c11 -Os " << lto << "-ffunction-sections -fdata-sections " << fp_contract << ray_fp << thr_def
       << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
       << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
   append_extra_rt(cmd);
@@ -2492,7 +2500,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   if (rc != 0) {
     // retry without LTO
     std::ostringstream cmd2;
-    cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections " << fp_contract << thr_def
+    cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections " << fp_contract << ray_fp << thr_def
          << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
          << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
     append_extra_rt(cmd2);
