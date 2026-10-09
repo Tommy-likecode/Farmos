@@ -253,6 +253,16 @@ ExprPtr Parser::parse_primary() {
     }
     auto e = std::make_shared<Expr>(); e->kind=ExprKind::Ident; e->loc=il; e->name=name; return e;
   }
+  // M1 §6: `int(f)` / `float(i)` are built-in conversions. `int` and `float` are
+  // type keywords, so treat them as identifiers only when followed by `(`.
+  if ((check(TokKind::KwInt) || check(TokKind::KwFloat)) && peek_token().kind == TokKind::LParen) {
+    auto e = std::make_shared<Expr>();
+    e->kind = ExprKind::Ident;
+    e->loc = cur_.loc;
+    e->name = (cur_.kind == TokKind::KwInt) ? "int" : "float";
+    advance();
+    return e;
+  }
   error_at(lex_.path(), loc, "E0202", "unexpected token in expression");
   advance();
   auto e = std::make_shared<Expr>(); e->kind=ExprKind::IntLit; e->loc=loc; return e;
