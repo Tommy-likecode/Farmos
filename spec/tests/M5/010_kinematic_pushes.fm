@@ -19,7 +19,7 @@ function main(): int {
   world.add(ball);
   let i: int = 0;
   while (i < 30) {
-    pusher.position.x = 0.05 * (i + 1);
+    pusher.position.x = 0.05 * float(i + 1);
     world.step();
     i = i + 1;
   }

@@ -18,14 +18,14 @@ function main(): int {
   world.step();
   println(body.position.y);
   println(mesh.position.y);
-  let match: int = 0;
+  let same: int = 0;
   if (body.position.x == mesh.position.x) {
     if (body.position.y == mesh.position.y) {
       if (body.position.z == mesh.position.z) {
-        match = 1;
+        same = 1;
       }
     }
   }
-  println(match);
+  println(same);
   return 0;
 }
