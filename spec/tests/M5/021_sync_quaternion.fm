@@ -1,0 +1,25 @@
+import { World, RigidBody, BODY_DYNAMIC, SphereCollider } from "farmos:physics";
+import { Mesh, SphereGeometry, MeshBasicMaterial } from "farmos:scene";
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  const mesh: Mesh = new Mesh(new SphereGeometry(0.5, 8, 4), new MeshBasicMaterial(0x00ff00));
+  const world: World = new World();
+  world.setGravity(new Vector3(0.0, 0.0, 0.0));
+  const body: RigidBody = new RigidBody(BODY_DYNAMIC);
+  body.setMass(1.0);
+  body.setCollider(new SphereCollider(0.5));
+  body.angularVelocity.set(0.0, 2.0, 0.0);
+  body.setObject(mesh);
+  world.add(body);
+  let i: int = 0;
+  while (i < 60) {
+    world.step();
+    i = i + 1;
+  }
+  println(body.quaternion.y);
+  println(mesh.quaternion.y);
+  println(body.quaternion.w);
+  println(mesh.quaternion.w);
+  return 0;
+}

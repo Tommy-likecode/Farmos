@@ -1,0 +1,31 @@
+import { World, RigidBody, BODY_DYNAMIC, BODY_STATIC, SphereCollider, PlaneCollider } from "farmos:physics";
+import { Mesh, SphereGeometry, MeshBasicMaterial, Scene } from "farmos:scene";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  const mesh: Mesh = new Mesh(new SphereGeometry(0.5, 8, 4), new MeshBasicMaterial(0xff0000));
+  mesh.position.set(0.0, 5.0, 0.0);
+  scene.add(mesh);
+  const world: World = new World();
+  const floor: RigidBody = new RigidBody(BODY_STATIC);
+  floor.setCollider(new PlaneCollider());
+  world.add(floor);
+  const body: RigidBody = new RigidBody(BODY_DYNAMIC);
+  body.setMass(1.0);
+  body.setCollider(new SphereCollider(0.5));
+  body.setObject(mesh);
+  world.add(body);
+  world.step();
+  println(body.position.y);
+  println(mesh.position.y);
+  let match: int = 0;
+  if (body.position.x == mesh.position.x) {
+    if (body.position.y == mesh.position.y) {
+      if (body.position.z == mesh.position.z) {
+        match = 1;
+      }
+    }
+  }
+  println(match);
+  return 0;
+}

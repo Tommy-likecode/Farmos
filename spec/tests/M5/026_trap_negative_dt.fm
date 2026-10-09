@@ -1,0 +1,8 @@
+import { World } from "farmos:physics";
+
+function main(): int {
+  const world: World = new World();
+  world.setFixedTimeStep(-0.01);
+  world.step();
+  return 0;
+}

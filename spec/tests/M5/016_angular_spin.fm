@@ -1,0 +1,24 @@
+import { World, RigidBody, BODY_DYNAMIC, SphereCollider } from "farmos:physics";
+import { Vector3 } from "farmos:math";
+
+function main(): int {
+  const world: World = new World();
+  world.setGravity(new Vector3(0.0, 0.0, 0.0));
+  const body: RigidBody = new RigidBody(BODY_DYNAMIC);
+  body.setMass(1.0);
+  body.setCollider(new SphereCollider(0.5));
+  body.position.set(0.0, 0.0, 0.0);
+  body.angularVelocity.set(0.0, 2.0, 0.0);
+  world.add(body);
+  let i: int = 0;
+  while (i < 60) {
+    world.step();
+    i = i + 1;
+  }
+  println(body.quaternion.x);
+  println(body.quaternion.y);
+  println(body.quaternion.z);
+  println(body.quaternion.w);
+  println(body.angularVelocity.y);
+  return 0;
+}

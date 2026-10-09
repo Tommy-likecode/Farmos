@@ -1,0 +1,29 @@
+import { World, RigidBody, BODY_DYNAMIC, BODY_STATIC, SphereCollider, BoxCollider } from "farmos:physics";
+
+function main(): int {
+  const world: World = new World();
+  const wall: RigidBody = new RigidBody(BODY_STATIC);
+  wall.setRestitution(0.0);
+  wall.setFriction(0.0);
+  wall.setCollider(new BoxCollider(1.0, 1.0, 1.0));
+  wall.position.set(0.0, 0.0, 0.0);
+  world.add(wall);
+  const ball: RigidBody = new RigidBody(BODY_DYNAMIC);
+  ball.setMass(1.0);
+  ball.setRestitution(0.0);
+  ball.setFriction(0.0);
+  ball.setCollider(new SphereCollider(0.5));
+  ball.position.set(0.0, 3.0, 0.0);
+  ball.linearVelocity.set(0.0, -10.0, 0.0);
+  world.add(ball);
+  let i: int = 0;
+  while (i < 60) {
+    world.step();
+    i = i + 1;
+  }
+  println(wall.position.x);
+  println(wall.position.y);
+  println(wall.position.z);
+  println(ball.position.y);
+  return 0;
+}

@@ -1,0 +1,20 @@
+import { World, RigidBody, BODY_DYNAMIC, BODY_STATIC, SphereCollider, PlaneCollider } from "farmos:physics";
+
+function main(): int {
+  const world: World = new World();
+  const floor: RigidBody = new RigidBody(BODY_STATIC);
+  floor.setCollider(new PlaneCollider());
+  world.add(floor);
+  const a: RigidBody = new RigidBody(BODY_DYNAMIC);
+  a.setMass(1.0);
+  a.setCollider(new SphereCollider(0.5));
+  world.add(a);
+  const b: RigidBody = new RigidBody(BODY_DYNAMIC);
+  b.setMass(1.0);
+  b.setCollider(new SphereCollider(0.5));
+  world.add(b);
+  println(floor.id);
+  println(a.id);
+  println(b.id);
+  return 0;
+}

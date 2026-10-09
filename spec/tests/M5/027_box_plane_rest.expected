@@ -1,0 +1,8 @@
+# kind: run_approx
+# exit: 0
+# epsilon: 1e-6
+# stdout:
+0.4817785879967011
+1
+1
+# end

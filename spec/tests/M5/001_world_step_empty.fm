@@ -1,0 +1,9 @@
+import { World } from "farmos:physics";
+
+function main(): int {
+  const world: World = new World();
+  world.step();
+  world.step();
+  println(world.bodyCount());
+  return 0;
+}
