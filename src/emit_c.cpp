@@ -44,6 +44,22 @@ static bool type_is_physics(const TypePtr& t) {
   return false;
 }
 
+static bool is_math_type_basename(const std::string& n) {
+  auto pos = n.rfind('_');
+  std::string base = (pos == std::string::npos) ? n : n.substr(pos + 1);
+  return base == "Vector2" || base == "Vector3" || base == "Vector4" ||
+         base == "Matrix3" || base == "Matrix4" || base == "Quaternion" ||
+         base == "Color" || base == "Euler" || base == "Ray" ||
+         base == "Sphere" || base == "Box3" || base == "RayHit";
+}
+
+static bool type_is_math(const TypePtr& t) {
+  if (!t) return false;
+  if (t->kind == TypeKind::Struct) return is_math_type_basename(t->name);
+  if (t->kind == TypeKind::DynArray || t->kind == TypeKind::FixedArray) return type_is_math(t->elem);
+  return false;
+}
+
 static bool expr_uses_scene(ExprPtr e);
 static bool stmt_uses_scene(StmtPtr s);
 
@@ -188,6 +204,65 @@ bool program_uses_physics(Program& prog) {
   return false;
 }
 
+static bool expr_uses_math(ExprPtr e);
+static bool stmt_uses_math(StmtPtr s);
+
+static bool expr_uses_math(ExprPtr e) {
+  if (!e) return false;
+  if (type_is_math(e->type)) return true;
+  if (expr_uses_math(e->lhs) || expr_uses_math(e->rhs)) return true;
+  for (auto& a : e->args) if (expr_uses_math(a)) return true;
+  for (auto& fv : e->fields) if (expr_uses_math(fv.second)) return true;
+  return false;
+}
+
+static bool stmt_uses_math(StmtPtr s) {
+  if (!s) return false;
+  if (type_is_math(s->decl_type)) return true;
+  if (expr_uses_math(s->init) || expr_uses_math(s->cond) || expr_uses_math(s->lhs) ||
+      expr_uses_math(s->rhs) || expr_uses_math(s->for_cond) || expr_uses_math(s->ret))
+    return true;
+  if (stmt_uses_math(s->then_b) || stmt_uses_math(s->else_b) ||
+      stmt_uses_math(s->for_init) || stmt_uses_math(s->for_update))
+    return true;
+  for (auto& x : s->stmts) if (stmt_uses_math(x)) return true;
+  return false;
+}
+
+// True when a user module actually names a farmos:math type (not merely imports it).
+// Unused `import { Vector3 } from "farmos:math"` must DCE to hello (B-06 / M2 AC).
+bool program_uses_math(Program& prog) {
+  for (auto& m : prog.modules) {
+    if (is_stdlib_mod(m.path)) continue;
+    for (auto& f : m.functions) {
+      for (auto& p : f.params) if (type_is_math(p.type)) return true;
+      if (type_is_math(f.ret) || stmt_uses_math(f.body)) return true;
+    }
+    for (auto& c : m.classes) {
+      for (auto& f : c.fields) if (type_is_math(f.type)) return true;
+      for (auto& md : c.methods) {
+        for (auto& p : md.params) if (type_is_math(p.type)) return true;
+        if (type_is_math(md.ret) || stmt_uses_math(md.body)) return true;
+      }
+    }
+    for (auto& s : m.structs) {
+      for (auto& f : s.fields) if (type_is_math(f.type)) return true;
+      for (auto& md : s.methods) {
+        for (auto& p : md.params) if (type_is_math(p.type)) return true;
+        if (type_is_math(md.ret) || stmt_uses_math(md.body)) return true;
+      }
+    }
+    for (auto& k : m.consts) {
+      if (type_is_math(k.type) || expr_uses_math(k.init)) return true;
+    }
+    for (auto& op : m.operators) {
+      for (auto& p : op.params) if (type_is_math(p.type)) return true;
+      if (type_is_math(op.ret) || stmt_uses_math(op.body)) return true;
+    }
+  }
+  return false;
+}
+
 // C11 string literal body for arbitrary bytes. Printable ASCII passes through, except `\\`, `"`
 // and `?` (trigraph guard). Every other byte (controls, NUL, DEL, all non-ASCII UTF-8 bytes) is
 // emitted as a fixed 3-digit octal escape `\ooo`: an octal escape ends after at most 3 digits, so
@@ -233,7 +308,7 @@ struct Emitter {
   bool uses_scene = false;
   bool uses_physics = false;
   bool uses_parallel = false;
-  bool user_imports_math = false;
+  bool user_uses_math = false;
   bool rt_math() const { return uses_scene || uses_physics; }
   std::unordered_map<std::string, std::string> cap_val;
   std::unordered_map<std::string, std::string> cap_ptr;
@@ -258,13 +333,7 @@ struct Emitter {
 
   static bool is_math_type_name(const std::string& n) {
     // Type::name is the c_sym, e.g. m1_Vector3
-    auto pos = n.rfind('_');
-    if (pos == std::string::npos) return false;
-    std::string base = n.substr(pos + 1);
-    return base == "Vector2" || base == "Vector3" || base == "Vector4" ||
-           base == "Matrix3" || base == "Matrix4" || base == "Quaternion" ||
-           base == "Color" || base == "Euler" || base == "Ray" ||
-           base == "Sphere" || base == "Box3" || base == "RayHit";
+    return is_math_type_basename(n);
   }
 
   static std::string math_base(const std::string& c_sym) {
@@ -344,7 +413,7 @@ struct Emitter {
     };
     for (auto& m : prog.modules) {
       if (m.path == "farmos:scene" || m.path == "farmos:physics") continue;
-      if (m.path == "farmos:math" && (rt_math() || !user_imports_math)) continue;
+      if (m.path == "farmos:math" && (rt_math() || !user_uses_math)) continue;
       for (auto& s : m.structs) for (auto& f : s.fields) walk(f.type);
       for (auto& c : m.classes) {
         for (auto& f : c.fields) walk(f.type);
@@ -1246,16 +1315,12 @@ struct Emitter {
     uses_scene = program_uses_scene(prog);
     uses_physics = program_uses_physics(prog);
     uses_parallel = program_uses_parallel(prog);
-    user_imports_math = false;
-    for (auto& m : prog.modules) {
-      if (is_stdlib_mod(m.path)) continue;
-      for (auto& imp : m.imports) if (imp.path == "farmos:math") { user_imports_math = true; break; }
-    }
+    user_uses_math = program_uses_math(prog);
     auto skip_math_structs = [&](const Module& m) {
-      return m.path == "farmos:math" && (rt_math() || !user_imports_math);
+      return m.path == "farmos:math" && (rt_math() || !user_uses_math);
     };
     auto skip_math_code = [&](const Module& m) {
-      return m.path == "farmos:math" && !rt_math() && !user_imports_math;
+      return m.path == "farmos:math" && !rt_math() && !user_uses_math;
     };
 
     out << "/* Generated by farmc */\n";
