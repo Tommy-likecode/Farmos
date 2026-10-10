@@ -1,0 +1,9 @@
+function main(): int {
+  let a: int[] = [10, 20, 30];
+  let b: int[] = a;
+  b[1] = 77;
+  println(a[0]);
+  println(a[1]);
+  println(a[2]);
+  return 0;
+}

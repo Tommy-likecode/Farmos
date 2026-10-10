@@ -333,33 +333,36 @@ double farm_int_to_float(int64_t v) { return (double)v; }
 int64_t farm_bool_to_int(int8_t v) { return v ? 1 : 0; }
 
 void farm_dyn_init(FarmDynArray *a, int64_t elem_size) {
-  a->data = NULL;
-  a->len = 0;
-  a->cap = 0;
-  a->elem_size = elem_size;
+  FarmDynBuf *h = (FarmDynBuf *)farm_arena_alloc(sizeof(FarmDynBuf));
+  h->data = NULL;
+  h->len = 0;
+  h->cap = 0;
+  h->elem_size = elem_size;
+  a->h = h;
 }
 
 void farm_dyn_push(FarmDynArray *a, const void *elem) {
+  FarmDynBuf *h = a->h;
 #ifdef FARM_ENABLE_THREADS
   farm_alloc_lock();
 #endif
-  if (a->len >= a->cap) {
-    int64_t ncap = a->cap == 0 ? 4 : a->cap * 2;
-    void *nd = realloc(a->data, (size_t)(ncap * a->elem_size));
+  if (h->len >= h->cap) {
+    int64_t ncap = h->cap == 0 ? 4 : h->cap * 2;
+    void *nd = realloc(h->data, (size_t)(ncap * h->elem_size));
     if (!nd) abort();
-    a->data = nd;
-    a->cap = ncap;
+    h->data = nd;
+    h->cap = ncap;
   }
-  memcpy((char *)a->data + a->len * a->elem_size, elem, (size_t)a->elem_size);
-  a->len++;
+  memcpy((char *)h->data + h->len * h->elem_size, elem, (size_t)h->elem_size);
+  h->len++;
 #ifdef FARM_ENABLE_THREADS
   farm_alloc_unlock();
 #endif
 }
 
 void *farm_dyn_index(FarmDynArray *a, int64_t i) {
-  farm_bounds_check(i, a->len);
-  return (char *)a->data + i * a->elem_size;
+  farm_bounds_check(i, a->h->len);
+  return (char *)a->h->data + i * a->h->elem_size;
 }
 
-int64_t farm_dyn_len(FarmDynArray *a) { return a->len; }
+int64_t farm_dyn_len(FarmDynArray *a) { return a->h->len; }

@@ -1,0 +1,11 @@
+struct Pair {
+  a: int;
+}
+
+operator <(x: Pair, y: Pair): bool {
+  return x.a < 0;
+}
+
+function main(): int {
+  return 0;
+}

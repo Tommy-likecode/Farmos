@@ -42,7 +42,9 @@ All M1 kinds remain valid:
   - If both expected and actual parse as floats under the rules below, assert `abs(actual - expected) <= epsilon`, OR both are NaN.
   - Otherwise tokens MUST be identical (byte-for-byte).
 - Float tokens: optional leading `-`, M1 float literal forms, plus exact spellings `NaN`, `Infinity`, `-Infinity`, and M1 float print forms for finite values (including integral `1` without `.0`, scientific `1e-7` / `1e+21`).
-- `# epsilon:` is required for `run_approx`. Suggested default in fixtures: `1e-12` for well-conditioned cases; loosen if needed for libm variance.
+- When `# epsilon:` is omitted, the harness uses absolute tolerance **`1e-10`** (M6 §5.1).
+- Fixtures MAY set `# epsilon:` to a tighter or looser value; when present, that value wins.
+- Existing fixtures that already set `# epsilon:` are unchanged. Fixtures MAY choose `1e-12` for well-conditioned cases; loosen if needed for libm variance.
 
 **Rationale:** Host `libm` transcendental results may differ across C runtimes; exact `run` fixtures MUST prefer binary-exact values (integers, halves, quarters, 3-4-5). Trig-dependent prints use `run_approx`.
 

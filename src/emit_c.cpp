@@ -224,6 +224,11 @@ struct Emitter {
     return s;
   }
 
+  // M6 §6.1: continue inside `for` must run the update clause. Non-empty
+  // entries are C labels to `goto`; empty means native C `continue` (while).
+  int for_cont_seq = 0;
+  std::vector<std::string> cont_target;
+
   // M3: Set at the start of emit_all(). Non-scene programs MUST match master codegen.
   bool uses_scene = false;
   bool uses_physics = false;
@@ -908,23 +913,26 @@ struct Emitter {
       }
       if (lv->lhs->kind == ExprKind::Ident) {
         std::string an = ident_val(lv->lhs->name);
-        out << "farm_bounds_check(" << ip << ", " << an << ".len);\n";
-        return "((" + c_type(lv->type) + "*)" + an + ".data) + " + ip;
+        out << "farm_bounds_check(" << ip << ", " << an << ".h->len);\n";
+        return "((" + c_type(lv->type) + "*)" + an + ".h->data) + " + ip;
       }
       if (lv->lhs->kind == ExprKind::Field) {
         std::string dp = emit_lvalue_ptr(lv->lhs);
-        out << "farm_bounds_check(" << ip << ", (" << dp << ")->len);\n";
-        return "((" + c_type(lv->type) + "*)(" + dp + ")->data) + " + ip;
+        out << "farm_bounds_check(" << ip << ", (" << dp << ")->h->len);\n";
+        return "((" + c_type(lv->type) + "*)(" + dp + ")->h->data) + " + ip;
       }
       std::string arr = emit_expr(lv->lhs);
       std::string at = fresh("da");
       out << "FarmDynArray " << at << " = " << arr << ";\n";
-      out << "farm_bounds_check(" << ip << ", " << at << ".len);\n";
-      return "((" + c_type(lv->type) + "*)" + at + ".data) + " + ip;
+      out << "farm_bounds_check(" << ip << ", " << at << ".h->len);\n";
+      return "((" + c_type(lv->type) + "*)" + at + ".h->data) + " + ip;
     }
     return "((void*)0)";
   }
 
+  // M6 §6.2: assigning a FarmDynArray copies the handle (alias). FarmFixed_* is a
+  // value struct, so *ptr = rval copies every element. Literals still farm_dyn_init
+  // a fresh buffer (ArrayLit). Params/returns are by-value handles → same alias.
   void emit_assign(ExprPtr lv, const std::string& rval) {
     // Scene Euler.order is char[4]; assign from FarmString via helper (validates, trap 104).
     if (rt_math() && lv->kind == ExprKind::Field && lv->name == "order" &&
@@ -1187,51 +1195,38 @@ struct Emitter {
       }
       case StmtKind::While: {
         std::string c = emit_expr(s->cond);
+        // while+continue does not invent an update clause (M6 §6.1).
+        cont_target.push_back("");
         out << "while (" << c << ") ";
         emit_stmt(s->then_b);
+        cont_target.pop_back();
         break;
       }
       case StmtKind::For: {
+        // M6 §6.1: continue skips the rest of the body, evaluates the update
+        // clause, then re-tests the condition. Emit a continue-label before
+        // the update so every update form (Ident assign, field, call, *=)
+        // runs — not only the C `for (;; inc)` fast path.
         out << "{\n";
         if (s->for_init) emit_stmt(s->for_init);
         std::string fc = s->for_cond ? emit_expr(s->for_cond) : "1";
-        // Put the update in the C `for` increment so `continue` still runs it.
-        std::string inc = "";
-        if (s->for_update && s->for_update->kind == StmtKind::Assign &&
-            s->for_update->lhs && s->for_update->lhs->kind == ExprKind::Ident) {
-          std::string lv = ident_val(s->for_update->lhs->name);
-          if (s->for_update->assign_op == TokKind::Assign) {
-            inc = lv + " = " + emit_expr(s->for_update->rhs);
-          } else {
-            std::string rv = emit_expr(s->for_update->rhs);
-            TokKind bop = s->for_update->assign_op==TokKind::PlusEq?TokKind::Plus:
-              s->for_update->assign_op==TokKind::MinusEq?TokKind::Minus:
-              s->for_update->assign_op==TokKind::StarEq?TokKind::Star:
-              s->for_update->assign_op==TokKind::SlashEq?TokKind::Slash:TokKind::Percent;
-            if (bop == TokKind::Plus)
-              inc = lv + " = ((int64_t)((uint64_t)(" + lv + ")+(uint64_t)(" + rv + ")))";
-            else if (bop == TokKind::Minus)
-              inc = lv + " = ((int64_t)((uint64_t)(" + lv + ")-(uint64_t)(" + rv + ")))";
-            else if (bop == TokKind::Star)
-              inc = lv + " = ((int64_t)((uint64_t)(" + lv + ")*(uint64_t)(" + rv + ")))";
-            else
-              inc = "";
-          }
-        }
-        if (!inc.empty()) {
-          out << "for (; " << fc << "; " << inc << ") {\n";
-          emit_stmt(s->then_b);
-          out << "}\n}\n";
-        } else {
-          out << "for (; " << fc << "; ) {\n";
-          emit_stmt(s->then_b);
-          if (s->for_update) emit_stmt(s->for_update);
-          out << "}\n}\n";
-        }
+        std::string lab = "__farm_for_cont_" + std::to_string(for_cont_seq++);
+        cont_target.push_back(lab);
+        out << "for (; " << fc << "; ) {\n";
+        emit_stmt(s->then_b);
+        out << lab << ":;\n";
+        if (s->for_update) emit_stmt(s->for_update);
+        out << "}\n}\n";
+        cont_target.pop_back();
         break;
       }
       case StmtKind::Break: out << "break;\n"; break;
-      case StmtKind::Continue: out << "continue;\n"; break;
+      case StmtKind::Continue:
+        if (!cont_target.empty() && !cont_target.back().empty())
+          out << "goto " << cont_target.back() << ";\n";
+        else
+          out << "continue;\n";
+        break;
       case StmtKind::Return:
         if (s->ret) {
           std::string v = emit_expr(s->ret);

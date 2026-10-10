@@ -1,0 +1,9 @@
+function main(): int {
+  let i: int = 0;
+  let n: int = 0;
+  for (i = 0; i < 1000000; i = i + 1) {
+    n = n + 1;
+  }
+  println(n);
+  return 0;
+}

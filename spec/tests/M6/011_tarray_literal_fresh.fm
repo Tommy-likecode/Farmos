@@ -1,0 +1,8 @@
+function main(): int {
+  let a: int[] = [1, 2];
+  let b: int[] = [1, 2];
+  push(a, 3);
+  println(len(a));
+  println(len(b));
+  return 0;
+}

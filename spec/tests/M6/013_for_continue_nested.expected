@@ -1,0 +1,9 @@
+# kind: run
+# exit: 0
+## outer=3; each inner j ends at 3 so inner=9; hits=2 per outer * 3 = 6; i=3
+# stdout:
+3
+9
+6
+3
+# end
