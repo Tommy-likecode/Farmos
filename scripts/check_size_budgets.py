@@ -145,10 +145,13 @@ def main() -> int:
         ))
         scene_hello = os.path.join(td, "scene_hello.fm")
         write_src(scene_hello, (
-            'import { Scene } from "farmos:scene";\n'
+            'import { Scene, PerspectiveCamera, Renderer } from "farmos:scene";\n'
             "function main(): int {\n"
-            "  const s: Scene = new Scene();\n"
-            '  println("Hello, Farmos");\n'
+            "  const scene: Scene = new Scene();\n"
+            "  const camera: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);\n"
+            "  camera.position.z = 4;\n"
+            "  const renderer: Renderer = new Renderer(8, 8);\n"
+            "  renderer.render(scene, camera);\n"
             "  return 0;\n"
             "}\n"
         ))

@@ -78,10 +78,13 @@ try {
   )
   $sceneSrc = Join-Path $td "scene_hello.fm"
   Set-Content -Encoding ASCII -LiteralPath $sceneSrc @(
-    'import { Scene } from "farmos:scene";',
+    'import { Scene, PerspectiveCamera, Renderer } from "farmos:scene";',
     "function main(): int {",
-    "  const s: Scene = new Scene();",
-    '  println("Hello, Farmos");',
+    "  const scene: Scene = new Scene();",
+    "  const camera: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);",
+    "  camera.position.z = 4;",
+    "  const renderer: Renderer = new Renderer(8, 8);",
+    "  renderer.render(scene, camera);",
     "  return 0;",
     "}"
   )

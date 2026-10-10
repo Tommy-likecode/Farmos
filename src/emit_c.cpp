@@ -913,19 +913,19 @@ struct Emitter {
       }
       if (lv->lhs->kind == ExprKind::Ident) {
         std::string an = ident_val(lv->lhs->name);
-        out << "farm_bounds_check(" << ip << ", " << an << ".len);\n";
-        return "((" + c_type(lv->type) + "*)" + an + ".data) + " + ip;
+        out << "farm_bounds_check(" << ip << ", " << an << ".h->len);\n";
+        return "((" + c_type(lv->type) + "*)" + an + ".h->data) + " + ip;
       }
       if (lv->lhs->kind == ExprKind::Field) {
         std::string dp = emit_lvalue_ptr(lv->lhs);
-        out << "farm_bounds_check(" << ip << ", (" << dp << ")->len);\n";
-        return "((" + c_type(lv->type) + "*)(" + dp + ")->data) + " + ip;
+        out << "farm_bounds_check(" << ip << ", (" << dp << ")->h->len);\n";
+        return "((" + c_type(lv->type) + "*)(" + dp + ")->h->data) + " + ip;
       }
       std::string arr = emit_expr(lv->lhs);
       std::string at = fresh("da");
       out << "FarmDynArray " << at << " = " << arr << ";\n";
-      out << "farm_bounds_check(" << ip << ", " << at << ".len);\n";
-      return "((" + c_type(lv->type) + "*)" + at + ".data) + " + ip;
+      out << "farm_bounds_check(" << ip << ", " << at << ".h->len);\n";
+      return "((" + c_type(lv->type) + "*)" + at + ".h->data) + " + ip;
     }
     return "((void*)0)";
   }

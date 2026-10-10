@@ -13,11 +13,16 @@ typedef struct FarmString {
   int64_t len;
 } FarmString;
 
-typedef struct FarmDynArray {
+/* Shared buffer header. FarmDynArray is a copyable handle (M6 §6.2 alias). */
+typedef struct FarmDynBuf {
   void *data;
   int64_t len;
   int64_t cap;
   int64_t elem_size;
+} FarmDynBuf;
+
+typedef struct FarmDynArray {
+  FarmDynBuf *h;
 } FarmDynArray;
 
 void farm_trap(int code, const char *msg);
