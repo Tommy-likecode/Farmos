@@ -1,0 +1,16 @@
+import { Object3D } from "farmos:scene";
+
+function main(): int {
+  const o: Object3D = new Object3D();
+  // pitch near +pi/2 (gimbal singularity neighborhood for XYZ)
+  o.rotation.x = 1.5707963267948966;
+  o.rotation.y = 0.1;
+  o.rotation.z = 0.2;
+  println(o.quaternion.x);
+  println(o.quaternion.y);
+  println(o.quaternion.z);
+  println(o.quaternion.w);
+  let n2: float = o.quaternion.x * o.quaternion.x + o.quaternion.y * o.quaternion.y + o.quaternion.z * o.quaternion.z + o.quaternion.w * o.quaternion.w;
+  println(n2);
+  return 0;
+}

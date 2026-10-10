@@ -433,16 +433,25 @@ void Parser::parse_operator(Module& m, bool exported) {
   // Save operator token location for error reporting
   op.loc = cur_.loc;
   
-  // Check for overloadable operators: + - * / % == !=
+  // Overloadable (M2 §5.1): + - * / % == !=
   if (match_any({TokKind::Plus, TokKind::Minus, TokKind::Star, TokKind::Slash, TokKind::Percent, TokKind::EqEq, TokKind::Neq})) {
     op.op = prev_.kind;
-  } 
-  // Check for non-overloadable operators and emit E0605
-  else if (match_any({TokKind::Lt, TokKind::Le, TokKind::Gt, TokKind::Ge, TokKind::OrOr, TokKind::AndAnd})) {
+  }
+  // Recognized operator token that is not overloadable → E0605 (M6 §6.3).
+  // Includes ! and = (previously fell through to E0202) plus comparisons,
+  // logical ops, compound assigns, and [] / ().
+  else if (match_any({TokKind::Lt, TokKind::Le, TokKind::Gt, TokKind::Ge,
+                     TokKind::OrOr, TokKind::AndAnd, TokKind::Bang, TokKind::Assign,
+                     TokKind::PlusEq, TokKind::MinusEq, TokKind::StarEq,
+                     TokKind::SlashEq, TokKind::PercentEq,
+                     TokKind::LBrack, TokKind::LParen})) {
+    if (prev_.kind == TokKind::LBrack) match(TokKind::RBrack);
+    else if (prev_.kind == TokKind::LParen) match(TokKind::RParen);
     error_at(lex_.path(), prev_.loc, "E0605", "operator is not overloadable");
-    op.op = prev_.kind; // save for context
-  } 
+    op.op = prev_.kind;
+  }
   else {
+    // Bare / ill-formed token after `operator` (not a recognized operator) stays E0202.
     error_at(lex_.path(), cur_.loc, "E0202", "expected operator token");
     op.op = TokKind::Plus; // dummy
   }

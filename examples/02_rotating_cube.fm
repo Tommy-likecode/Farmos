@@ -1,0 +1,23 @@
+import { Scene, PerspectiveCamera, BoxGeometry, MeshBasicMaterial, Mesh, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x111111));
+  const camera: PerspectiveCamera = new PerspectiveCamera(75, 1, 0.1, 1000);
+  camera.position.z = 4;
+  camera.lookAt(0, 0, 0);
+  const geometry: BoxGeometry = new BoxGeometry(1, 1, 1);
+  const material: MeshBasicMaterial = new MeshBasicMaterial(0x00ff88);
+  const cube: Mesh = new Mesh(geometry, material);
+  scene.add(cube);
+  cube.rotation.x = 0.5;
+  cube.rotation.y = 0.8;
+  const renderer: Renderer = new Renderer(256, 256);
+  renderer.render(scene, camera);
+  renderer.savePNG("examples_02_cube.png");
+  geometry.dispose();
+  material.dispose();
+  renderer.dispose();
+  return 0;
+}

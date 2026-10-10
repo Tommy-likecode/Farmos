@@ -1,0 +1,12 @@
+struct Pair {
+  a: int;
+  b: int;
+}
+
+operator =(x: Pair, y: Pair): Pair {
+  return y;
+}
+
+function main(): int {
+  return 0;
+}

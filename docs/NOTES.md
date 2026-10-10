@@ -170,5 +170,6 @@ After the first `E0505` (undefined name), further diagnostics in that compilatio
 - Fix: resolve TEMP/TMP with `GetEnvironmentVariableW` / `GetTempPathW`; build `fs::path` from `wstring`;
   emit command lines with UTF-8 (`path_to_utf8` via `WideCharToMultiByte(CP_UTF8)`); invoke the C
   compiler with `CreateProcessW` (no `cmd.exe` / `.cmd`, which are ACP). Scratch leaf names stay ASCII
-  (`farmc-<pid>-<n>-<rand>`). `DriverError` -> exit 3 (never ICE) if TEMP is truly unusable.
+  (`farmc-<pid>-<n>-<rand>`). M6 §7.2: unusable TEMP → exit **1** and
+  `error: temporary directory unavailable` (`TempDirError`, never ICE). Other driver I/O stays exit 3.
 - Covered by `local_140_unicode_temp`.
