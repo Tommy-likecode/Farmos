@@ -20,10 +20,27 @@ static bool is_scene_class_sym(const std::string& n) {
          n == "farm_Renderer";
 }
 
+static bool is_physics_class_sym(const std::string& n) {
+  return n == "farm_World" || n == "farm_RigidBody" ||
+         n == "farm_SphereCollider" || n == "farm_BoxCollider" ||
+         n == "farm_PlaneCollider";
+}
+
+static bool is_stdlib_mod(const std::string& p) {
+  return p == "farmos:math" || p == "farmos:scene" || p == "farmos:physics";
+}
+
 static bool type_is_scene(const TypePtr& t) {
   if (!t) return false;
   if (t->kind == TypeKind::Class) return is_scene_class_sym(t->name);
   if (t->kind == TypeKind::DynArray || t->kind == TypeKind::FixedArray) return type_is_scene(t->elem);
+  return false;
+}
+
+static bool type_is_physics(const TypePtr& t) {
+  if (!t) return false;
+  if (t->kind == TypeKind::Class) return is_physics_class_sym(t->name);
+  if (t->kind == TypeKind::DynArray || t->kind == TypeKind::FixedArray) return type_is_physics(t->elem);
   return false;
 }
 
@@ -77,7 +94,7 @@ static bool stmt_uses_ray(StmtPtr s) {
 
 bool program_uses_ray(Program& prog) {
   for (auto& m : prog.modules) {
-    if (m.path == "farmos:math" || m.path == "farmos:scene") continue;
+    if (is_stdlib_mod(m.path)) continue;
     for (auto& f : m.functions) if (stmt_uses_ray(f.body)) return true;
     for (auto& c : m.classes)
       for (auto& md : c.methods) if (stmt_uses_ray(md.body)) return true;
@@ -90,7 +107,7 @@ bool program_uses_ray(Program& prog) {
 
 bool program_uses_scene(Program& prog) {
   for (auto& m : prog.modules) {
-    if (m.path == "farmos:math" || m.path == "farmos:scene") continue;
+    if (is_stdlib_mod(m.path)) continue;
     for (auto& f : m.functions) {
       for (auto& p : f.params) if (type_is_scene(p.type)) return true;
       if (type_is_scene(f.ret) || stmt_uses_scene(f.body)) return true;
@@ -108,6 +125,64 @@ bool program_uses_scene(Program& prog) {
     }
     for (auto& k : m.consts) {
       if (type_is_scene(k.type) || expr_uses_scene(k.init)) return true;
+    }
+  }
+  return false;
+}
+
+static bool is_physics_const_sym(const std::string& n) {
+  return n.find("BODY_DYNAMIC") != std::string::npos ||
+         n.find("BODY_STATIC") != std::string::npos ||
+         n.find("BODY_KINEMATIC") != std::string::npos;
+}
+
+static bool expr_uses_physics(ExprPtr e);
+static bool stmt_uses_physics(StmtPtr s);
+
+static bool expr_uses_physics(ExprPtr e) {
+  if (!e) return false;
+  if (type_is_physics(e->type)) return true;
+  if (e->kind == ExprKind::Ident && is_physics_const_sym(e->mangled)) return true;
+  if (e->kind == ExprKind::New && is_physics_class_sym(e->mangled)) return true;
+  if (expr_uses_physics(e->lhs) || expr_uses_physics(e->rhs)) return true;
+  for (auto& a : e->args) if (expr_uses_physics(a)) return true;
+  for (auto& fv : e->fields) if (expr_uses_physics(fv.second)) return true;
+  return false;
+}
+
+static bool stmt_uses_physics(StmtPtr s) {
+  if (!s) return false;
+  if (type_is_physics(s->decl_type)) return true;
+  if (expr_uses_physics(s->init) || expr_uses_physics(s->cond) || expr_uses_physics(s->lhs) ||
+      expr_uses_physics(s->rhs) || expr_uses_physics(s->for_cond) || expr_uses_physics(s->ret))
+    return true;
+  if (stmt_uses_physics(s->then_b) || stmt_uses_physics(s->else_b) ||
+      stmt_uses_physics(s->for_init) || stmt_uses_physics(s->for_update))
+    return true;
+  for (auto& x : s->stmts) if (stmt_uses_physics(x)) return true;
+  return false;
+}
+
+bool program_uses_physics(Program& prog) {
+  for (auto& m : prog.modules) {
+    if (is_stdlib_mod(m.path)) continue;
+    for (auto& f : m.functions) {
+      for (auto& p : f.params) if (type_is_physics(p.type)) return true;
+      if (type_is_physics(f.ret) || stmt_uses_physics(f.body)) return true;
+    }
+    for (auto& c : m.classes) {
+      if (is_physics_class_sym(c.c_sym)) return true;
+      for (auto& f : c.fields) if (type_is_physics(f.type)) return true;
+      for (auto& md : c.methods) {
+        for (auto& p : md.params) if (type_is_physics(p.type)) return true;
+        if (type_is_physics(md.ret) || stmt_uses_physics(md.body)) return true;
+      }
+    }
+    for (auto& s : m.structs) {
+      for (auto& f : s.fields) if (type_is_physics(f.type)) return true;
+    }
+    for (auto& k : m.consts) {
+      if (type_is_physics(k.type) || expr_uses_physics(k.init)) return true;
     }
   }
   return false;
@@ -151,8 +226,10 @@ struct Emitter {
 
   // M3: Set at the start of emit_all(). Non-scene programs MUST match master codegen.
   bool uses_scene = false;
+  bool uses_physics = false;
   bool uses_parallel = false;
   bool user_imports_math = false;
+  bool rt_math() const { return uses_scene || uses_physics; }
   std::unordered_map<std::string, std::string> cap_val;
   std::unordered_map<std::string, std::string> cap_ptr;
   std::string this_c = "this";
@@ -208,7 +285,7 @@ struct Emitter {
   }
 
   std::string struct_field_access(const std::string& field, const TypePtr& st) {
-    if (uses_scene && st && st->kind == TypeKind::Struct && is_math_type_name(st->name))
+    if (rt_math() && st && st->kind == TypeKind::Struct && is_math_type_name(st->name))
       return runtime_field_name(field, math_base(st->name));
     return "f_" + field;
   }
@@ -232,11 +309,13 @@ struct Emitter {
       case TypeKind::String: return "FarmString";
       case TypeKind::Void: return "void";
       case TypeKind::Struct:
-        if (uses_scene && is_math_type_name(t->name))
+        if (rt_math() && is_math_type_name(t->name))
           return "farm_" + math_base(t->name);
         return "struct Farm_" + t->name;
       case TypeKind::Class:
         if (uses_scene && is_scene_class_sym(t->name))
+          return t->name + "*";
+        if (uses_physics && is_physics_class_sym(t->name))
           return t->name + "*";
         return "struct Farm_" + t->name + "*";
       case TypeKind::DynArray: return "FarmDynArray";
@@ -259,8 +338,8 @@ struct Emitter {
       } else if (t->kind == TypeKind::DynArray) walk(t->elem);
     };
     for (auto& m : prog.modules) {
-      if (m.path == "farmos:scene") continue;
-      if (m.path == "farmos:math" && (uses_scene || !user_imports_math)) continue;
+      if (m.path == "farmos:scene" || m.path == "farmos:physics") continue;
+      if (m.path == "farmos:math" && (rt_math() || !user_imports_math)) continue;
       for (auto& s : m.structs) for (auto& f : s.fields) walk(f.type);
       for (auto& c : m.classes) {
         for (auto& f : c.fields) walk(f.type);
@@ -415,7 +494,7 @@ struct Emitter {
         auto idx = emit_expr(e->rhs);
         if (e->lhs->type->kind == TypeKind::FixedArray) {
           // M3: farm_Matrix3/4.elements is a C array, not FarmFixed_{}.data.
-          bool scene_c_array = uses_scene && e->lhs->kind == ExprKind::Field &&
+          bool scene_c_array = rt_math() && e->lhs->kind == ExprKind::Field &&
             e->lhs->lhs && e->lhs->lhs->type && e->lhs->lhs->type->kind == TypeKind::Struct &&
             is_math_type_name(e->lhs->lhs->type->name) && e->lhs->name == "elements";
           if (scene_c_array)
@@ -441,9 +520,11 @@ struct Emitter {
               return "(" + c_type(e->type) + ")" + field_access;
             return field_access;
           }
+          if (uses_physics && is_physics_class_sym(e->lhs->type->name))
+            return "(" + base + ")->f_" + e->name;
           return "(" + base + ")->f_" + e->name;
         }
-        if (uses_scene && e->name == "order" && e->lhs->type && e->lhs->type->kind == TypeKind::Struct &&
+        if (rt_math() && e->name == "order" && e->lhs->type && e->lhs->type->kind == TypeKind::Struct &&
             is_math_type_name(e->lhs->type->name) && math_base(e->lhs->type->name) == "Euler") {
           return "({ farm_Euler __eo = (" + base + "); farm_euler_order_string(&__eo); })";
         }
@@ -579,7 +660,11 @@ struct Emitter {
             std::string arg_val = emit_expr(a);
             if (uses_scene && a->type && a->type->kind == TypeKind::Class && is_object3d_sym(a->type->name) &&
                 (e->mangled.find("farm_Object3D_add") == 0 || e->mangled.find("farm_Object3D_remove") == 0 ||
-                 e->mangled.find("farm_Object3D_addAt") == 0)) {
+                 e->mangled.find("farm_Object3D_addAt") == 0 || e->mangled == "farm_RigidBody_setObject")) {
+              arg_val = "(farm_Object3D*)(" + arg_val + ")";
+            }
+            if (uses_physics && e->mangled == "farm_RigidBody_setObject" && a->type &&
+                a->type->kind == TypeKind::Class && is_object3d_sym(a->type->name)) {
               arg_val = "(farm_Object3D*)(" + arg_val + ")";
             }
             call += arg_val;
@@ -631,11 +716,11 @@ struct Emitter {
         for (auto& mm : prog.modules) for (auto& ss : mm.structs) if (ss.c_sym == e->mangled) { lit_sd = &ss; break; }
         for (auto& fv : e->fields) {
           std::string arg_val = emit_expr(fv.second);
-          if (uses_scene && lit_sd && lit_sd->name == "Euler" && fv.first == "order") {
+          if (rt_math() && lit_sd && lit_sd->name == "Euler" && fv.first == "order") {
             out << "farm_euler_set_order(&" << v << ", " << arg_val << ");\n";
             continue;
           }
-          std::string fn = (uses_scene && lit_sd)
+          std::string fn = (rt_math() && lit_sd)
             ? runtime_field_name(fv.first, lit_sd->name) : ("f_" + fv.first);
           out << v << "." << fn << " = " << arg_val << ";\n";
         }
@@ -644,7 +729,8 @@ struct Emitter {
       case ExprKind::New: {
         if (e->type->kind == TypeKind::Class) {
           std::string v = fresh("obj");
-          if (uses_scene && is_scene_class_sym(e->type->name)) {
+          if ((uses_scene && is_scene_class_sym(e->type->name)) ||
+              (uses_physics && is_physics_class_sym(e->type->name))) {
             std::vector<std::string> arg_values;
             for (auto& arg : e->args) arg_values.push_back(emit_expr(arg));
             out << e->mangled << "* " << v << " = " << e->mangled << "_new";
@@ -673,7 +759,7 @@ struct Emitter {
           // M2: Default constructor - special handling for math types
           if (sd->name == "Matrix4") {
             // Identity matrix: diagonal = 1, rest = 0
-            std::string el = uses_scene ? (v + ".elements") : (v + ".f_elements.data");
+            std::string el = rt_math() ? (v + ".elements") : (v + ".f_elements.data");
             out << "  for (int i = 0; i < 16; i++) " << el << "[i] = 0.0;\n";
             out << "  " << el << "[0] = 1.0;\n";   // [0,0]
             out << "  " << el << "[5] = 1.0;\n";   // [1,1]
@@ -681,7 +767,7 @@ struct Emitter {
             out << "  " << el << "[15] = 1.0;\n";  // [3,3]
           } else if (sd->name == "Matrix3") {
             // Identity matrix: diagonal = 1, rest = 0
-            std::string el = uses_scene ? (v + ".elements") : (v + ".f_elements.data");
+            std::string el = rt_math() ? (v + ".elements") : (v + ".f_elements.data");
             out << "  for (int i = 0; i < 9; i++) " << el << "[i] = 0.0;\n";
             out << "  " << el << "[0] = 1.0;\n";   // [0,0]
             out << "  " << el << "[4] = 1.0;\n";   // [1,1]
@@ -691,11 +777,11 @@ struct Emitter {
             out << "  " << v << ".f_x = 0.0;\n";
             out << "  " << v << ".f_y = 0.0;\n";
             out << "  " << v << ".f_z = 0.0;\n";
-            out << "  " << v << (uses_scene ? ".w" : ".f_w") << " = 1.0;\n";
+            out << "  " << v << (rt_math() ? ".w" : ".f_w") << " = 1.0;\n";
           } else if (sd->name == "Box3") {
             // Empty box: min = +infinity, max = -infinity
-            std::string mn = uses_scene ? ".min" : ".f_min";
-            std::string mx = uses_scene ? ".max" : ".f_max";
+            std::string mn = rt_math() ? ".min" : ".f_min";
+            std::string mx = rt_math() ? ".max" : ".f_max";
             out << "  " << v << mn << ".f_x = 1.0/0.0;\n";  // +inf
             out << "  " << v << mn << ".f_y = 1.0/0.0;\n";
             out << "  " << v << mn << ".f_z = 1.0/0.0;\n";
@@ -707,14 +793,14 @@ struct Emitter {
             out << "  " << v << ".f_x = 0.0;\n";
             out << "  " << v << ".f_y = 0.0;\n";
             out << "  " << v << ".f_z = 0.0;\n";
-            if (uses_scene)
+            if (rt_math())
               out << "  " << v << ".order[0]='X'; " << v << ".order[1]='Y'; " << v << ".order[2]='Z'; " << v << ".order[3]=0;\n";
             else
               out << "  " << v << ".f_order = (FarmString){.ptr=\"XYZ\", .len=3};\n";
           } else {
             // Default: zero all fields
             for (auto& f : sd->fields) {
-              std::string fn = uses_scene ? runtime_field_name(f.name, sd->name) : ("f_" + f.name);
+              std::string fn = rt_math() ? runtime_field_name(f.name, sd->name) : ("f_" + f.name);
               if (f.type->kind == TypeKind::Struct) {
                 // Nested struct - create default instance
                 std::string nested_ty = c_type(f.type);
@@ -735,7 +821,7 @@ struct Emitter {
                   for (auto& nf : nested_sd->fields) {
                     std::string zero_val = "0";
                     if (nf.type->kind == TypeKind::Float) zero_val = "0.0";
-                    std::string nfn = uses_scene
+                    std::string nfn = rt_math()
                       ? runtime_field_name(nf.name, nested_sd->name)
                       : ("f_" + nf.name);
                     out << nested_v << "." << nfn << " = " << zero_val << ";\n";
@@ -752,9 +838,9 @@ struct Emitter {
         } else if (sd->name == "Color" && e->args.size() == 1) {
           // Color(hex: int) constructor
           std::string hex_val = emit_expr(e->args[0]);
-          std::string r = uses_scene ? "r" : "f_r";
-          std::string g = uses_scene ? "g" : "f_g";
-          std::string b = uses_scene ? "b" : "f_b";
+          std::string r = rt_math() ? "r" : "f_r";
+          std::string g = rt_math() ? "g" : "f_g";
+          std::string b = rt_math() ? "b" : "f_b";
           out << v << "." << r << " = ((" << hex_val << " >> 16) & 255) / 255.0;\n";
           out << v << "." << g << " = ((" << hex_val << " >> 8) & 255) / 255.0;\n";
           out << v << "." << b << " = (" << hex_val << " & 255) / 255.0;\n";
@@ -764,7 +850,7 @@ struct Emitter {
             std::string arg_val = emit_expr(e->args[i]);
             out << v << ".f_" << sd->fields[i].name << " = " << arg_val << ";\n";
           }
-          if (uses_scene)
+          if (rt_math())
             out << "  " << v << ".order[0]='X'; " << v << ".order[1]='Y'; " << v << ".order[2]='Z'; " << v << ".order[3]=0;\n";
           else
             out << v << ".f_order = (FarmString){.ptr=\"XYZ\", .len=3};\n";
@@ -773,11 +859,11 @@ struct Emitter {
           for (size_t i=0;i<e->args.size();++i) {
             std::string arg_val = emit_expr(e->args[i]);
             // Scene farm_Euler.order is char[4]; FarmString is not assignable (clang error).
-            if (uses_scene && sd->name == "Euler" && sd->fields[i].name == "order") {
+            if (rt_math() && sd->name == "Euler" && sd->fields[i].name == "order") {
               out << "farm_euler_set_order(&" << v << ", " << arg_val << ");\n";
               continue;
             }
-            std::string fn = uses_scene ? runtime_field_name(sd->fields[i].name, sd->name) : ("f_" + sd->fields[i].name);
+            std::string fn = rt_math() ? runtime_field_name(sd->fields[i].name, sd->name) : ("f_" + sd->fields[i].name);
             out << v << "." << fn << " = " << arg_val << ";\n";
           }
         }
@@ -816,7 +902,7 @@ struct Emitter {
       if (lv->lhs->type->kind == TypeKind::FixedArray) {
         std::string ap = emit_lvalue_ptr(lv->lhs);
         out << "farm_bounds_check(" << ip << ", (int64_t)" << lv->lhs->type->fixed_len << ");\n";
-        if (uses_scene && lv->lhs->kind == ExprKind::Field && lv->lhs->name == "elements")
+        if (rt_math() && lv->lhs->kind == ExprKind::Field && lv->lhs->name == "elements")
           return "&((*(" + ap + "))[" + ip + "])";
         return "&((" + ap + ")->data[" + ip + "])";
       }
@@ -841,7 +927,7 @@ struct Emitter {
 
   void emit_assign(ExprPtr lv, const std::string& rval) {
     // Scene Euler.order is char[4]; assign from FarmString via helper (validates, trap 104).
-    if (uses_scene && lv->kind == ExprKind::Field && lv->name == "order" &&
+    if (rt_math() && lv->kind == ExprKind::Field && lv->name == "order" &&
         lv->lhs && lv->lhs->type && lv->lhs->type->kind == TypeKind::Struct &&
         is_math_type_name(lv->lhs->type->name) && math_base(lv->lhs->type->name) == "Euler") {
       std::string ep = emit_lvalue_ptr(lv->lhs);
@@ -1013,7 +1099,7 @@ struct Emitter {
   void emit_all_task_functions() {
     std::vector<StmtPtr> pars;
     for (auto& m : prog.modules) {
-      if (m.path == "farmos:math" || m.path == "farmos:scene") continue;
+      if (is_stdlib_mod(m.path)) continue;
       for (auto& f : m.functions) collect_parallels(f.body, pars);
       for (auto& op : m.operators) collect_parallels(op.body, pars);
       for (auto& c : m.classes) for (auto& md : c.methods) collect_parallels(md.body, pars);
@@ -1163,17 +1249,18 @@ struct Emitter {
 
   std::string emit_all() {
     uses_scene = program_uses_scene(prog);
+    uses_physics = program_uses_physics(prog);
     uses_parallel = program_uses_parallel(prog);
     user_imports_math = false;
     for (auto& m : prog.modules) {
-      if (m.path == "farmos:math" || m.path == "farmos:scene") continue;
+      if (is_stdlib_mod(m.path)) continue;
       for (auto& imp : m.imports) if (imp.path == "farmos:math") { user_imports_math = true; break; }
     }
     auto skip_math_structs = [&](const Module& m) {
-      return m.path == "farmos:math" && (uses_scene || !user_imports_math);
+      return m.path == "farmos:math" && (rt_math() || !user_imports_math);
     };
     auto skip_math_code = [&](const Module& m) {
-      return m.path == "farmos:math" && !uses_scene && !user_imports_math;
+      return m.path == "farmos:math" && !rt_math() && !user_imports_math;
     };
 
     out << "/* Generated by farmc */\n";
@@ -1184,6 +1271,11 @@ struct Emitter {
     if (uses_scene) {
       out << "#include \"farm_math.h\"\n";
       out << "#include \"farm_scene.h\"\n";
+    } else if (uses_physics) {
+      out << "#include \"farm_math.h\"\n";
+    }
+    if (uses_physics) {
+      out << "#include \"farm_physics.h\"\n";
     }
     if (uses_parallel) {
       out << "#include \"farm_par.h\"\n";
@@ -1203,7 +1295,7 @@ struct Emitter {
     // Then emit all classes
     for (auto& m : prog.modules) {
       for (auto& c : m.classes) {
-        if (is_scene_class_sym(c.c_sym)) continue;
+        if (is_scene_class_sym(c.c_sym) || is_physics_class_sym(c.c_sym)) continue;
         out << "struct Farm_" << c.c_sym << " {\n";
         for (auto& f : c.fields) out << "  " << c_type(f.type) << " f_" << f.name << ";\n";
         out << "};\n";
@@ -1217,7 +1309,7 @@ struct Emitter {
              s.name == "Sphere" || s.name == "Box3" || s.name == "RayHit";
     };
     auto math_struct_c = [&](const StructDecl& s) -> std::string {
-      if (uses_scene && is_math_decl(s)) return "farm_" + s.name;
+      if (rt_math() && is_math_decl(s)) return "farm_" + s.name;
       return "struct Farm_" + s.c_sym;
     };
 
@@ -1253,7 +1345,7 @@ struct Emitter {
         out << ");\n";
       }
       for (auto& c : m.classes) {
-        if (is_scene_class_sym(c.c_sym)) continue;
+        if (is_scene_class_sym(c.c_sym) || is_physics_class_sym(c.c_sym)) continue;
         for (auto& md : c.methods) {
           std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
           out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.c_sym << "* this";
@@ -1284,6 +1376,7 @@ struct Emitter {
     }
     for (auto& m : prog.modules) {
       if (skip_math_code(m) || m.path == "farmos:scene") continue;
+      if (m.path == "farmos:physics" && !uses_physics) continue;
       for (auto& c : m.consts)
         out << "static " << c_type(c.type) << " " << c.c_sym << ";\n";
     }
@@ -1293,6 +1386,7 @@ struct Emitter {
     out << "static void farm_init_globals(void) {\n";
     for (auto& m : prog.modules) {
       if (skip_math_code(m) || m.path == "farmos:scene") continue;
+      if (m.path == "farmos:physics" && !uses_physics) continue;
       for (auto& c : m.consts) {
         std::string v = emit_expr(c.init);
         out << "  " << c.c_sym << " = " << v << ";\n";
@@ -1325,7 +1419,7 @@ struct Emitter {
         out << "\n";
       }
       for (auto& c : m.classes) {
-        if (is_scene_class_sym(c.c_sym)) continue;
+        if (is_scene_class_sym(c.c_sym) || is_physics_class_sym(c.c_sym)) continue;
         for (auto& md : c.methods) {
           std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
           out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.c_sym << "* this";
@@ -1366,21 +1460,21 @@ struct Emitter {
           if (is_builtin) {
             // Generate built-in implementation
             out << "{\n";
-            std::string el = uses_scene ? "elements" : "f_elements.data";
-            std::string qw = uses_scene ? "w" : "f_w";
-            std::string v2x = uses_scene ? "x" : "f_x";
-            std::string v2y = uses_scene ? "y" : "f_y";
-            std::string orig = uses_scene ? "origin" : "f_origin";
-            std::string dirn = uses_scene ? "direction" : "f_direction";
-            std::string ctr = uses_scene ? "center" : "f_center";
-            std::string rad = uses_scene ? "radius" : "f_radius";
-            std::string bmin = uses_scene ? "min" : "f_min";
-            std::string bmax = uses_scene ? "max" : "f_max";
-            std::string hitf = uses_scene ? "hit" : "f_hit";
-            std::string ptf = uses_scene ? "point" : "f_point";
-            std::string distf = uses_scene ? "distance" : "f_distance";
+            std::string el = rt_math() ? "elements" : "f_elements.data";
+            std::string qw = rt_math() ? "w" : "f_w";
+            std::string v2x = rt_math() ? "x" : "f_x";
+            std::string v2y = rt_math() ? "y" : "f_y";
+            std::string orig = rt_math() ? "origin" : "f_origin";
+            std::string dirn = rt_math() ? "direction" : "f_direction";
+            std::string ctr = rt_math() ? "center" : "f_center";
+            std::string rad = rt_math() ? "radius" : "f_radius";
+            std::string bmin = rt_math() ? "min" : "f_min";
+            std::string bmax = rt_math() ? "max" : "f_max";
+            std::string hitf = rt_math() ? "hit" : "f_hit";
+            std::string ptf = rt_math() ? "point" : "f_point";
+            std::string distf = rt_math() ? "distance" : "f_distance";
             auto sty = [&](const std::string& n) {
-              return uses_scene ? ("farm_" + n) : ("struct Farm_m1_" + n);
+              return rt_math() ? ("farm_" + n) : ("struct Farm_m1_" + n);
             };
             if (s.name == "Vector3" && md.name == "add") {
               out << "  this->f_x += v_v.f_x;\n";
@@ -1681,7 +1775,7 @@ struct Emitter {
               out << "  return this;\n";
             } else if (s.name == "Quaternion" && md.name == "equals") {
               out << "  return (this->f_x == v_q.f_x && this->f_y == v_q.f_y && this->f_z == v_q.f_z && this->" << qw << " == v_q." << qw << ") ? 1 : 0;\n";
-            } else if (uses_scene && s.name == "Quaternion" && md.name == "set") {
+            } else if (rt_math() && s.name == "Quaternion" && md.name == "set") {
               out << "  this->f_x = v_x;\n";
               out << "  this->f_y = v_y;\n";
               out << "  this->f_z = v_z;\n";
@@ -1696,25 +1790,25 @@ struct Emitter {
               out << "  this->" << qw << " = cos(half);\n";
               out << "  return this;\n";
             } else if (s.name == "Color" && md.name == "setHex") {
-              std::string cr = uses_scene ? "r" : "f_r";
-              std::string cg = uses_scene ? "g" : "f_g";
-              std::string cb = uses_scene ? "b" : "f_b";
+              std::string cr = rt_math() ? "r" : "f_r";
+              std::string cg = rt_math() ? "g" : "f_g";
+              std::string cb = rt_math() ? "b" : "f_b";
               out << "  this->" << cr << " = ((v_hex >> 16) & 255) / 255.0;\n";
               out << "  this->" << cg << " = ((v_hex >> 8) & 255) / 255.0;\n";
               out << "  this->" << cb << " = (v_hex & 255) / 255.0;\n";
               out << "  return this;\n";
             } else if (s.name == "Color" && md.name == "multiplyScalar") {
-              std::string cr = uses_scene ? "r" : "f_r";
-              std::string cg = uses_scene ? "g" : "f_g";
-              std::string cb = uses_scene ? "b" : "f_b";
+              std::string cr = rt_math() ? "r" : "f_r";
+              std::string cg = rt_math() ? "g" : "f_g";
+              std::string cb = rt_math() ? "b" : "f_b";
               out << "  this->" << cr << " *= v_s;\n";
               out << "  this->" << cg << " *= v_s;\n";
               out << "  this->" << cb << " *= v_s;\n";
               out << "  return this;\n";
             } else if (s.name == "Color" && md.name == "getHex") {
-              std::string cr = uses_scene ? "r" : "f_r";
-              std::string cg = uses_scene ? "g" : "f_g";
-              std::string cb = uses_scene ? "b" : "f_b";
+              std::string cr = rt_math() ? "r" : "f_r";
+              std::string cg = rt_math() ? "g" : "f_g";
+              std::string cb = rt_math() ? "b" : "f_b";
               out << "  int r = (int)(this->" << cr << " * 255.0);\n";
               out << "  int g = (int)(this->" << cg << " * 255.0);\n";
               out << "  int b = (int)(this->" << cb << " * 255.0);\n";
@@ -1849,9 +1943,9 @@ struct Emitter {
               out << "  printf(\"" << field.name << ": \");\n";
               out << "  fflush(stdout);\n";
             }
-            std::string facc = std::string("v.") + (uses_scene && is_math_decl(s)
+            std::string facc = std::string("v.") + (rt_math() && is_math_decl(s)
               ? runtime_field_name(field.name, s.name) : ("f_" + field.name));
-            if (uses_scene && s.name == "Euler" && field.name == "order") {
+            if (rt_math() && s.name == "Euler" && field.name == "order") {
               out << "  printf(\"\\\"%s\\\"\", " << facc << ");\n";
               out << "  fflush(stdout);\n";
             } else if (field.type->kind == TypeKind::Float) {

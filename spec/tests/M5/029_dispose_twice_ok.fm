@@ -1,0 +1,9 @@
+import { World } from "farmos:physics";
+
+function main(): int {
+  const world: World = new World();
+  world.dispose();
+  world.dispose();
+  println(1);
+  return 0;
+}

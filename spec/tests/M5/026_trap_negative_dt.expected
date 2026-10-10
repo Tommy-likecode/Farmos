@@ -1,0 +1,5 @@
+# kind: runtime_trap
+# exit: 115
+# stderr:
+runtime error: invalid fixed timestep
+# end

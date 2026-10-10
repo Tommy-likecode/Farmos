@@ -150,6 +150,16 @@ static bool is_scene_sym(const std::string& n) {
          n == "farm_Renderer";
 }
 
+static bool is_physics_sym(const std::string& n) {
+  return n == "farm_World" || n == "farm_RigidBody" ||
+         n == "farm_SphereCollider" || n == "farm_BoxCollider" ||
+         n == "farm_PlaneCollider";
+}
+
+static bool is_stdlib_mod(const std::string& p) {
+  return p == "farmos:math" || p == "farmos:scene" || p == "farmos:physics";
+}
+
 static bool is_object3d_sym(const std::string& n) {
   return n == "farm_Object3D" || n == "farm_Scene" || n == "farm_PerspectiveCamera" ||
          n == "farm_Mesh" || n == "farm_AmbientLight" || n == "farm_DirectionalLight" ||
@@ -1547,6 +1557,33 @@ void seed_scene_summaries(Analyzer& A) {
   matset("farm_MeshStandardMaterial", "setEmissive_hex", "emissive");
   matset("farm_MeshStandardMaterial", "setEmissiveIntensity", "emissiveIntensity");
   matset("farm_MeshStandardMaterial", "setMap", "map");
+
+  auto phys_eff = [&](const std::string& key, const std::string& cls) {
+    Summary s; s.seeded = true;
+    Path th = pthis_cls(cls);
+    add_eff(s, false, true, A.with_field(th, "#native"), CVal::unk());
+    A.sums[key] = s;
+  };
+  phys_eff("farm_World_step", "farm_World");
+  phys_eff("farm_World_add", "farm_World");
+  phys_eff("farm_World_remove", "farm_World");
+  phys_eff("farm_World_setGravity", "farm_World");
+  phys_eff("farm_World_setFixedTimeStep", "farm_World");
+  phys_eff("farm_World_dispose", "farm_World");
+  phys_eff("farm_RigidBody_setMass", "farm_RigidBody");
+  phys_eff("farm_RigidBody_setRestitution", "farm_RigidBody");
+  phys_eff("farm_RigidBody_setFriction", "farm_RigidBody");
+  phys_eff("farm_RigidBody_setLinearDamping", "farm_RigidBody");
+  phys_eff("farm_RigidBody_setAngularDamping", "farm_RigidBody");
+  phys_eff("farm_RigidBody_setCollider", "farm_RigidBody");
+  phys_eff("farm_RigidBody_setObject", "farm_RigidBody");
+  phys_eff("farm_RigidBody_clearObject", "farm_RigidBody");
+  Summary bc; bc.seeded = true;
+  add_eff(bc, true, false, pthis_cls("farm_World"));
+  A.sums["farm_World_bodyCount"] = bc;
+  Summary gbt; gbt.seeded = true;
+  add_eff(gbt, true, false, pthis_cls("farm_RigidBody"));
+  A.sums["farm_RigidBody_getBodyType"] = gbt;
 }
 
 static std::vector<FunctionDecl*> all_fns(Program& p) {
@@ -1820,7 +1857,7 @@ void compute_summaries(Analyzer& A) {
   for (int iter = 0; iter < 32; ++iter) {
     bool ch = false;
     for (auto& m : A.prog.modules) {
-      if (m.path == "farmos:math" || m.path == "farmos:scene") continue;
+      if (is_stdlib_mod(m.path)) continue;
       A.cur_mod = &m;
       A.file = m.diag_path.empty() ? m.path : m.diag_path;
       for (auto& f : m.functions) {
@@ -1858,7 +1895,7 @@ void compute_summaries(Analyzer& A) {
       }
       for (auto& c : m.classes) {
         for (auto& md : c.methods) {
-          if (is_scene_sym(c.c_sym)) continue;
+          if (is_scene_sym(c.c_sym) || is_physics_sym(c.c_sym)) continue;
           setup_method_env(A, c, md);
           std::vector<Access> acc;
           A.stmt_counter = 0;
@@ -2139,7 +2176,7 @@ void analyze_conflicts(Program& prog) {
 
   // walk user functions for parallel blocks
   for (auto& m : prog.modules) {
-    if (m.path == "farmos:math" || m.path == "farmos:scene") continue;
+    if (is_stdlib_mod(m.path)) continue;
     A.cur_mod = &m;
     A.file = m.diag_path.empty() ? m.path : m.diag_path;
     for (auto& f : m.functions) {
@@ -2148,7 +2185,7 @@ void analyze_conflicts(Program& prog) {
       walk_find_parallel(A, f.body);
     }
     for (auto& c : m.classes) {
-      if (is_scene_sym(c.c_sym)) continue;
+      if (is_scene_sym(c.c_sym) || is_physics_sym(c.c_sym)) continue;
       for (auto& md : c.methods) {
         setup_method_env(A, c, md);
         compute_detached_sites(A, md.body);

@@ -67,7 +67,11 @@ TokKind Lexer::keyword(const std::string& s) {
 void Lexer::reject_future_reserved(const std::string& s, SourceLoc loc) {
   static const std::unordered_set<std::string> fr = {
     "as","async","await","enum","extends","implements","in","interface",
-    "match","mut","null","optional","private","protected","public","static",
+    // `match` is listed as future-reserved in M1 §2.5, but M5 fixture
+    // 011_sync_mesh_position uses it as a local identifier and no M1–M4
+    // fixture asserts E0003 for it. Leave it as a normal identifier until
+    // a match statement exists.
+    "mut","null","optional","private","protected","public","static",
     "super","switch","type","typeof","var","yield"
   };
   if (fr.count(s)) error_at(path_, loc, "E0003", "reserved keyword `" + s + "` cannot be used as identifier");

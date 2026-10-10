@@ -148,6 +148,9 @@ function Assert-NonSceneLink([string]$label, [string]$log) {
   if ($log -like "*farm_ray.c*") {
     Fail-Dce "${label}: linked farm_ray.c (non-ray must not link the path tracer)"
   }
+  if ($log -like "*farm_physics.c*") {
+    Fail-Dce "${label}: linked farm_physics.c (non-physics must not link physics)"
+  }
   if ($log -notlike "*farm_rt.c*") {
     Fail-Dce "${label}: did not link farm_rt.c`n$log"
   }
@@ -165,6 +168,9 @@ function Assert-SceneLink([string]$label, [string]$log) {
   }
   if ($log -like "*farm_ray.c*") {
     Fail-Dce "${label}: raster-only scene program linked farm_ray.c"
+  }
+  if ($log -like "*farm_physics.c*") {
+    Fail-Dce "${label}: raster-only scene program linked farm_physics.c"
   }
   if ($log -notlike "*farm_rt.c*") {
     Fail-Dce "${label}: scene program did not link farm_rt.c"
@@ -246,6 +252,37 @@ try {
   }
   if ($m4log -like "*farm_par*" -or $m4log -like "*FARM_ENABLE_THREADS*") {
     Fail-Dce "M4 renderPath program pulled user-parallel runtime"
+  }
+  if ($m4log -like "*farm_physics.c*") {
+    Fail-Dce "M4 renderPath program linked farm_physics.c"
+  }
+
+  $unusedPhysSrc = Join-Path $td "unused_phys.fm"
+  Set-Content -LiteralPath $unusedPhysSrc -Value "import { World } from `"farmos:physics`";`nfunction main(): int {`n  println(`"Hello, Farmos`");`n  return 0;`n}`n" -Encoding Ascii -NoNewline
+  $unusedPhys = Join-Path $td "unused_phys.exe"
+  $unusedPhysC = Join-Path $td "unused_phys.c"
+  Invoke-FarmcBuild -FarmcArgs @("build", $unusedPhysSrc, "-o", $unusedPhys, "--emit-c", $unusedPhysC) -Label "unused_phys" | Out-Null
+  $ps = (Get-Item -LiteralPath $unusedPhys).Length
+  if ($hs -ne $ps) { Fail-Dce "hello size $hs != unused-physics-import size $ps" }
+  $pb = [System.IO.File]::ReadAllBytes($unusedPhys)
+  if (-not (Test-PeBytesEqual $hb $pb)) { Fail-Dce "hello binary differs from unused-physics-import binary" }
+  $pc = [System.IO.File]::ReadAllBytes($unusedPhysC)
+  if ($hc.Length -ne $pc.Length) { Fail-Dce "generated C for unused physics import differs from hello" }
+  for ($i = 0; $i -lt $hc.Length; $i++) {
+    if ($hc[$i] -ne $pc[$i]) { Fail-Dce "generated C for unused physics import differs from hello" }
+  }
+  $plog = Get-VerboseLog -FarmcArgs @("build", $unusedPhysSrc, "-o", (Join-Path $td "unused_phys_v.exe"), "-v") -Label "unused_phys_v"
+  Assert-NonSceneLink "unused physics import" $plog
+  Assert-NoThreadRuntime "unused physics import" $plog $pc $pb
+
+  $usedPhysSrc = Join-Path $RepoRoot "spec/tests/M5/001_world_step_empty.fm"
+  $physOut = Join-Path $td "phys.exe"
+  $physlog = Get-VerboseLog -FarmcArgs @("build", $usedPhysSrc, "-o", $physOut, "-v") -Label "phys"
+  if ($physlog -notlike "*farm_physics.c*") {
+    Fail-Dce "M5 physics program did not link farm_physics.c"
+  }
+  if ($physlog -like "*farm_par*" -or $physlog -like "*FARM_ENABLE_THREADS*") {
+    Fail-Dce "M5 physics program pulled user-parallel runtime"
   }
 
   Assert-NoThreadRuntime "hello" $hlog $hc $hb

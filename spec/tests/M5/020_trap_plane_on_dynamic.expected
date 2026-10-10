@@ -1,0 +1,5 @@
+# kind: runtime_trap
+# exit: 116
+# stderr:
+runtime error: invalid collider
+# end
