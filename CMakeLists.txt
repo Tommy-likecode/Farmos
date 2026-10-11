@@ -124,6 +124,15 @@ foreach(exp ${M5_EXPECTED})
   set_tests_properties(m5_${name} PROPERTIES LABELS "spec")
 endforeach()
 
+# ---- M6 Spec fixtures (spec/tests/M6) ----
+set(FARMC_M6_TESTS_DIR "${CMAKE_SOURCE_DIR}/spec/tests/M6")
+file(GLOB M6_EXPECTED "${FARMC_M6_TESTS_DIR}/*.expected")
+foreach(exp ${M6_EXPECTED})
+  get_filename_component(name ${exp} NAME_WE)
+  farmc_add_one_test(m6_${name} "${FARMC_M6_TESTS_DIR}" "${name}")
+  set_tests_properties(m6_${name} PROPERTIES LABELS "spec")
+endforeach()
+
 # AC-M3-01 / AC-M3-11: unused farmos:scene import DCE + M1/M2 link flags vs master.
 # Windows: PowerShell (no python3 required). Unix: python3.
 find_program(FARMC_PYTHON3 python3)
@@ -137,6 +146,39 @@ elseif(FARMC_PYTHON3)
     COMMAND ${FARMC_PYTHON3} "${FARMC_SCRIPTS}/test_unused_scene_dce.py"
             $<TARGET_FILE:farmc> "${CMAKE_SOURCE_DIR}")
   set_tests_properties(local_unused_scene_dce PROPERTIES LABELS "local")
+endif()
+
+# M6: size/DCE/thread-start budgets, docs, examples, benchmarks, TEMP abort.
+if(WIN32)
+  add_test(NAME local_size_budgets
+    COMMAND ${PS} "${FARMC_SCRIPTS}/check_size_budgets.ps1"
+            -Farmc $<TARGET_FILE:farmc> -RepoRoot "${CMAKE_SOURCE_DIR}")
+  add_test(NAME local_docs_build
+    COMMAND ${PS} "${FARMC_SCRIPTS}/build_docs.ps1" -RepoRoot "${CMAKE_SOURCE_DIR}")
+  add_test(NAME local_examples_smoke
+    COMMAND ${PS} "${FARMC_SCRIPTS}/run_examples.ps1"
+            -Farmc $<TARGET_FILE:farmc> -RepoRoot "${CMAKE_SOURCE_DIR}")
+  add_test(NAME local_benchmarks
+    COMMAND ${PS} "${FARMC_SCRIPTS}/run_benchmarks.ps1"
+            -Farmc $<TARGET_FILE:farmc> -RepoRoot "${CMAKE_SOURCE_DIR}")
+  add_test(NAME local_temp_unavailable
+    COMMAND ${PS} "${FARMC_SCRIPTS}/test_temp_unavailable.ps1" -Farmc $<TARGET_FILE:farmc>)
+  set_tests_properties(local_size_budgets local_docs_build local_examples_smoke
+    local_benchmarks local_temp_unavailable PROPERTIES LABELS "local")
+elseif(FARMC_PYTHON3)
+  add_test(NAME local_size_budgets
+    COMMAND ${FARMC_PYTHON3} "${FARMC_SCRIPTS}/check_size_budgets.py"
+            $<TARGET_FILE:farmc> "${CMAKE_SOURCE_DIR}")
+  add_test(NAME local_docs_build
+    COMMAND ${FARMC_PYTHON3} "${FARMC_SCRIPTS}/build_docs.py" "${CMAKE_SOURCE_DIR}")
+  add_test(NAME local_examples_smoke
+    COMMAND bash "${FARMC_SCRIPTS}/run_examples.sh" $<TARGET_FILE:farmc> "${CMAKE_SOURCE_DIR}")
+  add_test(NAME local_benchmarks
+    COMMAND bash "${FARMC_SCRIPTS}/run_benchmarks.sh" $<TARGET_FILE:farmc> "${CMAKE_SOURCE_DIR}")
+  add_test(NAME local_temp_unavailable
+    COMMAND ${FARMC_PYTHON3} "${FARMC_SCRIPTS}/test_temp_unavailable.py" $<TARGET_FILE:farmc>)
+  set_tests_properties(local_size_budgets local_docs_build local_examples_smoke
+    local_benchmarks local_temp_unavailable PROPERTIES LABELS "local")
 endif()
 
 # ---- Local positive fixtures (tests/local) ----

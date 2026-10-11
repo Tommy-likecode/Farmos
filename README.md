@@ -1,5 +1,24 @@
 # Farmos
 
+## M6 — size / resource hardening + docs
+
+Spec: `spec/M6-hardening.md` (FINAL). Fixtures: `spec/tests/M6/` (ctest `m6_*`, 15 cases).
+
+- Language amendments: `continue` in `for` runs the update; dynamic `T[]` assign/param/return aliases; `operator !` / `=` → E0605.
+- Harness: `run_approx` default epsilon **1e-10** when `# epsilon:` is omitted; `# sha256:` is the PNG gate (golden file optional).
+- CI: `scripts/check_size_budgets.ps1` (B-01..B-07), `scripts/build_docs.ps1`, examples `01`..`05`, benchmarks BM-a..d.
+- Docs (English normative): `docs/language-reference.md`, `docs/getting-started.md`, `docs/porting-guide.md`. `docs/使用手册.md` stays informative.
+
+Linux: `bash scripts/run_suite_linux.sh build/farmc spec/tests/M6`
+
+---
+
+## M5 — physics
+
+`import { … } from "farmos:physics"`. Spec: `spec/M5-physics.md`. Fixtures: `spec/tests/M5/` (ctest `m5_*`).
+
+---
+
 ## M4 — path tracing
 
 `Renderer.renderPath(scene, camera)` is a CPU path tracer on the existing M3 `Renderer`. `render()` stays the M3 rasterizer. Spec: `spec/M4-ray.md`. Fixtures: `spec/tests/M4/` (ctest `m4_*`).

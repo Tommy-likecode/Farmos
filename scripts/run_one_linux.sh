@@ -45,6 +45,7 @@ def parse_expected(path):
     repeat = 1
     threads = None
     diag_exact = False
+    epsilon = None
     mode = None
     buf = []
     def add_diag(sev, pth, line, col, code):
@@ -99,6 +100,9 @@ def parse_expected(path):
             m = re.match(r"^# sha256:[ \t]*([0-9a-fA-F]{64})[ \t]*$", line)
             if m:
                 sha256 = m.group(1).lower(); continue
+            m = re.match(r"^# epsilon:[ \t]*(\S+)[ \t]*$", line)
+            if m:
+                epsilon = float(m.group(1)); continue
             m = re.match(r"^# stderr_exact:[ \t]*(true|false)", line)
             if m:
                 stderr_exact = (m.group(1) == "true"); continue
@@ -126,7 +130,8 @@ def parse_expected(path):
         stderr_exact = (kind == "runtime_trap")
     return dict(kind=kind, exit=exit_code, stdout=stdout, stderr=stderr,
                 diags=diags, png=png_path, sha256=sha256, stderr_exact=stderr_exact,
-                flags=flags, repeat=repeat, threads=threads, diag_exact=diag_exact)
+                flags=flags, repeat=repeat, threads=threads, diag_exact=diag_exact,
+                epsilon=epsilon)
 
 png_scratch = None
 
@@ -278,7 +283,8 @@ def check_program(out, err, rc):
         gl, wl = out.split("\n"), (exp["stdout"] or "").split("\n")
         if len(gl) != len(wl):
             fail(f"line count mismatch (got {len(gl)}, want {len(wl)})")
-        eps = 1e-10
+        # M6 §5.1: default 1e-10 when # epsilon: is omitted; fixture value wins.
+        eps = exp["epsilon"] if exp["epsilon"] is not None else 1e-10
         for i, (a, b) in enumerate(zip(gl, wl)):
             a, b = a.strip(), b.strip()
             if a == "" and b == "":
@@ -308,6 +314,7 @@ def check_program(out, err, rc):
             fail(f"stdout mismatch\nGOT:<<<{out}>>>\nWANT:<<<{want}>>>")
         if err:
             fail(f"unexpected stderr (run_png fixtures require empty stderr)\nGOT_STDERR:<<<{err}>>>")
+        # M6 §5.2: # sha256: is the required gate; sibling golden.png is optional.
         if not exp["png"] or not exp["sha256"]:
             fail("run_png fixture missing # png: or # sha256:")
         png = os.path.join(run_cwd, exp["png"])

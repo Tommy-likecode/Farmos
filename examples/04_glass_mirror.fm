@@ -1,0 +1,51 @@
+import { Scene, PerspectiveCamera, PlaneGeometry, BoxGeometry, SphereGeometry,
+         MeshStandardMaterial, MeshBasicMaterial, Mesh, DirectionalLight,
+         AmbientLight, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x181820));
+  const camera: PerspectiveCamera = new PerspectiveCamera(42, 1, 0.1, 100);
+  camera.position.set(0, 0.7, 2.8);
+  camera.lookAt(0, 0.45, 0);
+  const floorMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.75, 0.75, 0.75));
+  floorMat.setRoughness(1);
+  const floor: Mesh = new Mesh(new PlaneGeometry(4, 3), floorMat);
+  floor.quaternion.x = -0.7071067811865476;
+  floor.quaternion.y = 0;
+  floor.quaternion.z = 0;
+  floor.quaternion.w = 0.7071067811865476;
+  scene.add(floor);
+  const wallMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.25, 0.45, 0.85));
+  wallMat.setRoughness(1);
+  const wall: Mesh = new Mesh(new PlaneGeometry(4, 2.2), wallMat);
+  wall.position.set(0, 1, -1.4);
+  scene.add(wall);
+  const glassMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(1, 1, 1));
+  glassMat.setRoughness(0);
+  glassMat.setTransmission(1);
+  glassMat.setIor(1.5);
+  const glass: Mesh = new Mesh(new SphereGeometry(0.42, 8, 4), glassMat);
+  glass.position.set(-0.48, 0.42, 0.05);
+  scene.add(glass);
+  const mirrorMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(1, 1, 1));
+  mirrorMat.setRoughness(0);
+  mirrorMat.setMetalness(1);
+  const mirror: Mesh = new Mesh(new SphereGeometry(0.42, 8, 4), mirrorMat);
+  mirror.position.set(0.52, 0.42, 0.15);
+  scene.add(mirror);
+  const gem: Mesh = new Mesh(new BoxGeometry(0.28, 0.28, 0.28), new MeshBasicMaterial(0xe0c020));
+  gem.position.set(-0.48, 0.42, -0.75);
+  scene.add(gem);
+  const sun: DirectionalLight = new DirectionalLight(0xffffff, 2.5);
+  sun.lookAt(0.15, -1, -0.35);
+  scene.add(sun);
+  scene.add(new AmbientLight(0xffffff, 0.08));
+  const renderer: Renderer = new Renderer(32, 32);
+  renderer.setSamples(1);
+  renderer.setMaxBounces(3);
+  renderer.renderPath(scene, camera);
+  renderer.savePNG("examples_04_glass_mirror.png");
+  return 0;
+}

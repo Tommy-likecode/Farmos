@@ -1,0 +1,14 @@
+function main(): int {
+  let i: int = 0;
+  let s: int = 0;
+  while (i < 5) {
+    i = i + 1;
+    if (i == 3) {
+      continue;
+    }
+    s = s + i;
+  }
+  println(i);
+  println(s);
+  return 0;
+}

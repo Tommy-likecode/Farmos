@@ -1,0 +1,11 @@
+struct Flag {
+  v: bool;
+}
+
+operator !(x: Flag): bool {
+  return !x.v;
+}
+
+function main(): int {
+  return 0;
+}

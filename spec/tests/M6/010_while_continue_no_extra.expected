@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+## i ends 5; s = 1+2+4+5 = 12 (3 skipped)
+# stdout:
+5
+12
+# end

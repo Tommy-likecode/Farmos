@@ -12,6 +12,7 @@
 #include <vector>
 #ifdef _WIN32
 #include <windows.h>
+#include <shellapi.h>
 #include <process.h>
 #else
 #include <sys/wait.h>
@@ -23,6 +24,11 @@ namespace farm {
 // Driver I/O / configuration failures (section 7.2 exit 3). Distinct from ICE (exit 4).
 struct DriverError : std::runtime_error {
   using std::runtime_error::runtime_error;
+};
+
+// M6 §7.2: unusable TEMP is a compile-time abort (exit 1), not a driver-config exit 3.
+struct TempDirError : std::runtime_error {
+  TempDirError() : std::runtime_error("error: temporary directory unavailable") {}
 };
 
 #ifdef _WIN32
@@ -50,8 +56,18 @@ static fs::path path_from_utf8(const std::string& u8) { return fs::path(utf8_to_
 // UTF-8 display / command-line form of a path (never path::string(), which is ACP on MSVC).
 static std::string path_to_utf8(const fs::path& p) { return wide_to_utf8(p.wstring()); }
 
+static bool temp_dir_usable(const fs::path& p);
+
+static std::string win_env_utf8(const wchar_t* name) {
+  wchar_t buf[32768];
+  DWORD n = GetEnvironmentVariableW(name, buf, (DWORD)(sizeof(buf) / sizeof(buf[0])));
+  if (n == 0 || n >= sizeof(buf) / sizeof(buf[0])) return {};
+  return wide_to_utf8(std::wstring(buf, buf + n));
+}
+
 // TEMP/TMP via GetEnvironmentVariableW, else GetTempPathW. Never fs::temp_directory_path()
 // (MSVC converts the wide TEMP through ACP and throws on ß / emoji / ZWJ).
+// M6 §7.2: if TEMP or TMP is set but missing / not writable, fail (do not silently fall back).
 static fs::path win_temp_directory() {
   wchar_t buf[32768];
   for (const wchar_t* name : {L"TEMP", L"TMP"}) {
@@ -59,20 +75,61 @@ static fs::path win_temp_directory() {
     if (n > 0 && n < sizeof(buf) / sizeof(buf[0])) {
       while (n > 0 && (buf[n - 1] == L'\\' || buf[n - 1] == L'/')) buf[--n] = 0;
       fs::path p(buf);
-      std::error_code ec;
-      if (fs::is_directory(p, ec)) return p;
+      if (temp_dir_usable(p)) return p;
+      throw TempDirError();
     }
   }
   DWORD n = GetTempPathW((DWORD)(sizeof(buf) / sizeof(buf[0])), buf);
   if (n == 0 || n >= sizeof(buf) / sizeof(buf[0]))
-    throw DriverError("cannot resolve temporary directory (GetTempPathW failed)");
+    throw TempDirError();
   while (n > 0 && (buf[n - 1] == L'\\' || buf[n - 1] == L'/')) buf[--n] = 0;
-  return fs::path(buf);
+  fs::path p(buf);
+  if (!temp_dir_usable(p)) throw TempDirError();
+  return p;
 }
 #else
 static fs::path path_from_utf8(const std::string& u8) { return fs::path(u8); }
 static std::string path_to_utf8(const fs::path& p) { return p.string(); }
 #endif
+
+// Writable directory probe (M6 §7.2). Missing / non-directory / not writable → unusable.
+static bool temp_dir_usable(const fs::path& p) {
+  std::error_code ec;
+  if (!fs::is_directory(p, ec) || ec) return false;
+  static std::atomic<unsigned> probe_n{0};
+#ifdef _WIN32
+  unsigned long pid = (unsigned long)GetCurrentProcessId();
+#else
+  unsigned long pid = (unsigned long)getpid();
+#endif
+  fs::path probe = p / ("farmc-probe-" + std::to_string(pid) + "-" + std::to_string(++probe_n));
+  if (!fs::create_directory(probe, ec) || ec) return false;
+  fs::remove(probe, ec);
+  return true;
+}
+
+static fs::path resolve_temp_directory() {
+#ifdef _WIN32
+  return win_temp_directory();
+#else
+  if (const char* e = std::getenv("TMPDIR")) {
+    if (e[0]) {
+      fs::path p(e);
+      if (!temp_dir_usable(p)) throw TempDirError();
+      return p;
+    }
+  }
+  try {
+    fs::path p = fs::temp_directory_path();
+    if (!temp_dir_usable(p)) throw TempDirError();
+    return p;
+  } catch (const TempDirError&) {
+    throw;
+  } catch (...) {
+    throw TempDirError();
+  }
+#endif
+}
 
 static std::string read_file(const fs::path& p) {
   std::ifstream in(p, std::ios::binary);
@@ -2442,7 +2499,7 @@ static bool token_is_msvc(const std::string& tok) {
 
 static bool is_file(const std::string& p) {
   std::error_code ec;
-  return fs::is_regular_file(fs::path(p), ec) || fs::is_regular_file(fs::path(p + ".exe"), ec);
+  return fs::is_regular_file(path_from_utf8(p), ec) || fs::is_regular_file(path_from_utf8(p + ".exe"), ec);
 }
 
 // Split a FARM_CC value into {compiler token, remaining args}. FARM_CC is a command prefix, so it
@@ -2492,11 +2549,20 @@ static std::string cc_command_prefix(const std::string& cc_raw) {
 }
 
 static std::string find_c_compiler() {
+#ifdef _WIN32
+  // M6 §7.1: read FARM_CC via wide env so non-ACP compiler paths are not truncated.
+  std::string env_cc = win_env_utf8(L"FARM_CC");
+  if (!env_cc.empty()) {
+    std::string cc = trim_ws(env_cc);
+    if (!cc.empty()) return cc;
+  }
+#else
   const char* env = std::getenv("FARM_CC");
   if (env) {
     std::string cc = trim_ws(env);
     if (!cc.empty()) return cc;
   }
+#endif
 #ifdef _WIN32
   // Prefer clang from PATH via where.exe, return first line (full path)
   const char* cands[] = {"clang.exe", "clang", "gcc.exe", "gcc"};
@@ -2551,11 +2617,10 @@ class ScratchDir {
     static std::atomic<unsigned> counter{0};
 #ifdef _WIN32
     unsigned long pid = (unsigned long)GetCurrentProcessId();
-    fs::path base = win_temp_directory();
 #else
     unsigned long pid = (unsigned long)getpid();
-    fs::path base = fs::temp_directory_path();
 #endif
+    fs::path base = resolve_temp_directory();
     std::random_device rd;
     std::mt19937_64 rng(((uint64_t)rd() << 32) ^ (uint64_t)std::chrono::high_resolution_clock::now().time_since_epoch().count() ^ pid);
     for (int attempt = 0; attempt < 100; ++attempt) {
@@ -2565,7 +2630,7 @@ class ScratchDir {
       std::error_code ec;
       if (fs::create_directory(cand, ec) && !ec) { dir_ = cand; return; }
     }
-    throw DriverError("cannot create a unique temporary directory under '" + path_to_utf8(base) + "'");
+    throw TempDirError();
   }
   fs::path dir_;
   unsigned seq_ = 0;
@@ -2866,6 +2931,22 @@ static int cmd_run(std::vector<std::string> args) {
 
 static int farmc_main(int argc, char** argv) {
   using namespace farm;
+#ifdef _WIN32
+  // M6 §7.1: rebuild argv from the wide command line so paths are not ACP-truncated.
+  int wargc = 0;
+  LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
+  std::vector<std::string> wstore;
+  std::vector<char*> wav;
+  if (wargv) {
+    wstore.reserve((size_t)wargc);
+    wav.reserve((size_t)wargc);
+    for (int i = 0; i < wargc; ++i) wstore.push_back(wide_to_utf8(wargv[i]));
+    LocalFree(wargv);
+    for (auto& s : wstore) wav.push_back(s.data());
+    argc = wargc;
+    argv = wav.data();
+  }
+#endif
   if (argc < 2) {
     std::cout << "farmc - Farmos compiler\nUsage: farmc <build|run|version|help> ...\n";
     return 2;
@@ -2886,10 +2967,13 @@ static int farmc_main(int argc, char** argv) {
   return 2;
 }
 
-// Section 7.2: DriverError -> exit 3; any other escaped exception is ICE (exit 4).
+// Section 7.2: DriverError -> exit 3; M6 §7.2 TempDirError -> exit 1; other exceptions ICE (exit 4).
 int main(int argc, char** argv) {
   try {
     return farmc_main(argc, argv);
+  } catch (const farm::TempDirError& e) {
+    std::cerr << e.what() << "\n";
+    return 1;
   } catch (const farm::DriverError& e) {
     std::cerr << "farmc: " << e.what() << "\n";
     return 3;

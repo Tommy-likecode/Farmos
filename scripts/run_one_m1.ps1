@@ -51,6 +51,7 @@ function Parse-Expected([string]$path) {
   $repeat = 1
   $threads = $null
   $diagExact = $false
+  $epsilon = $null
 
   foreach ($line in $lines) {
     if ($null -eq $line) { $line = "" }
@@ -121,6 +122,10 @@ function Parse-Expected([string]$path) {
     if ($line -cmatch '^# diag_exact:[ \t]*true[ \t]*$') { $diagExact = $true; continue }
     if ($line -cmatch '^# png:[ \t]*(.+)[ \t]*$') { $pngPath = $Matches[1].Trim(); continue }
     if ($line -cmatch '^# sha256:[ \t]*([0-9a-fA-F]{64})[ \t]*$') { $sha256 = $Matches[1].ToLower(); continue }
+    if ($line -cmatch '^# epsilon:[ \t]*(\S+)[ \t]*$') {
+      $epsilon = [double]::Parse($Matches[1], [System.Globalization.CultureInfo]::InvariantCulture)
+      continue
+    }
     if ($line -cmatch '^# stderr_exact:[ \t]*(true|false)[ \t]*$') { $stderrExact = (Same $Matches[1] 'true'); continue }
     if ($line -cmatch '^# (error|warning):[ \t]*(\d+):(\d+):[ \t]*([EW]\d{4})[ \t]*$') {
       $diags.Add(@{ sev=$Matches[1]; line=[int]$Matches[2]; col=[int]$Matches[3]; code=$Matches[4]; path=""; note=$null })
@@ -158,6 +163,7 @@ function Parse-Expected([string]$path) {
     diags=$diags
     pngPath=$pngPath; sha256=$sha256
     flags=$flags; repeat=$repeat; threads=$threads; diagExact=$diagExact
+    epsilon=$epsilon
   }
 }
 
@@ -529,7 +535,9 @@ if (Same $exp.kind 'run_approx') {
     Exit-Farmc 1
   }
   
+  # M6 §5.1: default 1e-10 when # epsilon: is omitted; fixture value wins.
   $epsilon = 1e-10
+  if ($null -ne $exp.epsilon) { $epsilon = [double]$exp.epsilon }
   for ($i = 0; $i -lt $gotLines.Count; $i++) {
     $gotLine = $gotLines[$i].Trim()
     $wantLine = $wantLines[$i].Trim()
@@ -607,6 +615,7 @@ if (Same $exp.kind 'run_png') {
     Exit-Farmc 1
   }
   
+  # M6 §5.2: # sha256: is the required gate; sibling golden.png is optional (SHOULD byte-compare).
   if ($null -eq $exp.pngPath) { Write-Host "FAIL ${Name}: run_png fixture missing # png: path"; Exit-Farmc 1 }
   if ($null -eq $exp.sha256) { Write-Host "FAIL ${Name}: run_png fixture missing # sha256: hash"; Exit-Farmc 1 }
   
