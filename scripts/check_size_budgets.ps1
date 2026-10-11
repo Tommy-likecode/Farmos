@@ -59,6 +59,71 @@ function Write-Report([string]$Id, [string]$Label, [int64]$Value, [int64]$Budget
   }
 }
 
+# PeakWorkingSet64 after WaitForExit is often 0: the .NET Process object
+# drops memory counters once the child has exited. Sample the peak while
+# the process is alive, and also call GetProcessMemoryInfo on the still-open
+# handle (M4 §15.3 / M6 B-05).
+function Ensure-FarmNativeMem {
+  if ("FarmNativeMem" -as [type]) { return }
+  Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class FarmNativeMem {
+  [StructLayout(LayoutKind.Sequential)]
+  public struct PROCESS_MEMORY_COUNTERS {
+    public uint cb;
+    public uint PageFaultCount;
+    public UIntPtr PeakWorkingSetSize;
+    public UIntPtr WorkingSetSize;
+    public UIntPtr QuotaPeakPagedPoolUsage;
+    public UIntPtr QuotaPagedPoolUsage;
+    public UIntPtr QuotaPeakNonPagedPoolUsage;
+    public UIntPtr QuotaNonPagedPoolUsage;
+    public UIntPtr PagefileUsage;
+    public UIntPtr PeakPagefileUsage;
+  }
+  [DllImport("psapi.dll", SetLastError=true)]
+  public static extern bool GetProcessMemoryInfo(IntPtr hProcess, out PROCESS_MEMORY_COUNTERS counters, uint size);
+}
+"@
+}
+
+function Read-GetProcessMemoryInfoPeak([System.Diagnostics.Process]$Proc) {
+  try {
+    Ensure-FarmNativeMem
+    $sz = [System.Runtime.InteropServices.Marshal]::SizeOf([type][FarmNativeMem+PROCESS_MEMORY_COUNTERS])
+    $pmc = New-Object FarmNativeMem+PROCESS_MEMORY_COUNTERS
+    $pmc.cb = [uint32]$sz
+    if ([FarmNativeMem]::GetProcessMemoryInfo($Proc.Handle, [ref]$pmc, [uint32]$sz)) {
+      return [int64]$pmc.PeakWorkingSetSize.ToUInt64()
+    }
+  } catch { }
+  return [int64]0
+}
+
+function Get-PeakWorkingSetBytes([System.Diagnostics.Process]$Proc) {
+  $peak = [int64]0
+  while (-not $Proc.HasExited) {
+    try {
+      $Proc.Refresh()
+      $v = [int64]$Proc.PeakWorkingSet64
+      if ($v -gt $peak) { $peak = $v }
+    } catch { }
+    $g = Read-GetProcessMemoryInfoPeak $Proc
+    if ($g -gt $peak) { $peak = $g }
+    Start-Sleep -Milliseconds 5
+  }
+  $Proc.WaitForExit()
+  $g = Read-GetProcessMemoryInfoPeak $Proc
+  if ($g -gt $peak) { $peak = $g }
+  try {
+    $Proc.Refresh()
+    $v = [int64]$Proc.PeakWorkingSet64
+    if ($v -gt $peak) { $peak = $v }
+  } catch { }
+  return $peak
+}
+
 $td = Join-Path $env:TEMP ("farmc_m6_size_" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $td | Out-Null
 try {
@@ -150,11 +215,9 @@ try {
     $psi.UseShellExecute = $false
     $psi.WorkingDirectory = $td
     $proc = [System.Diagnostics.Process]::Start($psi)
-    $proc.WaitForExit()
+    $peak = Get-PeakWorkingSetBytes $proc
     if ($proc.ExitCode -ne 0) { Fail-Size "B-05 cornell exited $($proc.ExitCode)" }
-    # PeakWorkingSetSize via GetProcessMemoryInfo equivalent: WorkingSet64 is not peak.
-    # Use PeakWorkingSet64 (available on .NET / PS).
-    $peak = [int64]$proc.PeakWorkingSet64
+    if ($peak -le 0) { Fail-Size "B-05 peak working set was 0 (measurement failed)" }
     Write-Report "B-05" "Cornell 800x600 renderPath PeakWorkingSet64" $peak 67108864 $true
   } else {
     Write-Host "B-05  Cornell 800x600 peak RAM: skipped (pass -CheckPeakRam on TommyLaptop)"

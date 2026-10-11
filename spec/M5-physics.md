@@ -587,3 +587,5 @@ Smoke-prints free-fall, bounce, stack, friction, spin, static, and kinematic cas
 
 - 2026-10-09: DRAFT. Option A throughout. Fixtures 001–030. OQ-M5-01 .. OQ-M5-08 open, recommended A.
 - 2026-10-09: FINAL. PM accepted OQ-M5-01 .. OQ-M5-08, all option A (stacking-on-spheres note accepted). Open questions cleared.
+- 2026-10-09: Fixture fix — `030_bounce_height_band.expected` refreshed to current `physics_ref.py` at 90 steps (`0.77385131768254`); band 0.45–1.6 unchanged. Stale bake had ~0.492.
+- 2026-10-09: Fixture fix — `010_kinematic_pushes.fm` uses `0.05 * float(i + 1)` (M2 §4A); `011_sync_mesh_position.fm` renames `match` → `same`. AC semantics unchanged.
