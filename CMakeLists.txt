@@ -149,6 +149,8 @@ elseif(FARMC_PYTHON3)
 endif()
 
 # M6: size/DCE/thread-start budgets, docs, examples, benchmarks, TEMP abort.
+# local_size_budgets MUST invoke the real scripts/check_size_budgets.{ps1,py}
+# enforcer (B-01..B-07). Do not substitute a stub.
 if(WIN32)
   add_test(NAME local_size_budgets
     COMMAND ${PS} "${FARMC_SCRIPTS}/check_size_budgets.ps1"

@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 
 B01 = 20480
@@ -82,25 +83,108 @@ def assert_no_thread_start(label: str, log: str, blob: bytes) -> None:
             fail(f"{label}: binary contains thread-start symbol {m.decode('ascii')}")
 
 
+def _peak_from_proc_status(pid: int) -> int:
+    """Linux VmHWM (peak RSS) in bytes. 0 if /proc is gone."""
+    try:
+        with open(f"/proc/{pid}/status", "r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("VmHWM:"):
+                    return int(line.split()[1]) * 1024
+    except (FileNotFoundError, ProcessLookupError, OSError, ValueError, IndexError):
+        return 0
+    return 0
+
+
+def _peak_windows_working_set(proc: subprocess.Popen) -> int:
+    """PeakWorkingSetSize via GetProcessMemoryInfo on the still-open handle."""
+    import ctypes
+    from ctypes import wintypes
+
+    class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+        _fields_ = [
+            ("cb", wintypes.DWORD),
+            ("PageFaultCount", wintypes.DWORD),
+            ("PeakWorkingSetSize", ctypes.c_size_t),
+            ("WorkingSetSize", ctypes.c_size_t),
+            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+            ("PagefileUsage", ctypes.c_size_t),
+            ("PeakPagefileUsage", ctypes.c_size_t),
+        ]
+
+    get_info = ctypes.windll.psapi.GetProcessMemoryInfo
+    get_info.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(PROCESS_MEMORY_COUNTERS),
+        wintypes.DWORD,
+    ]
+    get_info.restype = wintypes.BOOL
+    pmc = PROCESS_MEMORY_COUNTERS()
+    pmc.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
+    handle = int(getattr(proc, "_handle", 0) or 0)
+    if not handle:
+        return 0
+    if not get_info(handle, ctypes.byref(pmc), pmc.cb):
+        return 0
+    return int(pmc.PeakWorkingSetSize)
+
+
 def peak_rss_bytes(cmd, cwd) -> int:
-    """Best-effort peak RSS. Windows: not used here (see .ps1). Linux: /usr/bin/time or rusage."""
-    if shutil.which("/usr/bin/time"):
-        p = subprocess.run(
+    """Peak RSS / working set sampled while the child is alive.
+
+    Reading PeakWorkingSet64 only after WaitForExit can be 0 on Windows.
+    Linux uses /proc/<pid>/status VmHWM (or GNU time %M as fallback).
+    """
+    if os.name == "nt":
+        p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        peak = 0
+        while True:
+            try:
+                peak = max(peak, _peak_windows_working_set(p))
+            except Exception:
+                pass
+            if p.poll() is not None:
+                break
+            time.sleep(0.005)
+        try:
+            peak = max(peak, _peak_windows_working_set(p))
+        except Exception:
+            pass
+        err = p.stderr.read() if p.stderr else b""
+        if p.returncode != 0:
+            fail(f"peak-ram program exited {p.returncode}\n"
+                 f"{err.decode('utf-8', errors='replace')}")
+        if peak <= 0:
+            fail("B-05 peak working set was 0 (measurement failed)")
+        return peak
+
+    p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    peak = 0
+    while True:
+        peak = max(peak, _peak_from_proc_status(p.pid))
+        if p.poll() is not None:
+            break
+        time.sleep(0.005)
+    err = p.stderr.read() if p.stderr else b""
+    if p.returncode != 0:
+        fail(f"peak-ram program exited {p.returncode}\n"
+             f"{err.decode('utf-8', errors='replace')}")
+    if peak <= 0 and shutil.which("/usr/bin/time"):
+        tp = subprocess.run(
             ["/usr/bin/time", "-f", "%M", *cmd],
             cwd=cwd, capture_output=True, text=True,
         )
-        if p.returncode != 0:
-            fail(f"peak-ram program exited {p.returncode}\n{p.stderr}")
-        # %M is KiB max RSS
-        lines = [ln.strip() for ln in p.stderr.splitlines() if ln.strip()]
+        if tp.returncode != 0:
+            fail(f"peak-ram program exited {tp.returncode}\n{tp.stderr}")
+        lines = [ln.strip() for ln in tp.stderr.splitlines() if ln.strip()]
         if not lines:
             fail("peak-ram: /usr/bin/time produced no max-RSS line")
-        return int(lines[-1]) * 1024
-    p = subprocess.run(cmd, cwd=cwd, capture_output=True)
-    if p.returncode != 0:
-        fail(f"peak-ram program exited {p.returncode}")
-    # rusage not available portably from stdout; skip numeric on this host.
-    return -1
+        peak = int(lines[-1]) * 1024
+    if peak <= 0:
+        fail("B-05 peak RSS was 0 (measurement failed)")
+    return peak
 
 
 def report(oid: str, label: str, value: int, budget: int, unit: str, enforce: bool) -> None:
@@ -231,7 +315,7 @@ def main() -> int:
             cornell = os.path.join(td, "cornell")
             build(farmc, cornell_src, cornell)
             peak = peak_rss_bytes([cornell], cwd=td)
-            report("B-05", "Cornell 800x600 renderPath peak RSS", peak, B05, "B", peak >= 0)
+            report("B-05", "Cornell 800x600 renderPath peak RSS", peak, B05, "B", True)
         else:
             print("B-05  Cornell 800x600 peak RAM: skipped (pass --peak-ram on TommyLaptop)")
 
