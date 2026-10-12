@@ -22,3 +22,8 @@ _hello_size.txt
 test_type
 
 /[0-9][0-9][0-9]_*
+
+# Accidental farmc -o outputs (ELF/PE, no extension) and scratch sources
+# dropped in the repo root. Root-only: does not ignore src/, runtime/, spec/, tests/.
+/test*
+/debug*
