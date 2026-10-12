@@ -1,5 +1,0 @@
-function main(): int {
-  let x: float = 1;
-  println(x);
-  return 0;
-}
