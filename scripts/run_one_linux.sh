@@ -7,6 +7,9 @@ TESTS_DIR="${2:?tests dir}"
 NAME="${3:?fixture name}"
 
 TESTS_DIR="$(cd "$TESTS_DIR" && pwd)"
+if [ -e "$FARMC" ]; then
+  FARMC="$(cd "$(dirname "$FARMC")" && pwd)/$(basename "$FARMC")"
+fi
 if [ -z "${FARM_RUNTIME:-}" ]; then
   FARMC_DIR="$(cd "$(dirname "$FARMC")" && pwd)"
   if [ -f "$FARMC_DIR/runtime/farm_rt.c" ]; then
