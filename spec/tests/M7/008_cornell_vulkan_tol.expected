@@ -1,0 +1,9 @@
+# kind: run_png
+# exit: 0
+# requires_vulkan: true
+# png: out.png
+# sha256: 3f29eb72e3b47f6108fa455e315a4d6a97228f47fdf1e9dac030ea42a4b9608f
+# png_tol: 2
+## Cornell on Vulkan vs M4-008 CPU golden; soft-skip without device
+# stdout:
+# end

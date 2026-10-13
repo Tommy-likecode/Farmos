@@ -132,6 +132,7 @@ try {
   $glassSrc = Join-Path $RepoRoot "examples\04_glass_mirror.fm"
   $demoSrc = Join-Path $RepoRoot "examples\05_stacking_bounce.fm"
   $cornellSrc = Join-Path $RepoRoot "examples\m4_cornell_800x600.fm"
+  $gpuSrc = Join-Path $RepoRoot "examples\06_vulkan_cornell.fm"
 
   $unusedSrc = Join-Path $td "unused_math.fm"
   Set-Content -Encoding ASCII -LiteralPath $unusedSrc @(
@@ -160,6 +161,7 @@ try {
   $glass = Join-Path $td "glass.exe"
   $demo = Join-Path $td "demo.exe"
   $scene = Join-Path $td "scene_hello.exe"
+  $gpu = Join-Path $td "gpu.exe"
 
   Invoke-FarmcBuild $helloSrc $hello @()
   Invoke-FarmcBuild $unusedSrc $unused @()
@@ -167,6 +169,7 @@ try {
   Invoke-FarmcBuild $glassSrc $glass @()
   Invoke-FarmcBuild $demoSrc $demo @()
   Invoke-FarmcBuild $sceneSrc $scene @()
+  Invoke-FarmcBuild $gpuSrc $gpu @()
 
   $hs = (Get-Item -LiteralPath $hello).Length
   $us = (Get-Item -LiteralPath $unused).Length
@@ -174,6 +177,7 @@ try {
   $gs = (Get-Item -LiteralPath $glass).Length
   $ds = (Get-Item -LiteralPath $demo).Length
   $ss = (Get-Item -LiteralPath $scene).Length
+  $gps = (Get-Item -LiteralPath $gpu).Length
   $delta = $ds - $ss
 
   Write-Host "M6 size / DCE / thread-start budgets"
@@ -181,6 +185,7 @@ try {
   Write-Report "B-01" "hello (examples/01_hello.fm)" $hs 20480 $true
   Write-Report "B-02" "cube (examples/02_rotating_cube.fm)" $cs 98304 $true
   Write-Report "B-03" "glass+mirror (examples/04_glass_mirror.fm)" $gs 307200 $true
+  Write-Report "B-08" "GPU-linked vulkan cornell (examples/06_vulkan_cornell.fm)" $gps 409600 $true
   Write-Report "B-04" "S_demo - S_scene" $delta 65536 $true
   Write-Host ("      S_demo={0} B  S_scene={1} B" -f $ds, $ss)
   Write-Report "B-06" "unused farmos:math import" $us 20480 $true
@@ -198,8 +203,48 @@ try {
   Test-ThreadStart "B-07 rotating-cube (render, not renderPath)" $clog $cube
   Write-Host "B-07  no thread-start imports on hello / unused-math / scene-only / cube  OK"
 
+  $glog = Get-VerboseLog $glassSrc (Join-Path $td "glass_v.exe")
+  function Test-NoVulkan([string]$Label, [string]$Log, [string]$BinPath) {
+    foreach ($m in @("farm_vk.c", "FARM_ENABLE_VULKAN")) {
+      if ($Log.IndexOf($m, [StringComparison]::Ordinal) -ge 0) {
+        Fail-Size "${Label}: verbose link mentions $m"
+      }
+    }
+    $bytes = [System.IO.File]::ReadAllBytes($BinPath)
+    $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+    foreach ($m in @("vulkan-1.dll", "libvulkan.so.1", "vkGetInstanceProcAddr")) {
+      if ($text.IndexOf($m, [StringComparison]::Ordinal) -ge 0) {
+        Fail-Size "${Label}: binary contains Vulkan loader symbol $m"
+      }
+    }
+  }
+  Test-NoVulkan "M7 hello" $hlog (Join-Path $td "hello_v.exe")
+  Test-NoVulkan "M7 unused-math" $ulog $unused
+  Test-NoVulkan "M7 scene-only hello" $slog $scene
+  Test-NoVulkan "M7 rotating-cube" $clog $cube
+  Test-NoVulkan "M7 glass+mirror CPU" $glog (Join-Path $td "glass_v.exe")
+  Write-Host "M7   no Vulkan loader symbols on hello / unused-math / scene / cube / CPU glass  OK"
+
+  $ver = & $Farmc version
+  if (("$ver").IndexOf("1.01", [StringComparison]::Ordinal) -lt 0) {
+    Fail-Size "farmc version does not contain 1.01: $ver"
+  }
+  $clPath = Join-Path $RepoRoot "CHANGELOG.md"
+  if (-not (Test-Path -LiteralPath $clPath)) { Fail-Size "missing CHANGELOG.md" }
+  $cltxt = Get-Content -LiteralPath $clPath -Raw
+  if ($cltxt.IndexOf("v1.01", [StringComparison]::Ordinal) -lt 0 -and $cltxt.IndexOf("1.01", [StringComparison]::Ordinal) -lt 0) {
+    Fail-Size "CHANGELOG.md has no v1.01 entry"
+  }
+  Write-Host "M7   farmc version: $ver  OK"
+
   if ($hlog.IndexOf("farm_math.c", [StringComparison]::Ordinal) -ge 0) {
     Fail-Size "hello linked farm_math.c"
+  }
+  if ($hlog.IndexOf("farm_vk.c", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Size "hello linked farm_vk.c"
+  }
+  if ($glog.IndexOf("farm_vk.c", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Size "CPU glass+mirror linked farm_vk.c"
   }
   if ($ulog.IndexOf("farm_math.c", [StringComparison]::Ordinal) -ge 0) {
     Fail-Size "unused math import linked farm_math.c"

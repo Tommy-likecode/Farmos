@@ -1527,6 +1527,14 @@ void seed_scene_summaries(Analyzer& A) {
   Summary sb; sb.seeded = true;
   add_eff(sb, false, true, A.with_field(rth, "maxBounces"), CVal::unk());
   A.sums["farm_Renderer_setMaxBounces"] = sb;
+  Summary pb; pb.seeded = true;
+  add_eff(pb, false, true, A.with_field(rth, "pathBackend"), CVal::unk());
+  A.sums["farm_Renderer_setPathBackend"] = pb;
+  Summary gb; gb.seeded = true;
+  add_eff(gb, true, false, A.with_field(rth, "pathBackend"));
+  A.sums["farm_Renderer_getPathBackend"] = gb;
+  Summary av; av.seeded = true;
+  A.sums["farm_Renderer_isVulkanPathAvailable"] = av;
 
   auto disp = [&](const std::string& cls, const std::string& key) {
     Summary d; d.seeded = true;

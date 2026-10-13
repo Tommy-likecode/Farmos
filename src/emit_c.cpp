@@ -121,6 +121,53 @@ bool program_uses_ray(Program& prog) {
   return false;
 }
 
+static bool is_vulkan_opt_in_name(const std::string& n) {
+  return n == "PATH_BACKEND_VULKAN" ||
+         n == "setPathBackend" ||
+         n == "isVulkanPathAvailable";
+}
+
+static bool expr_uses_vulkan(ExprPtr e) {
+  if (!e) return false;
+  if (e->kind == ExprKind::Ident && is_vulkan_opt_in_name(e->name)) return true;
+  if (e->kind == ExprKind::Call && e->lhs && e->lhs->kind == ExprKind::Field &&
+      (e->lhs->name == "setPathBackend" || e->lhs->name == "isVulkanPathAvailable" ||
+       e->lhs->name == "getPathBackend")) {
+    if (e->lhs->name == "setPathBackend" || e->lhs->name == "isVulkanPathAvailable")
+      return true;
+  }
+  if (e->kind == ExprKind::Field && is_vulkan_opt_in_name(e->name)) return true;
+  if (expr_uses_vulkan(e->lhs) || expr_uses_vulkan(e->rhs)) return true;
+  for (auto& a : e->args) if (expr_uses_vulkan(a)) return true;
+  for (auto& fv : e->fields) if (expr_uses_vulkan(fv.second)) return true;
+  return false;
+}
+
+static bool stmt_uses_vulkan(StmtPtr s) {
+  if (!s) return false;
+  if (expr_uses_vulkan(s->init) || expr_uses_vulkan(s->cond) || expr_uses_vulkan(s->lhs) ||
+      expr_uses_vulkan(s->rhs) || expr_uses_vulkan(s->for_cond) || expr_uses_vulkan(s->ret))
+    return true;
+  if (stmt_uses_vulkan(s->then_b) || stmt_uses_vulkan(s->else_b) ||
+      stmt_uses_vulkan(s->for_init) || stmt_uses_vulkan(s->for_update))
+    return true;
+  for (auto& x : s->stmts) if (stmt_uses_vulkan(x)) return true;
+  return false;
+}
+
+bool program_uses_vulkan(Program& prog) {
+  for (auto& m : prog.modules) {
+    if (is_stdlib_mod(m.path)) continue;
+    for (auto& f : m.functions) if (stmt_uses_vulkan(f.body)) return true;
+    for (auto& c : m.classes)
+      for (auto& md : c.methods) if (stmt_uses_vulkan(md.body)) return true;
+    for (auto& s : m.structs)
+      for (auto& md : s.methods) if (stmt_uses_vulkan(md.body)) return true;
+    for (auto& op : m.operators) if (stmt_uses_vulkan(op.body)) return true;
+  }
+  return false;
+}
+
 bool program_uses_scene(Program& prog) {
   for (auto& m : prog.modules) {
     if (is_stdlib_mod(m.path)) continue;
@@ -459,7 +506,16 @@ struct Emitter {
       }
       case ExprKind::BoolLit: return e->bool_val ? "((int8_t)1)" : "((int8_t)0)";
       case ExprKind::StringLit: return c_string_value(e->str_val);
-      case ExprKind::Ident: return !e->mangled.empty() ? e->mangled : ident_val(e->name);
+      case ExprKind::Ident:
+        if (e->is_const_binding && e->type && e->type->kind == TypeKind::Int && !e->mangled.empty()) {
+          for (auto& m : prog.modules) {
+            for (auto& c : m.consts) {
+              if (c.c_sym == e->mangled && c.init && c.init->kind == ExprKind::IntLit)
+                return "(int64_t)" + std::to_string(c.init->int_val) + "LL";
+            }
+          }
+        }
+        return !e->mangled.empty() ? e->mangled : ident_val(e->name);
       case ExprKind::This: return this_c;
       case ExprKind::Unary: {
         // M2: Check for unary operator overload

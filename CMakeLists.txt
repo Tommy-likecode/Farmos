@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(farmos LANGUAGES CXX C VERSION 0.1.0)
+project(farmos LANGUAGES CXX C VERSION 1.01.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -131,6 +131,15 @@ foreach(exp ${M6_EXPECTED})
   get_filename_component(name ${exp} NAME_WE)
   farmc_add_one_test(m6_${name} "${FARMC_M6_TESTS_DIR}" "${name}")
   set_tests_properties(m6_${name} PROPERTIES LABELS "spec")
+endforeach()
+
+# ---- M7 Spec fixtures (spec/tests/M7) ----
+set(FARMC_M7_TESTS_DIR "${CMAKE_SOURCE_DIR}/spec/tests/M7")
+file(GLOB M7_EXPECTED "${FARMC_M7_TESTS_DIR}/*.expected")
+foreach(exp ${M7_EXPECTED})
+  get_filename_component(name ${exp} NAME_WE)
+  farmc_add_one_test(m7_${name} "${FARMC_M7_TESTS_DIR}" "${name}")
+  set_tests_properties(m7_${name} PROPERTIES LABELS "spec")
 endforeach()
 
 # AC-M3-01 / AC-M3-11: unused farmos:scene import DCE + M1/M2 link flags vs master.

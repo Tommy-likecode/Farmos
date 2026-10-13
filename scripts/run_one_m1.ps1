@@ -52,6 +52,10 @@ function Parse-Expected([string]$path) {
   $threads = $null
   $diagExact = $false
   $epsilon = $null
+  $requiresVulkan = $false
+  $pngTol = $null
+  $envs = New-Object System.Collections.Generic.List[object]
+  $stdoutAlts = New-Object System.Collections.Generic.List[string]
 
   foreach ($line in $lines) {
     if ($null -eq $line) { $line = "" }
@@ -66,6 +70,7 @@ function Parse-Expected([string]$path) {
         $text = ""
         if ($buf.Count -gt 0) { $text = ($buf -join "`n") + "`n" }
         if (Same $mode 'stdout') { $stdout = $text; $hasStdout = $true }
+        elseif (Same $mode 'stdout_alt') { [void]$stdoutAlts.Add($text) }
         else { $stderr = $text; $hasStderr = $true }
         $buf.Clear(); $mode = $null
       } else {
@@ -122,6 +127,12 @@ function Parse-Expected([string]$path) {
     if ($line -cmatch '^# diag_exact:[ \t]*true[ \t]*$') { $diagExact = $true; continue }
     if ($line -cmatch '^# png:[ \t]*(.+)[ \t]*$') { $pngPath = $Matches[1].Trim(); continue }
     if ($line -cmatch '^# sha256:[ \t]*([0-9a-fA-F]{64})[ \t]*$') { $sha256 = $Matches[1].ToLower(); continue }
+    if ($line -cmatch '^# png_tol:[ \t]*(-?\d+)[ \t]*$') { $pngTol = [int]$Matches[1]; continue }
+    if ($line -cmatch '^# requires_vulkan:[ \t]*true[ \t]*$') { $requiresVulkan = $true; continue }
+    if ($line -cmatch '^# env:[ \t]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+      [void]$envs.Add(@{ key=$Matches[1]; val=$Matches[2] })
+      continue
+    }
     if ($line -cmatch '^# epsilon:[ \t]*(\S+)[ \t]*$') {
       $epsilon = [double]::Parse($Matches[1], [System.Globalization.CultureInfo]::InvariantCulture)
       continue
@@ -148,6 +159,7 @@ function Parse-Expected([string]$path) {
       continue
     }
     if ($line -cmatch '^# stdout:[ \t]*$') { $mode = 'stdout'; $buf.Clear(); continue }
+    if ($line -cmatch '^# stdout_alt:[ \t]*$') { $mode = 'stdout_alt'; $buf.Clear(); continue }
     if ($line -cmatch '^# stderr:[ \t]*$') { $mode = 'stderr'; $buf.Clear(); continue }
   }
   if ($null -ne $mode) { throw "unterminated # ${mode}: block (missing # end) in $path" }
@@ -164,6 +176,7 @@ function Parse-Expected([string]$path) {
     pngPath=$pngPath; sha256=$sha256
     flags=$flags; repeat=$repeat; threads=$threads; diagExact=$diagExact
     epsilon=$epsilon
+    requiresVulkan=$requiresVulkan; pngTol=$pngTol; envs=$envs; stdoutAlts=$stdoutAlts
   }
 }
 
@@ -423,6 +436,54 @@ function Assert-CompileDiags($got, $want, [bool]$exact, [string]$errText) {
   }
 }
 
+function Test-HostVulkanDevice {
+  try {
+    $python = Get-Command python3 -ErrorAction SilentlyContinue
+    if ($null -eq $python) { $python = Get-Command python -ErrorAction SilentlyContinue }
+    if ($null -ne $python) {
+      $py = @'
+import ctypes, sys
+lib=None
+for n in ("vulkan-1.dll","libvulkan.so.1"):
+    try:
+        lib=ctypes.CDLL(n); break
+    except OSError:
+        pass
+if not lib:
+    sys.exit(2)
+VK_SUCCESS=0
+class App(ctypes.Structure):
+    _fields_=[("sType",ctypes.c_uint32),("pNext",ctypes.c_void_p),("pApplicationName",ctypes.c_char_p),("applicationVersion",ctypes.c_uint32),("pEngineName",ctypes.c_char_p),("engineVersion",ctypes.c_uint32),("apiVersion",ctypes.c_uint32)]
+class InstCI(ctypes.Structure):
+    _fields_=[("sType",ctypes.c_uint32),("pNext",ctypes.c_void_p),("flags",ctypes.c_uint32),("pApplicationInfo",ctypes.POINTER(App)),("enabledLayerCount",ctypes.c_uint32),("ppEnabledLayerNames",ctypes.c_void_p),("enabledExtensionCount",ctypes.c_uint32),("ppEnabledExtensionNames",ctypes.c_void_p)]
+create=lib.vkCreateInstance; create.restype=ctypes.c_int32
+enumd=lib.vkEnumeratePhysicalDevices; enumd.restype=ctypes.c_int32
+destroy=lib.vkDestroyInstance
+app=App(0,None,b"farmos-harness",0,None,0,(1<<22)|(1<<12))
+ci=InstCI(1,None,0,ctypes.pointer(app),0,None,0,None)
+inst=ctypes.c_void_p()
+create.argtypes=[ctypes.POINTER(InstCI),ctypes.c_void_p,ctypes.POINTER(ctypes.c_void_p)]
+if create(ctypes.byref(ci),None,ctypes.byref(inst))!=VK_SUCCESS or not inst.value:
+    sys.exit(2)
+count=ctypes.c_uint32(0)
+enumd.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_uint32),ctypes.c_void_p]
+rc=enumd(inst,ctypes.byref(count),None)
+destroy.argtypes=[ctypes.c_void_p,ctypes.c_void_p]
+destroy(inst,None)
+sys.exit(0 if rc==VK_SUCCESS and count.value>0 else 2)
+'@
+      $p = Start-Process -FilePath $python.Source -ArgumentList @("-c", $py) -Wait -PassThru -NoNewWindow
+      return ($p.ExitCode -eq 0)
+    }
+  } catch { }
+  return $false
+}
+
+if ($exp.requiresVulkan -and -not (Test-HostVulkanDevice)) {
+  Write-Host "SKIP ${Name}: requires_vulkan (no usable Vulkan device)"
+  Exit-Farmc 0
+}
+
 if (Same $exp.kind 'compile_error') {
   if ($exp.diags.Count -eq 0) { Write-Host "FAIL ${Name}: compile_error fixture lists no # error: lines"; Exit-Farmc 1 }
   $prevRaw = $null
@@ -487,6 +548,11 @@ if (Same $exp.kind 'run_png') {
 $threadCfgs = @($null)
 if ($null -ne $exp.threads) { $threadCfgs = @($exp.threads) }
 $oldThr = $env:FARMOS_THREADS
+$savedEnv = @{}
+foreach ($ev in $exp.envs) {
+  $savedEnv[$ev.key] = [Environment]::GetEnvironmentVariable($ev.key)
+  Set-Item -Path ("Env:" + $ev.key) -Value $ev.val
+}
 $script:stdoutGot = $null
 $script:stderrGot = $null
 $script:ec = 0
@@ -509,7 +575,13 @@ if ($ec -ne $exp.exit) {
 if (Same $exp.kind 'run') {
   if (-not $exp.hasStdout) { Write-Host "FAIL ${Name}: run fixture missing # stdout: block"; Exit-Farmc 1 }
   $wantOut = Norm-Newlines $exp.stdout
-  if (-not (Same $stdoutGot $wantOut)) {
+  $matched = (Same $stdoutGot $wantOut)
+  if (-not $matched) {
+    foreach ($alt in $exp.stdoutAlts) {
+      if (Same $stdoutGot (Norm-Newlines $alt)) { $matched = $true; break }
+    }
+  }
+  if (-not $matched) {
     Write-Host "FAIL ${Name}: stdout mismatch"
     Write-Host "GOT:<<<$stdoutGot>>>"; Write-Host "WANT:<<<$wantOut>>>"
     Exit-Farmc 1
@@ -626,35 +698,80 @@ if (Same $exp.kind 'run_png') {
     Exit-Farmc 1
   }
   
-  # Compute SHA-256 of the PNG file
+  $gotBytes = [System.IO.File]::ReadAllBytes($pngFile)
   $hash = (Get-FileHash -LiteralPath $pngFile -Algorithm SHA256).Hash.ToLower()
-  if (-not (Same $hash $exp.sha256)) {
-    Write-Host "FAIL ${Name}: PNG SHA-256 mismatch"
-    Write-Host "GOT:  $hash"
-    Write-Host "WANT: $($exp.sha256)"
-    Exit-Farmc 1
-  }
-  
-  # Optional: byte-compare with golden PNG if it exists
-  $goldenPng = Join-Path $TestsDir "$Name.golden.png"
-  if (Test-Path -LiteralPath $goldenPng) {
-    $gotBytes = [System.IO.File]::ReadAllBytes($pngFile)
-    $goldenBytes = [System.IO.File]::ReadAllBytes($goldenPng)
-    if ($gotBytes.Length -ne $goldenBytes.Length) {
-      Write-Host "FAIL ${Name}: PNG size mismatch with golden (got $($gotBytes.Length) bytes, golden $($goldenBytes.Length) bytes)"
+  $tol = $exp.pngTol
+  if ($null -eq $tol -or $tol -eq 0) {
+    if (-not (Same $hash $exp.sha256)) {
+      Write-Host "FAIL ${Name}: PNG SHA-256 mismatch"
+      Write-Host "GOT:  $hash"
+      Write-Host "WANT: $($exp.sha256)"
       Exit-Farmc 1
     }
-    $match = $true
-    for ($i = 0; $i -lt $gotBytes.Length; $i++) {
-      if ($gotBytes[$i] -ne $goldenBytes[$i]) {
-        $match = $false
-        break
+    $goldenPng = Join-Path $TestsDir "$Name.golden.png"
+    if (Test-Path -LiteralPath $goldenPng) {
+      $goldenBytes = [System.IO.File]::ReadAllBytes($goldenPng)
+      if ($gotBytes.Length -ne $goldenBytes.Length) {
+        Write-Host "FAIL ${Name}: PNG size mismatch with golden (got $($gotBytes.Length) bytes, golden $($goldenBytes.Length) bytes)"
+        Exit-Farmc 1
+      }
+      $match = $true
+      for ($i = 0; $i -lt $gotBytes.Length; $i++) {
+        if ($gotBytes[$i] -ne $goldenBytes[$i]) {
+          $match = $false
+          break
+        }
+      }
+      if (-not $match) {
+        Write-Host "FAIL ${Name}: PNG bytes differ from golden at byte $i"
+        Exit-Farmc 1
       }
     }
-    if (-not $match) {
-      Write-Host "FAIL ${Name}: PNG bytes differ from golden at byte $i"
+  } else {
+    $goldenPng = Join-Path $TestsDir "$Name.golden.png"
+    if (-not (Test-Path -LiteralPath $goldenPng)) {
+      Write-Host "FAIL ${Name}: png_tol requires sibling golden PNG"
       Exit-Farmc 1
     }
+    $py = Get-Command python3 -ErrorAction SilentlyContinue
+    if ($null -eq $py) { $py = Get-Command python -ErrorAction SilentlyContinue }
+    if ($null -eq $py) {
+      Write-Host "FAIL ${Name}: png_tol needs python to decode PNG"
+      Exit-Farmc 1
+    }
+    $cmp = @'
+import hashlib, os, struct, sys, zlib
+got, ref, tol = sys.argv[1], sys.argv[2], int(sys.argv[3])
+def dec(data):
+    sig = bytes([137,80,78,71,13,10,26,10])
+    if data[:8] != sig: raise SystemExit("not png")
+    pos=8; w=h=None; idat=b""
+    while pos+8<=len(data):
+        ln=int.from_bytes(data[pos:pos+4],"big"); typ=data[pos+4:pos+8]; chunk=data[pos+8:pos+8+ln]; pos+=12+ln
+        if typ==b"IHDR":
+            w,h,bit,color=struct.unpack(">IIBB", chunk[:10])
+        elif typ==b"IDAT": idat+=chunk
+        elif typ==b"IEND": break
+    raw=zlib.decompress(idat); stride=1+w*3
+    pix=bytearray(w*h*3)
+    for y in range(h):
+        row=raw[y*stride:(y+1)*stride]
+        if row[0]!=0: raise SystemExit("filter")
+        pix[y*w*3:(y+1)*w*3]=row[1:]
+    return pix
+gp=dec(open(got,"rb").read()); rp=dec(open(ref,"rb").read())
+if len(gp)!=len(rp): raise SystemExit("size")
+d=max(abs(gp[i]-rp[i]) for i in range(len(gp))) if gp else 0
+if d>tol: raise SystemExit("delta %d"%d)
+'@
+      $tmppy = Join-Path $env:TEMP ("farmc_pngtol_" + $Name + ".py")
+      Set-Content -Encoding ASCII -LiteralPath $tmppy $cmp
+      $pr = Start-Process -FilePath $py.Source -ArgumentList @($tmppy, $pngFile, $goldenPng, ([string]$tol)) -Wait -PassThru -NoNewWindow
+      Remove-Item -Force $tmppy -ErrorAction SilentlyContinue
+      if ($pr.ExitCode -ne 0) {
+        Write-Host "FAIL ${Name}: PNG channel delta exceeds png_tol $tol"
+        Exit-Farmc 1
+      }
   }
   
   # Scratch dir is removed by Exit-Farmc (including on failure).
@@ -664,6 +781,10 @@ if (Same $exp.kind 'run_png') {
   } # threads
 if ($null -eq $oldThr) { Remove-Item Env:FARMOS_THREADS -ErrorAction SilentlyContinue }
 else { $env:FARMOS_THREADS = $oldThr }
+foreach ($k in $savedEnv.Keys) {
+  if ($null -eq $savedEnv[$k]) { Remove-Item -Path ("Env:" + $k) -ErrorAction SilentlyContinue }
+  else { Set-Item -Path ("Env:" + $k) -Value $savedEnv[$k] }
+}
 
 Write-Host "PASS ${Name}"
 Exit-Farmc 0

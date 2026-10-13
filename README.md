@@ -1,5 +1,18 @@
 # Farmos
 
+## M7 / v1.01 — optional Vulkan path tracing
+
+Spec: `spec/M7-vulkan-path.md` (FINAL). Fixtures: `spec/tests/M7/` (ctest `m7_*`).
+
+- `Renderer.setPathBackend` / `getPathBackend` / `isVulkanPathAvailable`; `PATH_BACKEND_CPU=0`, `PATH_BACKEND_VULKAN=1`. `renderPath` is unchanged.
+- Default CPU (M4, bit-identical). Vulkan compute after explicit opt-in; silent CPU fallback unless `FARMOS_PATH_GPU_STRICT=1` (trap 117). Invalid backend: trap 118.
+- Dynamic load of the Vulkan loader; hello / CPU-only programs must not import Vulkan symbols.
+- Linux CI: GPU fixtures with `# requires_vulkan: true` soft-skip when no device is present.
+
+`farmc version` → `farmc 1.01`. Linux: `bash scripts/run_suite_linux.sh build/farmc spec/tests/M7`
+
+---
+
 ## M6 — size / resource hardening + docs
 
 Spec: `spec/M6-hardening.md` (FINAL). Fixtures: `spec/tests/M6/` (ctest `m6_*`, 15 cases).

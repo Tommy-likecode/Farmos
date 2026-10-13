@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: edf8f93ee8ae044efb16768e9749da5674e6a8c3f91fe59a2da54ad53f39e842
+## glass+mirror CPU — M4-009 twin (32x32, 4 samples, 3 bounces)
+# stdout:
+# end

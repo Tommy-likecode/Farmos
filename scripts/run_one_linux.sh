@@ -7,6 +7,9 @@ TESTS_DIR="${2:?tests dir}"
 NAME="${3:?fixture name}"
 
 TESTS_DIR="$(cd "$TESTS_DIR" && pwd)"
+if [ -e "$FARMC" ]; then
+  FARMC="$(cd "$(dirname "$FARMC")" && pwd)/$(basename "$FARMC")"
+fi
 if [ -z "${FARM_RUNTIME:-}" ]; then
   FARMC_DIR="$(cd "$(dirname "$FARMC")" && pwd)"
   if [ -f "$FARMC_DIR/runtime/farm_rt.c" ]; then
@@ -46,6 +49,10 @@ def parse_expected(path):
     threads = None
     diag_exact = False
     epsilon = None
+    requires_vulkan = False
+    png_tol = None
+    envs = []
+    stdout_alts = []
     mode = None
     buf = []
     def add_diag(sev, pth, line, col, code):
@@ -58,6 +65,8 @@ def parse_expected(path):
                     text = ("\n".join(buf) + "\n") if buf else ""
                     if mode == "stdout":
                         stdout = text
+                    elif mode == "stdout_alt":
+                        stdout_alts.append(text)
                     else:
                         stderr = text
                     buf, mode = [], None
@@ -100,6 +109,15 @@ def parse_expected(path):
             m = re.match(r"^# sha256:[ \t]*([0-9a-fA-F]{64})[ \t]*$", line)
             if m:
                 sha256 = m.group(1).lower(); continue
+            m = re.match(r"^# png_tol:[ \t]*(-?\d+)[ \t]*$", line)
+            if m:
+                png_tol = int(m.group(1)); continue
+            m = re.match(r"^# requires_vulkan:[ \t]*true[ \t]*$", line)
+            if m:
+                requires_vulkan = True; continue
+            m = re.match(r"^# env:[ \t]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
+            if m:
+                envs.append((m.group(1), m.group(2))); continue
             m = re.match(r"^# epsilon:[ \t]*(\S+)[ \t]*$", line)
             if m:
                 epsilon = float(m.group(1)); continue
@@ -124,6 +142,8 @@ def parse_expected(path):
                 continue
             if re.match(r"^# stdout:[ \t]*$", line):
                 mode, buf = "stdout", []; continue
+            if re.match(r"^# stdout_alt:[ \t]*$", line):
+                mode, buf = "stdout_alt", []; continue
             if re.match(r"^# stderr:[ \t]*$", line):
                 mode, buf = "stderr", []; continue
     if stderr_exact is None:
@@ -131,7 +151,8 @@ def parse_expected(path):
     return dict(kind=kind, exit=exit_code, stdout=stdout, stderr=stderr,
                 diags=diags, png=png_path, sha256=sha256, stderr_exact=stderr_exact,
                 flags=flags, repeat=repeat, threads=threads, diag_exact=diag_exact,
-                epsilon=epsilon)
+                epsilon=epsilon, requires_vulkan=requires_vulkan, png_tol=png_tol,
+                envs=envs, stdout_alts=stdout_alts)
 
 png_scratch = None
 
@@ -148,6 +169,106 @@ def fail(msg):
 
 def decode(b):
     return b.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+
+def decode_png_rgb8(data):
+    import struct, zlib
+    sig = bytes([137, 80, 78, 71, 13, 10, 26, 10])
+    if data[:8] != sig:
+        raise ValueError("not a PNG")
+    pos = 8
+    w = h = None
+    idat = b""
+    while pos + 8 <= len(data):
+        ln = struct.unpack(">I", data[pos:pos+4])[0]
+        typ = data[pos+4:pos+8]
+        chunk = data[pos+8:pos+8+ln]
+        pos += 12 + ln
+        if typ == b"IHDR":
+            w, h, bit, color = struct.unpack(">IIBB", chunk[:10])
+            if bit != 8 or color != 2:
+                raise ValueError("PNG is not 8-bit RGB")
+        elif typ == b"IDAT":
+            idat += chunk
+        elif typ == b"IEND":
+            break
+    if w is None:
+        raise ValueError("missing IHDR")
+    raw = zlib.decompress(idat)
+    stride = 1 + w * 3
+    if len(raw) != stride * h:
+        raise ValueError("bad PNG size")
+    pixels = bytearray(w * h * 3)
+    for y in range(h):
+        row = raw[y * stride:(y + 1) * stride]
+        if row[0] != 0:
+            raise ValueError("unsupported PNG filter")
+        pixels[y * w * 3:(y + 1) * w * 3] = row[1:]
+    return w, h, bytes(pixels)
+
+def png_max_abs_delta(got_bytes, ref_bytes):
+    gw, gh, gp = decode_png_rgb8(got_bytes)
+    rw, rh, rp = decode_png_rgb8(ref_bytes)
+    if gw != rw or gh != rh or len(gp) != len(rp):
+        return 999
+    return max(abs(gp[i] - rp[i]) for i in range(len(gp))) if gp else 0
+
+def find_png_by_sha(root, want):
+    golden = os.path.join(root, f"{name}.golden.png")
+    if os.path.isfile(golden):
+        return golden
+    for dirpath, _, files in os.walk(root):
+        for fn in files:
+            if not fn.endswith(".png"):
+                continue
+            p = os.path.join(dirpath, fn)
+            h = hashlib.sha256(open(p, "rb").read()).hexdigest()
+            if h == want:
+                return p
+    return None
+
+def host_has_vulkan_device():
+    import ctypes
+    lib = None
+    for n in ("libvulkan.so.1", "libvulkan.so", "vulkan-1.dll"):
+        try:
+            lib = ctypes.CDLL(n)
+            break
+        except OSError:
+            continue
+    if not lib:
+        return False
+    VK_SUCCESS = 0
+    class App(ctypes.Structure):
+        _fields_ = [
+            ("sType", ctypes.c_uint32), ("pNext", ctypes.c_void_p),
+            ("pApplicationName", ctypes.c_char_p), ("applicationVersion", ctypes.c_uint32),
+            ("pEngineName", ctypes.c_char_p), ("engineVersion", ctypes.c_uint32),
+            ("apiVersion", ctypes.c_uint32),
+        ]
+    class InstCI(ctypes.Structure):
+        _fields_ = [
+            ("sType", ctypes.c_uint32), ("pNext", ctypes.c_void_p), ("flags", ctypes.c_uint32),
+            ("pApplicationInfo", ctypes.POINTER(App)),
+            ("enabledLayerCount", ctypes.c_uint32), ("ppEnabledLayerNames", ctypes.c_void_p),
+            ("enabledExtensionCount", ctypes.c_uint32), ("ppEnabledExtensionNames", ctypes.c_void_p),
+        ]
+    create = lib.vkCreateInstance
+    create.restype = ctypes.c_int32
+    create.argtypes = [ctypes.POINTER(InstCI), ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    enumd = lib.vkEnumeratePhysicalDevices
+    enumd.restype = ctypes.c_int32
+    destroy = lib.vkDestroyInstance
+    app = App(0, None, b"farmos-harness", 0, None, 0, (1 << 22) | (1 << 12))
+    ci = InstCI(1, None, 0, ctypes.pointer(app), 0, None, 0, None)
+    inst = ctypes.c_void_p()
+    if create(ctypes.byref(ci), None, ctypes.byref(inst)) != VK_SUCCESS or not inst.value:
+        return False
+    count = ctypes.c_uint32(0)
+    enumd.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32), ctypes.c_void_p]
+    rc = enumd(inst, ctypes.byref(count), None)
+    destroy.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    destroy(inst, None)
+    return rc == VK_SUCCESS and count.value > 0
 
 def parse_farmc_diags(err):
     got = []
@@ -254,6 +375,10 @@ if exp["kind"] == "compile_error":
     print(f"PASS {name}")
     sys.exit(0)
 
+if exp.get("requires_vulkan") and not host_has_vulkan_device():
+    print(f"SKIP {name}: requires_vulkan (no usable Vulkan device)")
+    sys.exit(0)
+
 p = run_build()
 if p.returncode != 0:
     fail(f"compile failed ({p.returncode})\n{decode(p.stderr)}")
@@ -275,7 +400,8 @@ def check_program(out, err, rc):
         fail(f"exit {rc} expected {exp['exit']}\nstdout: {out}\nstderr: {err}")
     if exp["kind"] == "run":
         want = exp["stdout"] or ""
-        if out != want:
+        alts = exp.get("stdout_alts") or []
+        if out != want and out not in alts:
             fail(f"stdout mismatch\nGOT:<<<{out}>>>\nWANT:<<<{want}>>>")
         if err:
             fail(f"unexpected stderr (run fixtures require empty stderr)\nGOT_STDERR:<<<{err}>>>")
@@ -315,20 +441,34 @@ def check_program(out, err, rc):
         if err:
             fail(f"unexpected stderr (run_png fixtures require empty stderr)\nGOT_STDERR:<<<{err}>>>")
         # M6 §5.2: # sha256: is the required gate; sibling golden.png is optional.
+        # M7: # png_tol: N compares decoded RGB8 bytes with max abs per-channel delta.
         if not exp["png"] or not exp["sha256"]:
             fail("run_png fixture missing # png: or # sha256:")
         png = os.path.join(run_cwd, exp["png"])
         if not os.path.isfile(png):
             fail(f"PNG file not found: {png}")
-        h = hashlib.sha256(open(png, "rb").read()).hexdigest()
-        if h != exp["sha256"]:
-            fail(f"PNG SHA-256 mismatch\nGOT:  {h}\nWANT: {exp['sha256']}")
-        golden = os.path.join(tests_dir, f"{name}.golden.png")
-        if os.path.isfile(golden):
-            got_b = open(png, "rb").read()
-            gold_b = open(golden, "rb").read()
-            if got_b != gold_b:
-                fail("PNG bytes differ from golden")
+        got_b = open(png, "rb").read()
+        h = hashlib.sha256(got_b).hexdigest()
+        tol = exp.get("png_tol")
+        if tol is None or tol == 0:
+            if h != exp["sha256"]:
+                fail(f"PNG SHA-256 mismatch\nGOT:  {h}\nWANT: {exp['sha256']}")
+            golden = os.path.join(tests_dir, f"{name}.golden.png")
+            if os.path.isfile(golden):
+                gold_b = open(golden, "rb").read()
+                if got_b != gold_b:
+                    fail("PNG bytes differ from golden")
+        else:
+            ref = find_png_by_sha(tests_dir, exp["sha256"])
+            if not ref:
+                fail(f"png_tol: no reference PNG with sha256 {exp['sha256']}")
+            gold_b = open(ref, "rb").read()
+            try:
+                delta = png_max_abs_delta(got_b, gold_b)
+            except ValueError as e:
+                fail(f"png_tol decode failed: {e}")
+            if delta > tol:
+                fail(f"PNG channel delta {delta} exceeds png_tol {tol}")
     else:
         fail(f"unknown kind '{exp['kind']}'")
 
@@ -338,6 +478,8 @@ for W in thread_cfgs:
         env.pop("FARMOS_THREADS", None)
     else:
         env["FARMOS_THREADS"] = str(W)
+    for k, v in (exp.get("envs") or []):
+        env[k] = v
     for _ in range(exp["repeat"]):
         r = subprocess.run([tmp], cwd=run_cwd, capture_output=True, env=env)
         check_program(decode(r.stdout), decode(r.stderr), r.returncode)

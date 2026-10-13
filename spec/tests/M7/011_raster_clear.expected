@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: 102c63db3b4bb94afc5c1a5f7b7675c9cd28eacb14e828f13c610c1712577ad7
+## M3-001 clear via render(); path-backend names imported but raster only
+# stdout:
+# end

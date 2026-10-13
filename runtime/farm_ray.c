@@ -922,6 +922,15 @@ static DWORD WINAPI tile_thread(void* arg) { run_tiles((TileJob*)arg); return 0;
 static void* tile_thread(void* arg) { run_tiles((TileJob*)arg); return NULL; }
 #endif
 
+#ifdef FARM_ENABLE_VULKAN
+int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera);
+#endif
+
+static int farm_env_is_1(const char* name) {
+  const char* e = getenv(name);
+  return e && e[0] == '1' && e[1] == '\0';
+}
+
 void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_PerspectiveCamera* camera) {
   if (self->disposed) farm_trap(105, "use after dispose");
   if (self->width <= 0 || self->height <= 0) farm_trap(107, "invalid renderer size");
@@ -934,6 +943,17 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
   farm_PerspectiveCamera_updateProjectionMatrix(camera);
 
   validate_meshes((farm_Object3D*)scene);
+
+#ifdef FARM_ENABLE_VULKAN
+  if (self->path_backend == 1) {
+    int gpu_ok = 0;
+    if (!farm_env_is_1("FARMOS_VULKAN_FORCE_FAIL"))
+      gpu_ok = farm_vk_render_path(self, scene, camera);
+    if (gpu_ok) return;
+    if (farm_env_is_1("FARMOS_PATH_GPU_STRICT"))
+      farm_trap(117, "vulkan path failed");
+  }
+#endif
 
   PathWorld world;
   memset(&world, 0, sizeof(world));

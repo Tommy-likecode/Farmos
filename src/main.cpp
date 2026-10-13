@@ -229,6 +229,24 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
   m.path = "farmos:scene";
   m.diag_path = "farmos:scene";
   m.is_main = false;
+
+  auto add_scene_const = [&](const char* name, int64_t v) {
+    ConstDecl c;
+    c.name = name;
+    c.exported = true;
+    c.has_type_ann = true;
+    c.type = Type::ty_int();
+    c.loc = SourceLoc{1, 1};
+    auto e = std::make_shared<Expr>();
+    e->kind = ExprKind::IntLit;
+    e->int_val = v;
+    e->type = Type::ty_int();
+    e->loc = SourceLoc{1, 1};
+    c.init = e;
+    m.consts.push_back(std::move(c));
+  };
+  add_scene_const("PATH_BACKEND_CPU", 0);
+  add_scene_const("PATH_BACKEND_VULKAN", 1);
   
   // No imports needed - will wire math types manually in bind_imports
   
@@ -1018,6 +1036,37 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       md.params.push_back(Param{"scene", Type::ty_class("Scene"), SourceLoc{1,1}});
       md.params.push_back(Param{"camera", Type::ty_class("PerspectiveCamera"), SourceLoc{1,1}});
       md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setPathBackend";
+      md.params.push_back(Param{"backend", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "getPathBackend";
+      md.ret = Type::ty_int();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "isVulkanPathAvailable";
+      md.ret = Type::ty_bool();
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
@@ -2668,7 +2717,8 @@ static int run_cmd(const std::string& cmd_utf8) {
 
 static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const fs::path& rt_h_dir,
                             const fs::path& out_exe, bool verbose, bool link_scene,
-                            bool link_parallel, bool link_ray, bool link_physics) {
+                            bool link_parallel, bool link_ray, bool link_physics,
+                            bool link_vulkan) {
   std::string cc = find_c_compiler();
   if (cc.empty()) {
     std::cerr << "farmc: no C compiler found (set FARM_CC)\n";
@@ -2689,16 +2739,18 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   fs::path rt_par_c = rt_h_dir / "farm_par.c";
   fs::path rt_ray_c = rt_h_dir / "farm_ray.c";
   fs::path rt_phys_c = rt_h_dir / "farm_physics.c";
+  fs::path rt_vk_c = rt_h_dir / "farm_vk.c";
   const char* fp_contract = (link_scene || link_physics) ? "-ffp-contract=off " : "";
   /* Ray-only: keep BVH walks out of strict-aliasing / Windows LTO surprises.
      Non-ray programs keep master's flags (hello C/link line unchanged). */
-  const char* ray_fp = link_ray ? "-fno-strict-aliasing " : "";
+  const char* ray_fp = (link_ray || link_vulkan) ? "-fno-strict-aliasing " : "";
 #if defined(_WIN32)
-  const char* lto = link_ray ? "" : "-flto ";
+  const char* lto = (link_ray || link_vulkan) ? "" : "-flto ";
 #else
   const char* lto = "-flto ";
 #endif
   const char* thr_def = link_parallel ? "-DFARM_ENABLE_THREADS " : "";
+  const char* vk_def = link_vulkan ? "-DFARM_ENABLE_VULKAN " : "";
 
   auto append_extra_rt = [&](std::ostringstream& o) {
     // Link farm_math.c / farm_scene.c only when a scene type is actually used.
@@ -2714,6 +2766,8 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
       o << "\"" << path_to_utf8(rt_phys_c) << "\" ";
     if (link_ray && fs::exists(rt_ray_c))
       o << "\"" << path_to_utf8(rt_ray_c) << "\" ";
+    if (link_vulkan && fs::exists(rt_vk_c))
+      o << "\"" << path_to_utf8(rt_vk_c) << "\" ";
     if (link_parallel && fs::exists(rt_par_c))
       o << "\"" << path_to_utf8(rt_par_c) << "\" ";
   };
@@ -2722,11 +2776,12 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
     o << "-Wl,--gc-sections -s -lm";
 #if !defined(_WIN32)
     if (link_parallel || link_ray) o << " -pthread";
+    if (link_vulkan) o << " -ldl";
 #endif
   };
 
   std::ostringstream cmd;
-  cmd << cc << " -std=c11 -Os " << lto << "-ffunction-sections -fdata-sections " << fp_contract << ray_fp << thr_def
+  cmd << cc << " -std=c11 -Os " << lto << "-ffunction-sections -fdata-sections " << fp_contract << ray_fp << thr_def << vk_def
       << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
       << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
   append_extra_rt(cmd);
@@ -2737,7 +2792,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   if (rc != 0) {
     // retry without LTO
     std::ostringstream cmd2;
-    cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections " << fp_contract << ray_fp << thr_def
+    cmd2 << cc << " -std=c11 -Os -ffunction-sections -fdata-sections " << fp_contract << ray_fp << thr_def << vk_def
          << "-I\"" << path_to_utf8(rt_h_dir) << "\" "
          << "\"" << path_to_utf8(c_file) << "\" \"" << path_to_utf8(rt_c) << "\" ";
     append_extra_rt(cmd2);
@@ -2880,7 +2935,8 @@ static int cmd_build(std::vector<std::string> args) {
   bool link_parallel = program_uses_parallel(loader.prog);
   bool link_ray = program_uses_ray(loader.prog);
   bool link_physics = program_uses_physics(loader.prog);
-  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray, link_physics);
+  bool link_vulkan = program_uses_vulkan(loader.prog);
+  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray, link_physics, link_vulkan);
   if (rc == 0) {
     std::error_code ec;
     fs::rename(link_out, out_req, ec);
@@ -2954,7 +3010,7 @@ static int farmc_main(int argc, char** argv) {
   std::string cmd = argv[1];
   std::vector<std::string> args;
   for (int i=2;i<argc;++i) args.push_back(argv[i]);
-  if (cmd=="version") { std::cout << "farmc 0.1.0-m1\n"; return 0; }
+  if (cmd=="version") { std::cout << "farmc 1.01\n"; return 0; }
   if (cmd=="help" || cmd=="-h" || cmd=="--help") {
     std::cout << "farmc build <file.fm> [-o out] [--emit-c [path]] [--keep-c] [-v]\n"
               << "farmc run <file.fm> [-- args...]\n"
