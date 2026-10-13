@@ -94,6 +94,7 @@ Scene graph: `Scene`, `Object3D`, `Mesh`, geometries, materials, lights, `Perspe
 
 - `renderer.render(scene, camera)` — M3 CPU rasterizer.
 - `renderer.renderPath(scene, camera)` — M4 CPU path tracer (BVH, glass / mirror / area lights). `setSamples` / `setMaxBounces` / `setSize` apply. `FARMOS_THREADS` unset means 1 worker for `renderPath`.
+- M7: `PATH_BACKEND_CPU` / `PATH_BACKEND_VULKAN`, `setPathBackend` / `getPathBackend` / `isVulkanPathAvailable`. Default CPU. GPU is Vulkan compute after explicit opt-in; `farm_vk.c` is linked only when that opt-in is reachable. `FARMOS_PATH_GPU_STRICT=1` traps 117 on GPU failure; invalid backend traps 118.
 
 `farm_ray.c` is linked only when `renderPath` is a reachable call.
 
@@ -115,7 +116,8 @@ Budgets (stripped Windows x64 PE unless noted) are in `spec/M6-hardening.md` §3
 |----|----------|--------|
 | B-01 | hello, no graphics / physics / path / `parallel` | ≤ 20 KiB |
 | B-02 | rotating cube | ≤ 96 KiB |
-| B-03 | glass + mirror | ≤ 300 KiB |
+| B-03 | glass + mirror (CPU, no Vulkan opt-in) | ≤ 300 KiB |
+| B-08 | GPU-linked path demo (Vulkan opt-in reachable) | ≤ 400 KiB |
 | B-04 | `S_demo − S_scene` | ≤ 64 KiB |
 | B-05 | Cornell 800×600 `renderPath` peak working set | ≤ 64 MiB |
 | B-06 | unused `farmos:math` import | ≤ 20 KiB |

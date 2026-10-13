@@ -8,6 +8,8 @@ bool program_uses_scene(Program& prog);
 bool program_uses_parallel(Program& prog);
 // True when a user module calls Renderer.renderPath (gates farm_ray.c).
 bool program_uses_ray(Program& prog);
+// True when a reachable user module opts into the Vulkan path backend (gates farm_vk.c).
+bool program_uses_vulkan(Program& prog);
 // True when a user module actually uses a farmos:physics type or BODY_* const.
 bool program_uses_physics(Program& prog);
 // True when a user module actually uses a farmos:math type (not merely imports a name).

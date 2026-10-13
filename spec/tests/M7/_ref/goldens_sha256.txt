@@ -1,0 +1,8 @@
+# CPU twins (from M4/_ref/goldens_sha256.txt) — authoritative for bit-identical CPU backend
+001_cpu_background.golden.png  e7655a2c9a205f90786991219a3b558e27b2314377a4f5d4a66891b5b25915dd
+006_cornell_cpu.golden.png  3f29eb72e3b47f6108fa455e315a4d6a97228f47fdf1e9dac030ea42a4b9608f
+007_glass_mirror_cpu.golden.png  edf8f93ee8ae044efb16768e9749da5674e6a8c3f91fe59a2da54ad53f39e842
+# 008 uses the Cornell CPU golden with png_tol; same hash as reference
+008_cornell_vulkan_tol.golden.png  3f29eb72e3b47f6108fa455e315a4d6a97228f47fdf1e9dac030ea42a4b9608f
+# 011 raster clear — M3 001_clear_color hash
+011_raster_clear.golden.png  102c63db3b4bb94afc5c1a5f7b7675c9cd28eacb14e828f13c610c1712577ad7

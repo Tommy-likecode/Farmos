@@ -1000,6 +1000,7 @@ farm_Renderer* farm_Renderer_new() {
   r->max_bounces = 4;
   r->width = 0;
   r->height = 0;
+  r->path_backend = 0;
   r->disposed = false;
   return r;
 }
@@ -1033,6 +1034,29 @@ void farm_Renderer_setSamples(farm_Renderer* self, int64_t n) {
 
 void farm_Renderer_setMaxBounces(farm_Renderer* self, int64_t n) {
   self->max_bounces = (int32_t)n;
+}
+
+void farm_Renderer_setPathBackend(farm_Renderer* self, int64_t backend) {
+  if (backend != 0 && backend != 1)
+    farm_trap(118, "invalid path backend");
+  self->path_backend = (int32_t)backend;
+}
+
+int64_t farm_Renderer_getPathBackend(farm_Renderer* self) {
+  return self->path_backend;
+}
+
+#ifdef FARM_ENABLE_VULKAN
+int farm_vk_probe(void);
+#endif
+
+int8_t farm_Renderer_isVulkanPathAvailable(farm_Renderer* self) {
+  (void)self;
+#ifdef FARM_ENABLE_VULKAN
+  return farm_vk_probe() ? (int8_t)1 : (int8_t)0;
+#else
+  return (int8_t)0;
+#endif
 }
 
 void farm_Renderer_resetAccumulation(farm_Renderer* self) {

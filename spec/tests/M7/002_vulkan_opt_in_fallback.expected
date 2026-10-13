@@ -1,0 +1,14 @@
+# kind: run
+# exit: 0
+## Backend stays 1 after renderPath even if CPU fallback ran.
+## Second line is 1 if probe succeeded this process, else 0.
+## Harness: accept either availability line; require first line "1".
+# stdout:
+1
+0
+# end
+# stdout_alt:
+1
+1
+# end
+## Second line is 0 without a device, 1 after a successful probe.

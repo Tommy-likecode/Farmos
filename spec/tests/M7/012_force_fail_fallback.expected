@@ -1,0 +1,7 @@
+# kind: run
+# exit: 0
+# env: FARMOS_VULKAN_FORCE_FAIL=1
+## Silent CPU fallback; backend remains PATH_BACKEND_VULKAN (1)
+# stdout:
+1
+# end

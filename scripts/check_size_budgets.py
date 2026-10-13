@@ -26,6 +26,9 @@ B03 = 307200
 B04 = 65536
 B05 = 67108864
 B06 = 20480
+B08 = 409600  # M7 GPU-linked demo (OQ-M7-04 A)
+
+VULKAN_MARKERS = (b"vulkan-1.dll", b"libvulkan.so.1", b"vkGetInstanceProcAddr")
 
 # Thread-start names from the Farmos threading runtime (M6 §4.1).
 # Do not scan for WaitForMultipleObjects: the CRT may mention it without farm_par.
@@ -72,6 +75,15 @@ def maybe_strip(path: str) -> None:
     if not strip:
         return
     subprocess.run([strip, "--strip-all", path], capture_output=True)
+
+
+def assert_no_vulkan_sym(label: str, log: str, blob: bytes) -> None:
+    for m in ("farm_vk.c", "FARM_ENABLE_VULKAN"):
+        if m in log:
+            fail(f"{label}: verbose link mentions {m}")
+    for m in VULKAN_MARKERS:
+        if m in blob:
+            fail(f"{label}: binary contains Vulkan loader symbol {m.decode('ascii')}")
 
 
 def assert_no_thread_start(label: str, log: str, blob: bytes) -> None:
@@ -217,6 +229,7 @@ def main() -> int:
     glass_src = os.path.join(root, "examples", "04_glass_mirror.fm")
     demo_src = os.path.join(root, "examples", "05_stacking_bounce.fm")
     cornell_src = os.path.join(root, "examples", "m4_cornell_800x600.fm")
+    gpu_src = os.path.join(root, "examples", "06_vulkan_cornell.fm")
 
     with tempfile.TemporaryDirectory(prefix="farmc_m6_size_") as td:
         unused_math = os.path.join(td, "unused_math.fm")
@@ -247,13 +260,15 @@ def main() -> int:
         demo = os.path.join(td, "demo")
         scene = os.path.join(td, "scene_hello")
 
+        gpu = os.path.join(td, "gpu")
         build(farmc, hello_src, hello)
         build(farmc, unused_math, unused)
         build(farmc, cube_src, cube)
         build(farmc, glass_src, glass)
         build(farmc, demo_src, demo)
         build(farmc, scene_hello, scene)
-        for p in (hello, unused, cube, glass, demo, scene):
+        build(farmc, gpu_src, gpu)
+        for p in (hello, unused, cube, glass, demo, scene, gpu):
             maybe_strip(p)
 
         hs = os.path.getsize(hello)
@@ -262,6 +277,7 @@ def main() -> int:
         gs = os.path.getsize(glass)
         ds = os.path.getsize(demo)
         ss = os.path.getsize(scene)
+        gps = os.path.getsize(gpu)
         delta = ds - ss
 
         with open(hello, "rb") as f:
@@ -274,6 +290,7 @@ def main() -> int:
         report("B-01", "hello (examples/01_hello.fm)", hs, B01, "B", enforce_pe)
         report("B-02", "cube (examples/02_rotating_cube.fm)", cs, B02, "B", enforce_pe)
         report("B-03", "glass+mirror (examples/04_glass_mirror.fm)", gs, B03, "B", enforce_pe)
+        report("B-08", "GPU-linked vulkan cornell (examples/06_vulkan_cornell.fm)", gps, B08, "B", enforce_pe)
         report("B-04", "S_demo - S_scene", delta, B04, "B", enforce_pe)
         print(f"      S_demo={ds} B  S_scene={ss} B")
         report("B-06", "unused farmos:math import", us, B06, "B", enforce_pe)
@@ -286,6 +303,7 @@ def main() -> int:
         ulog = verbose(farmc, unused_math, os.path.join(td, "unused_v"))
         slog = verbose(farmc, scene_hello, os.path.join(td, "scene_v"))
         clog = verbose(farmc, cube_src, os.path.join(td, "cube_v"))
+        glog = verbose(farmc, glass_src, os.path.join(td, "glass_v"))
         with open(os.path.join(td, "hello_v"), "rb") as f:
             hv = f.read()
         with open(unused, "rb") as f:
@@ -294,6 +312,8 @@ def main() -> int:
             sb = f.read()
         with open(cube, "rb") as f:
             cb = f.read()
+        with open(os.path.join(td, "glass_v"), "rb") as f:
+            gb = f.read()
 
         assert_no_thread_start("B-07 hello", hlog, hv)
         assert_no_thread_start("B-07 unused-math", ulog, ub)
@@ -301,12 +321,34 @@ def main() -> int:
         assert_no_thread_start("B-07 rotating-cube (render, not renderPath)", clog, cb)
         print("B-07  no thread-start imports on hello / unused-math / scene-only / cube  OK")
 
+        assert_no_vulkan_sym("M7 hello", hlog, hv)
+        assert_no_vulkan_sym("M7 unused-math", ulog, ub)
+        assert_no_vulkan_sym("M7 scene-only hello", slog, sb)
+        assert_no_vulkan_sym("M7 rotating-cube", clog, cb)
+        assert_no_vulkan_sym("M7 glass+mirror CPU", glog, gb)
+        print("M7   no Vulkan loader symbols on hello / unused-math / scene / cube / CPU glass  OK")
+
+        ver = subprocess.run([farmc, "version"], capture_output=True)
+        vout = ver.stdout.decode("utf-8", errors="replace")
+        if "1.01" not in vout:
+            fail(f"farmc version does not contain 1.01: {vout!r}")
+        clog = os.path.join(root, "CHANGELOG.md")
+        if not os.path.isfile(clog):
+            fail("missing CHANGELOG.md")
+        with open(clog, encoding="utf-8") as f:
+            cltxt = f.read()
+        if "v1.01" not in cltxt and "1.01" not in cltxt:
+            fail("CHANGELOG.md has no v1.01 entry")
+        print(f"M7   farmc version: {vout.strip()}  OK")
+
         if "farm_par" in hlog or "FARM_ENABLE_THREADS" in hlog:
             fail("hello pulled parallel runtime")
-        if "farm_math.c" in hlog or "farm_scene.c" in hlog or "farm_ray.c" in hlog or "farm_physics.c" in hlog:
+        if "farm_math.c" in hlog or "farm_scene.c" in hlog or "farm_ray.c" in hlog or "farm_physics.c" in hlog or "farm_vk.c" in hlog:
             fail("hello linked a stdlib unit beyond farm_rt.c")
         if "farm_math.c" in ulog:
             fail("unused math import linked farm_math.c")
+        if "farm_vk.c" in glog:
+            fail("CPU glass+mirror linked farm_vk.c")
         print("DCE  hello / unused-math link only farm_rt.c  OK")
 
         if args.peak_ram:

@@ -1,0 +1,7 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: 3f29eb72e3b47f6108fa455e315a4d6a97228f47fdf1e9dac030ea42a4b9608f
+## Cornell CPU — M4-008 twin (32x32, 4 samples, 2 bounces)
+# stdout:
+# end

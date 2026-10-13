@@ -9,5 +9,6 @@ Normative names (`spec/M6-hardening.md` §9). Each MUST build with `farmc` and s
 | `03_cornell_path.fm` | M4 Cornell `renderPath` | (hero / docs) |
 | `04_glass_mirror.fm` | M4 glass + mirror | ≤ 300 KiB |
 | `05_stacking_bounce.fm` | M5 stack + bounce | S_demo − S_scene ≤ 64 KiB |
+| `06_vulkan_cornell.fm` | M7 Cornell with Vulkan opt-in | ≤ 400 KiB GPU-linked |
 
-Bodies are production demos derived from `spec/tests/M3|M4|M5` fixtures. Smoke: `scripts/run_examples.ps1` / `scripts/run_examples.sh`. `examples/m4_cornell_800x600.fm` is the B-05 peak-RAM driver (not part of the 01..05 smoke set).
+Bodies are production demos derived from `spec/tests/M3|M4|M5|M7` fixtures. Smoke: `scripts/run_examples.ps1` / `scripts/run_examples.sh` (01..05). `examples/m4_cornell_800x600.fm` is the B-05 peak-RAM driver (not part of the 01..05 smoke set). `06_vulkan_cornell.fm` is the M7 GPU-linked size sample; it falls back to CPU when no device is present.

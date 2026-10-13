@@ -282,6 +282,7 @@ struct farm_Renderer {
   int32_t max_bounces;
   int32_t width;
   int32_t height;
+  int32_t path_backend;  // 0=CPU, 1=Vulkan (M7)
   bool disposed;
 };
 
@@ -411,6 +412,9 @@ void farm_Renderer_setSamples(farm_Renderer* self, int64_t n);
 void farm_Renderer_setMaxBounces(farm_Renderer* self, int64_t n);
 void farm_Renderer_resetAccumulation(farm_Renderer* self);
 void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_PerspectiveCamera* camera);
+void farm_Renderer_setPathBackend(farm_Renderer* self, int64_t backend);
+int64_t farm_Renderer_getPathBackend(farm_Renderer* self);
+int8_t farm_Renderer_isVulkanPathAvailable(farm_Renderer* self);
 void farm_Renderer_savePNG(farm_Renderer* self, FarmString path);
 void farm_Renderer_dispose(farm_Renderer* self);
 
