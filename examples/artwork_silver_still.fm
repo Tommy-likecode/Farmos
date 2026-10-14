@@ -5,7 +5,7 @@ import { Color, random01 } from "farmos:math";
 
 function main(): int {
   const scene: Scene = new Scene();
-  scene.setBackground(new Color(0.42, 0.45, 0.50));
+  scene.setBackground(new Color(0.82, 0.84, 0.88));
 
   const camera: PerspectiveCamera = new PerspectiveCamera(34, 1920.0 / 1080.0, 0.1, 100);
   camera.position.set(4.55, 2.25, 5.35);
@@ -21,13 +21,25 @@ function main(): int {
   floor.quaternion.w = 0.7071067811865476;
   scene.add(floor);
 
-  const wallMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.62, 0.66, 0.72));
+  const wallMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.90, 0.91, 0.93));
   wallMat.setRoughness(1);
   const wall: Mesh = new Mesh(new PlaneGeometry(16, 8), wallMat);
   wall.position.set(0, 3.2, -4.2);
   scene.add(wall);
 
-  const silverMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.92, 0.93, 0.95));
+  // Light ceiling so the chrome sphere reflects a bright plane instead of a dark void.
+  const ceilMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.96, 0.96, 0.97));
+  ceilMat.setRoughness(1);
+  ceilMat.setMetalness(0);
+  const ceiling: Mesh = new Mesh(new PlaneGeometry(16, 16), ceilMat);
+  ceiling.position.set(0, 6.2, 0);
+  ceiling.quaternion.x = 0.7071067811865476;
+  ceiling.quaternion.y = 0;
+  ceiling.quaternion.z = 0;
+  ceiling.quaternion.w = 0.7071067811865476;
+  scene.add(ceiling);
+
+  const silverMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.96, 0.97, 0.98));
   silverMat.setMetalness(1);
   silverMat.setRoughness(0.04);
   const silver: Mesh = new Mesh(new SphereGeometry(0.52, 32, 16), silverMat);
@@ -61,13 +73,13 @@ function main(): int {
   ball.position.set(ballX, 0.40, ballZ);
   scene.add(ball);
 
-  // Large overhead softbox: radiance (not power), so intensity is lower than the
-  // old 2.8×1.6 key. No DirectionalLight — that was the hard-edged shadow source.
-  const key: RectAreaLight = new RectAreaLight(0xffffff, 6.5, 8.0, 6.5);
-  key.position.set(0.15, 5.8, 0.4);
+  // Large overhead softbox: radiance (not power). Brighter and slightly larger
+  // than v2 so the metal sees a visible key in the reflection. No DirectionalLight.
+  const key: RectAreaLight = new RectAreaLight(0xffffff, 11.0, 9.0, 7.0);
+  key.position.set(0.15, 5.5, 0.4);
   key.lookAt(0, 0.2, 0);
   scene.add(key);
-  const fill: RectAreaLight = new RectAreaLight(0xffe6cc, 3.2, 3.5, 2.6);
+  const fill: RectAreaLight = new RectAreaLight(0xffe6cc, 5.5, 4.5, 3.5);
   fill.position.set(-2.8, 3.1, 2.0);
   fill.lookAt(0, 0.5, 0);
   scene.add(fill);
