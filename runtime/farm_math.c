@@ -1,7 +1,16 @@
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "farm_math.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <time.h>
+#include <unistd.h>
+#endif
 
 // Matrix3 identity
 farm_Matrix3 farm_Matrix3_identity() {
@@ -394,4 +403,41 @@ int32_t farm_Color_getHex(farm_Color c) {
   if (g < 0) g = 0; if (g > 255) g = 255;
   if (b < 0) b = 0; if (b > 255) b = 255;
   return (r << 16) | (g << 8) | b;
+}
+
+static uint64_t farm_entropy64(void) {
+#if defined(_WIN32)
+  LARGE_INTEGER c;
+  QueryPerformanceCounter(&c);
+  uint64_t e = (uint64_t)c.QuadPart;
+  e ^= ((uint64_t)GetCurrentProcessId()) << 32;
+  e ^= (uint64_t)(uintptr_t)&c;
+  return e;
+#else
+  struct timespec ts;
+#if defined(CLOCK_MONOTONIC)
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+#endif
+    clock_gettime(CLOCK_REALTIME, &ts);
+  uint64_t e = ((uint64_t)(uint32_t)ts.tv_sec << 32) ^ (uint64_t)ts.tv_nsec;
+  e ^= ((uint64_t)getpid()) << 16;
+  e ^= (uint64_t)(uintptr_t)&e;
+  return e;
+#endif
+}
+
+double farm_random01(void) {
+  static uint64_t s = 0;
+  static int inited = 0;
+  if (!inited) {
+    s = farm_entropy64();
+    if (s == 0) s = 0x9E3779B97F4A7C15ULL;
+    inited = 1;
+  }
+  s ^= farm_entropy64();
+  s ^= s >> 12;
+  s ^= s << 25;
+  s ^= s >> 27;
+  uint64_t r = s * 0x2545F4914F6CDD1DULL;
+  return (double)(r >> 11) * (1.0 / 9007199254740992.0);
 }

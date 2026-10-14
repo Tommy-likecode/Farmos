@@ -2766,7 +2766,7 @@ static int run_cmd(const std::string& cmd_utf8) {
 static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const fs::path& rt_h_dir,
                             const fs::path& out_exe, bool verbose, bool link_scene,
                             bool link_parallel, bool link_ray, bool link_physics,
-                            bool link_vulkan) {
+                            bool link_vulkan, bool link_math) {
   std::string cc = find_c_compiler();
   if (cc.empty()) {
     std::cerr << "farmc: no C compiler found (set FARM_CC)\n";
@@ -2804,7 +2804,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
     // Link farm_math.c / farm_scene.c only when a scene type is actually used.
     // Physics is a separate unit; it pulls farm_math.c for Euler/Quat sync helpers
     // when used, without pulling farm_scene.c unless the program also uses scene.
-    if (link_scene || link_physics) {
+    if (link_scene || link_physics || link_math) {
       if (fs::exists(rt_math_c)) o << "\"" << path_to_utf8(rt_math_c) << "\" ";
     }
     if (link_scene) {
@@ -2984,7 +2984,8 @@ static int cmd_build(std::vector<std::string> args) {
   bool link_ray = program_uses_ray(loader.prog);
   bool link_physics = program_uses_physics(loader.prog);
   bool link_vulkan = program_uses_vulkan(loader.prog);
-  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray, link_physics, link_vulkan);
+  bool link_math = program_uses_random01(loader.prog);
+  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray, link_physics, link_vulkan, link_math);
   if (rc == 0) {
     std::error_code ec;
     fs::rename(link_out, out_req, ec);

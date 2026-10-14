@@ -60,9 +60,6 @@ int64_t farm_dyn_len(FarmDynArray *a);
 void farm_bounds_check(int64_t i, int64_t len);
 void farm_div0_check(int64_t denom);
 
-/* Entropy-backed uniform float in [0, 1). Unused programs DCE this via --gc-sections. */
-double farm_random01(void);
-
 #ifdef FARM_ENABLE_THREADS
 #include <setjmp.h>
 void farm_rt_task_enter(void (*w)(const char *, size_t, void *), void *ctx,
