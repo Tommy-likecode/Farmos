@@ -7,6 +7,8 @@
 #include <string.h>
 #if defined(_WIN32)
 #include <windows.h>
+#undef near
+#undef far
 #else
 #include <time.h>
 #include <unistd.h>
