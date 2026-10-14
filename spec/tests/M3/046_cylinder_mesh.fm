@@ -1,0 +1,15 @@
+import { Scene, PerspectiveCamera, Mesh, CylinderGeometry, MeshBasicMaterial, Renderer } from "farmos:scene";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  const mesh: Mesh = new Mesh(new CylinderGeometry(0.4, 1.2, 12), new MeshBasicMaterial(0x3388cc));
+  mesh.position.set(0.25, 0.6, -0.1);
+  scene.add(mesh);
+  const camera: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);
+  camera.position.set(0, 0.6, 3);
+  camera.lookAt(0, 0.6, 0);
+  const renderer: Renderer = new Renderer(8, 8);
+  renderer.render(scene, camera);
+  println(scene.childCount());
+  return 0;
+}

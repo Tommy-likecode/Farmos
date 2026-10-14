@@ -251,7 +251,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
   // No imports needed - will wire math types manually in bind_imports
   
   // For M3, we define classes (reference types)
-  // Object3D, Scene, PerspectiveCamera, Mesh, BoxGeometry, SphereGeometry, PlaneGeometry,
+  // Object3D, Scene, PerspectiveCamera, Mesh, BoxGeometry, SphereGeometry, PlaneGeometry, CylinderGeometry,
   // MeshBasicMaterial, MeshStandardMaterial, AmbientLight, DirectionalLight, PointLight, Renderer
   
   // Object3D class
@@ -631,6 +631,40 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       md.name = cd.name;
       md.params.push_back(Param{"width", Type::ty_float(), SourceLoc{1,1}});
       md.params.push_back(Param{"height", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      md.is_ctor = true;
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "dispose";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    m.classes.push_back(std::move(cd));
+  }
+
+  // CylinderGeometry
+  {
+    ClassDecl cd;
+    cd.name = "CylinderGeometry";
+    cd.c_sym = "farm_CylinderGeometry";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    {
+      MethodDecl md;
+      md.name = cd.name;
+      md.params.push_back(Param{"radius", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"height", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"radialSegments", Type::ty_int(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
       md.is_ctor = true;
@@ -2072,6 +2106,19 @@ static Module create_farmos_math_module() {
     rh.fields.push_back(FieldDecl{"distance", Type::ty_float(), SourceLoc{1, 1}});
     m.structs.push_back(std::move(rh));
   }
+
+  {
+    FunctionDecl f;
+    f.name = "random01";
+    f.exported = true;
+    f.c_sym = "farm_random01";
+    f.ret = Type::ty_float();
+    f.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    f.body = std::move(block);
+    m.functions.push_back(std::move(f));
+  }
   
   return m;
 }
@@ -2356,7 +2403,8 @@ struct Loader {
       }
       for (auto& f : mod.functions) {
         f.module_id = mod.id;
-        f.c_sym = "fn_" + mod.prefix + "_" + f.name;
+        if (f.c_sym.empty())
+          f.c_sym = "fn_" + mod.prefix + "_" + f.name;
         put_unique(mod.vis_functions, f.name, &f, f.loc);
       }
       for (auto& c : mod.consts) {
@@ -2718,7 +2766,7 @@ static int run_cmd(const std::string& cmd_utf8) {
 static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const fs::path& rt_h_dir,
                             const fs::path& out_exe, bool verbose, bool link_scene,
                             bool link_parallel, bool link_ray, bool link_physics,
-                            bool link_vulkan) {
+                            bool link_vulkan, bool link_math) {
   std::string cc = find_c_compiler();
   if (cc.empty()) {
     std::cerr << "farmc: no C compiler found (set FARM_CC)\n";
@@ -2756,7 +2804,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
     // Link farm_math.c / farm_scene.c only when a scene type is actually used.
     // Physics is a separate unit; it pulls farm_math.c for Euler/Quat sync helpers
     // when used, without pulling farm_scene.c unless the program also uses scene.
-    if (link_scene || link_physics) {
+    if (link_scene || link_physics || link_math) {
       if (fs::exists(rt_math_c)) o << "\"" << path_to_utf8(rt_math_c) << "\" ";
     }
     if (link_scene) {
@@ -2936,7 +2984,8 @@ static int cmd_build(std::vector<std::string> args) {
   bool link_ray = program_uses_ray(loader.prog);
   bool link_physics = program_uses_physics(loader.prog);
   bool link_vulkan = program_uses_vulkan(loader.prog);
-  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray, link_physics, link_vulkan);
+  bool link_math = program_uses_random01(loader.prog);
+  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray, link_physics, link_vulkan, link_math);
   if (rc == 0) {
     std::error_code ec;
     fs::rename(link_out, out_req, ec);

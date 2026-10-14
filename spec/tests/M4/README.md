@@ -53,7 +53,7 @@ Header order: `# kind:`, `# exit:`, then `# threads:` if present, then
 
 ## Counts
 
-23 fixtures: 16 `run_png`, 1 `run`, 6 `runtime_trap`. No `compile_error`
+24 fixtures: 16 `run_png`, 2 `run`, 6 `runtime_trap`. No `compile_error`
 (M4 adds no new diagnostic code). Image fixtures are at most 32×32 and at
 most 4 samples so ctest stays small. 800×600 is an eggtooth memory check,
 not a golden.

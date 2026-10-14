@@ -383,6 +383,7 @@ static void build_box_geometry(farm_GeometryData* data, double width, double hei
   
   memcpy(data->indices, indices, 36 * sizeof(int32_t));
   data->disposed = false;
+  data->kind = FARM_GEOM_BOX;
 }
 
 static void build_plane_geometry(farm_GeometryData* data, double width, double height) {
@@ -421,6 +422,7 @@ static void build_plane_geometry(farm_GeometryData* data, double width, double h
   int32_t indices[] = {0, 1, 2, 0, 2, 3};
   memcpy(data->indices, indices, 6 * sizeof(int32_t));
   data->disposed = false;
+  data->kind = FARM_GEOM_PLANE;
 }
 
 /* CPython/glibc sin(k*π/4), cos(k*π/4) for k=0..8. Path-ref spheres are 8×4, so
@@ -532,6 +534,7 @@ static void build_sphere_geometry(farm_GeometryData* data, double radius, int32_
   }
   
   data->disposed = false;
+  data->kind = FARM_GEOM_SPHERE;
 }
 
 // BoxGeometry
@@ -585,6 +588,141 @@ farm_PlaneGeometry* farm_PlaneGeometry_new_wh(double width, double height) {
 }
 
 void farm_PlaneGeometry_dispose(farm_PlaneGeometry* self) {
+  self->data.disposed = true;
+}
+
+/* Y-up closed cylinder, equal radii, Three.js-style rings + caps. */
+static void build_cylinder_geometry(farm_GeometryData* data, double radius, double height, int32_t radialSeg) {
+  int32_t rs = radialSeg < 3 ? 3 : radialSeg;
+  double half = height / 2.0;
+
+  int32_t side_vc = 2 * (rs + 1);
+  int32_t cap_vc = rs + 2;
+  int32_t vc = side_vc + cap_vc * 2;
+  data->vertex_count = vc;
+  data->positions = (double*)farm_arena_alloc((size_t)vc * 3 * sizeof(double));
+  data->normals = (double*)farm_arena_alloc((size_t)vc * 3 * sizeof(double));
+  data->uvs = (double*)farm_arena_alloc((size_t)vc * 2 * sizeof(double));
+
+  int32_t vi = 0;
+  for (int32_t iy = 0; iy < 2; iy++) {
+    double y = iy == 0 ? -half : half;
+    double v = (double)iy;
+    for (int32_t ix = 0; ix <= rs; ix++) {
+      double u = (double)ix / (double)rs;
+      double sp, cp;
+      farm_sincos_pi(2.0 * u, &sp, &cp);
+      data->positions[vi * 3 + 0] = radius * sp;
+      data->positions[vi * 3 + 1] = y;
+      data->positions[vi * 3 + 2] = radius * cp;
+      data->normals[vi * 3 + 0] = sp;
+      data->normals[vi * 3 + 1] = 0.0;
+      data->normals[vi * 3 + 2] = cp;
+      data->uvs[vi * 2 + 0] = u;
+      data->uvs[vi * 2 + 1] = v;
+      vi++;
+    }
+  }
+
+  int32_t top_center = vi;
+  data->positions[vi * 3 + 0] = 0.0;
+  data->positions[vi * 3 + 1] = half;
+  data->positions[vi * 3 + 2] = 0.0;
+  data->normals[vi * 3 + 0] = 0.0;
+  data->normals[vi * 3 + 1] = 1.0;
+  data->normals[vi * 3 + 2] = 0.0;
+  data->uvs[vi * 2 + 0] = 0.5;
+  data->uvs[vi * 2 + 1] = 0.5;
+  vi++;
+  for (int32_t ix = 0; ix <= rs; ix++) {
+    double u = (double)ix / (double)rs;
+    double sp, cp;
+    farm_sincos_pi(2.0 * u, &sp, &cp);
+    data->positions[vi * 3 + 0] = radius * sp;
+    data->positions[vi * 3 + 1] = half;
+    data->positions[vi * 3 + 2] = radius * cp;
+    data->normals[vi * 3 + 0] = 0.0;
+    data->normals[vi * 3 + 1] = 1.0;
+    data->normals[vi * 3 + 2] = 0.0;
+    data->uvs[vi * 2 + 0] = 0.5 + 0.5 * sp;
+    data->uvs[vi * 2 + 1] = 0.5 + 0.5 * cp;
+    vi++;
+  }
+
+  int32_t bot_center = vi;
+  data->positions[vi * 3 + 0] = 0.0;
+  data->positions[vi * 3 + 1] = -half;
+  data->positions[vi * 3 + 2] = 0.0;
+  data->normals[vi * 3 + 0] = 0.0;
+  data->normals[vi * 3 + 1] = -1.0;
+  data->normals[vi * 3 + 2] = 0.0;
+  data->uvs[vi * 2 + 0] = 0.5;
+  data->uvs[vi * 2 + 1] = 0.5;
+  vi++;
+  for (int32_t ix = 0; ix <= rs; ix++) {
+    double u = (double)ix / (double)rs;
+    double sp, cp;
+    farm_sincos_pi(2.0 * u, &sp, &cp);
+    data->positions[vi * 3 + 0] = radius * sp;
+    data->positions[vi * 3 + 1] = -half;
+    data->positions[vi * 3 + 2] = radius * cp;
+    data->normals[vi * 3 + 0] = 0.0;
+    data->normals[vi * 3 + 1] = -1.0;
+    data->normals[vi * 3 + 2] = 0.0;
+    data->uvs[vi * 2 + 0] = 0.5 + 0.5 * sp;
+    data->uvs[vi * 2 + 1] = 0.5 - 0.5 * cp;
+    vi++;
+  }
+
+  data->index_count = rs * 12;
+  data->indices = (int32_t*)farm_arena_alloc((size_t)data->index_count * sizeof(int32_t));
+  int32_t idx = 0;
+  int32_t stride = rs + 1;
+  for (int32_t ix = 0; ix < rs; ix++) {
+    int32_t bot = ix;
+    int32_t botN = ix + 1;
+    int32_t top = stride + ix;
+    int32_t topN = stride + ix + 1;
+    data->indices[idx++] = bot;
+    data->indices[idx++] = botN;
+    data->indices[idx++] = topN;
+    data->indices[idx++] = bot;
+    data->indices[idx++] = topN;
+    data->indices[idx++] = top;
+  }
+  for (int32_t ix = 0; ix < rs; ix++) {
+    data->indices[idx++] = top_center;
+    data->indices[idx++] = top_center + 1 + ix;
+    data->indices[idx++] = top_center + 2 + ix;
+  }
+  for (int32_t ix = 0; ix < rs; ix++) {
+    data->indices[idx++] = bot_center;
+    data->indices[idx++] = bot_center + 2 + ix;
+    data->indices[idx++] = bot_center + 1 + ix;
+  }
+
+  data->disposed = false;
+  data->kind = FARM_GEOM_CYLINDER;
+}
+
+farm_CylinderGeometry* farm_CylinderGeometry_new() {
+  return farm_CylinderGeometry_new_full(1, 1, 32);
+}
+
+farm_CylinderGeometry* farm_CylinderGeometry_new_rh(double radius, double height) {
+  return farm_CylinderGeometry_new_full(radius, height, 32);
+}
+
+farm_CylinderGeometry* farm_CylinderGeometry_new_full(double radius, double height, int64_t radialSegments) {
+  farm_CylinderGeometry* geom = (farm_CylinderGeometry*)farm_arena_alloc(sizeof(farm_CylinderGeometry));
+  geom->radius = radius;
+  geom->height = height;
+  geom->radialSegments = (int32_t)radialSegments;
+  build_cylinder_geometry(&geom->data, radius, height, (int32_t)radialSegments);
+  return geom;
+}
+
+void farm_CylinderGeometry_dispose(farm_CylinderGeometry* self) {
   self->data.disposed = true;
 }
 
@@ -712,6 +850,16 @@ farm_Mesh* farm_Mesh_new_plane(farm_PlaneGeometry* geometry, void* material, uin
   return mesh;
 }
 
+farm_Mesh* farm_Mesh_new_cylinder(farm_CylinderGeometry* geometry, void* material, uint8_t mat_type) {
+  farm_Mesh* mesh = (farm_Mesh*)farm_arena_alloc(sizeof(farm_Mesh));
+  init_Object3D_fields((farm_Object3D*)mesh, FARM_OBJECT3D_TYPE_MESH);
+  mesh->f_geometry = geometry;
+  mesh->f_material = material;
+  mesh->geometry_type = 3;
+  mesh->material_type = mat_type;
+  return mesh;
+}
+
 // Generic Mesh constructor - determines types at runtime
 // This requires us to identify geometry/material types, which we'll do via pointer ranges
 // For simplicity in M3, we'll use a type-tagging approach
@@ -721,22 +869,8 @@ farm_Mesh* farm_Mesh_new(void* geometry, void* material) {
   mesh->f_geometry = geometry;
   mesh->f_material = material;
   
-  // Type detection: check the first few bytes of the structure
-  // BoxGeometry, SphereGeometry, PlaneGeometry all start with farm_GeometryData
-  // We'll use a simple heuristic: check if disposed field pattern
-  farm_BoxGeometry* box_test = (farm_BoxGeometry*)geometry;
-  farm_SphereGeometry* sphere_test = (farm_SphereGeometry*)geometry;
-  farm_PlaneGeometry* plane_test = (farm_PlaneGeometry*)geometry;
-  
-  // Check vertex counts to distinguish geometry types
-  // Box: 24 vertices, Sphere: varies, Plane: 4 vertices
-  if (box_test->data.vertex_count == 24) {
-    mesh->geometry_type = 0; // Box
-  } else if (plane_test->data.vertex_count == 4) {
-    mesh->geometry_type = 2; // Plane
-  } else {
-    mesh->geometry_type = 1; // Sphere (or other)
-  }
+  /* Geometries start with farm_GeometryData; kind is set by the builder. */
+  mesh->geometry_type = ((farm_GeometryData*)geometry)->kind;
   
   // Material type detection: Basic (0) vs Standard (1)
   // Check the material_type field that all materials now have
@@ -1265,16 +1399,8 @@ static void rasterize_mesh(
 ) {
   if (!mesh->f_visible) return;
   
-  // Check disposed
-  farm_GeometryData* geom_data = NULL;
-  if (mesh->geometry_type == 0) {
-    geom_data = &((farm_BoxGeometry*)mesh->f_geometry)->data;
-  } else if (mesh->geometry_type == 1) {
-    geom_data = &((farm_SphereGeometry*)mesh->f_geometry)->data;
-  } else if (mesh->geometry_type == 2) {
-    geom_data = &((farm_PlaneGeometry*)mesh->f_geometry)->data;
-  }
-  
+  farm_GeometryData* geom_data = farm_mesh_geometry_data(mesh);
+
   if (geom_data->disposed) {
     farm_trap(105, "use after dispose");
   }

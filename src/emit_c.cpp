@@ -13,7 +13,8 @@ static bool is_scene_class_sym(const std::string& n) {
   return n == "farm_Scene" || n == "farm_Object3D" ||
          n == "farm_PerspectiveCamera" || n == "farm_Mesh" ||
          n == "farm_BoxGeometry" || n == "farm_SphereGeometry" ||
-         n == "farm_PlaneGeometry" || n == "farm_MeshBasicMaterial" ||
+         n == "farm_PlaneGeometry" || n == "farm_CylinderGeometry" ||
+         n == "farm_MeshBasicMaterial" ||
          n == "farm_MeshStandardMaterial" || n == "farm_AmbientLight" ||
          n == "farm_DirectionalLight" || n == "farm_PointLight" ||
          n == "farm_RectAreaLight" || n == "farm_Texture" ||
@@ -278,6 +279,44 @@ static bool stmt_uses_math(StmtPtr s) {
 
 // True when a user module actually names a farmos:math type (not merely imports it).
 // Unused `import { Vector3 } from "farmos:math"` must DCE to hello (B-06 / M2 AC).
+static bool expr_uses_random01(ExprPtr e) {
+  if (!e) return false;
+  if (e->kind == ExprKind::Call && e->lhs && e->lhs->kind == ExprKind::Ident &&
+      (e->lhs->name == "random01" || e->mangled == "farm_random01"))
+    return true;
+  if (e->kind == ExprKind::Ident && (e->name == "random01" || e->mangled == "farm_random01"))
+    return true;
+  if (expr_uses_random01(e->lhs) || expr_uses_random01(e->rhs)) return true;
+  for (auto& a : e->args) if (expr_uses_random01(a)) return true;
+  for (auto& fv : e->fields) if (expr_uses_random01(fv.second)) return true;
+  return false;
+}
+
+static bool stmt_uses_random01(StmtPtr s) {
+  if (!s) return false;
+  if (expr_uses_random01(s->init) || expr_uses_random01(s->cond) || expr_uses_random01(s->lhs) ||
+      expr_uses_random01(s->rhs) || expr_uses_random01(s->for_cond) || expr_uses_random01(s->ret))
+    return true;
+  if (stmt_uses_random01(s->then_b) || stmt_uses_random01(s->else_b) ||
+      stmt_uses_random01(s->for_init) || stmt_uses_random01(s->for_update))
+    return true;
+  for (auto& x : s->stmts) if (stmt_uses_random01(x)) return true;
+  return false;
+}
+
+bool program_uses_random01(Program& prog) {
+  for (auto& m : prog.modules) {
+    if (is_stdlib_mod(m.path)) continue;
+    for (auto& f : m.functions) if (stmt_uses_random01(f.body)) return true;
+    for (auto& c : m.classes)
+      for (auto& md : c.methods) if (stmt_uses_random01(md.body)) return true;
+    for (auto& s : m.structs)
+      for (auto& md : s.methods) if (stmt_uses_random01(md.body)) return true;
+    for (auto& op : m.operators) if (stmt_uses_random01(op.body)) return true;
+  }
+  return false;
+}
+
 bool program_uses_math(Program& prog) {
   for (auto& m : prog.modules) {
     if (is_stdlib_mod(m.path)) continue;
@@ -1372,6 +1411,7 @@ struct Emitter {
     uses_physics = program_uses_physics(prog);
     uses_parallel = program_uses_parallel(prog);
     user_uses_math = program_uses_math(prog);
+    bool uses_random01 = program_uses_random01(prog);
     auto skip_math_structs = [&](const Module& m) {
       return m.path == "farmos:math" && (rt_math() || !user_uses_math);
     };
@@ -1389,6 +1429,8 @@ struct Emitter {
       out << "#include \"farm_scene.h\"\n";
     } else if (uses_physics) {
       out << "#include \"farm_math.h\"\n";
+    } else if (uses_random01) {
+      out << "double farm_random01(void);\n";
     }
     if (uses_physics) {
       out << "#include \"farm_physics.h\"\n";
@@ -1440,9 +1482,13 @@ struct Emitter {
     }
     out << "/* End M2 forward declarations */\n";
     
+    auto is_runtime_math_fn = [&](const Module& m, const FunctionDecl& f) {
+      return m.path == "farmos:math" && f.body && f.body->kind == StmtKind::Block && f.body->stmts.empty();
+    };
     for (auto& m : prog.modules) {
       if (skip_math_code(m)) continue;
       for (auto& f : m.functions) {
+        if (is_runtime_math_fn(m, f)) continue;
         out << c_type(f.ret) << " " << f.c_sym << "(";
         for (size_t i=0;i<f.params.size();++i) {
           if (i) out << ", ";
@@ -1513,6 +1559,7 @@ struct Emitter {
     for (auto& m : prog.modules) {
       if (skip_math_code(m)) continue;
       for (auto& f : m.functions) {
+        if (is_runtime_math_fn(m, f)) continue;
         out << c_type(f.ret) << " " << f.c_sym << "(";
         for (size_t i=0;i<f.params.size();++i) {
           if (i) out << ", ";

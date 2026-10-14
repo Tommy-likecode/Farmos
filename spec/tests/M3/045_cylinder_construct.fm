@@ -1,0 +1,13 @@
+import { CylinderGeometry } from "farmos:scene";
+
+function main(): int {
+  const a: CylinderGeometry = new CylinderGeometry();
+  const b: CylinderGeometry = new CylinderGeometry(0.5, 2);
+  const c: CylinderGeometry = new CylinderGeometry(1, 1, 8);
+  println(1);
+  a.dispose();
+  b.dispose();
+  c.dispose();
+  println(2);
+  return 0;
+}

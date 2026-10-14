@@ -143,7 +143,8 @@ static bool is_scene_sym(const std::string& n) {
   return n == "farm_Scene" || n == "farm_Object3D" ||
          n == "farm_PerspectiveCamera" || n == "farm_Mesh" ||
          n == "farm_BoxGeometry" || n == "farm_SphereGeometry" ||
-         n == "farm_PlaneGeometry" || n == "farm_MeshBasicMaterial" ||
+         n == "farm_PlaneGeometry" || n == "farm_CylinderGeometry" ||
+         n == "farm_MeshBasicMaterial" ||
          n == "farm_MeshStandardMaterial" || n == "farm_AmbientLight" ||
          n == "farm_DirectionalLight" || n == "farm_PointLight" ||
          n == "farm_RectAreaLight" || n == "farm_Texture" ||
@@ -1546,6 +1547,11 @@ void seed_scene_summaries(Analyzer& A) {
   disp("farm_BoxGeometry", "farm_BoxGeometry_dispose");
   disp("farm_SphereGeometry", "farm_SphereGeometry_dispose");
   disp("farm_PlaneGeometry", "farm_PlaneGeometry_dispose");
+  disp("farm_CylinderGeometry", "farm_CylinderGeometry_dispose");
+  {
+    Summary r01; r01.seeded = true;
+    A.sums["farm_random01"] = r01;
+  }
   disp("farm_MeshBasicMaterial", "farm_MeshBasicMaterial_dispose");
   disp("farm_MeshStandardMaterial", "farm_MeshStandardMaterial_dispose");
 

@@ -16,6 +16,7 @@ typedef struct farm_Mesh farm_Mesh;
 typedef struct farm_BoxGeometry farm_BoxGeometry;
 typedef struct farm_SphereGeometry farm_SphereGeometry;
 typedef struct farm_PlaneGeometry farm_PlaneGeometry;
+typedef struct farm_CylinderGeometry farm_CylinderGeometry;
 typedef struct farm_MeshBasicMaterial farm_MeshBasicMaterial;
 typedef struct farm_MeshStandardMaterial farm_MeshStandardMaterial;
 typedef struct farm_AmbientLight farm_AmbientLight;
@@ -47,6 +48,13 @@ typedef struct {
   int32_t capacity;
 } farm_ChildList;
 
+enum {
+  FARM_GEOM_BOX = 0,
+  FARM_GEOM_SPHERE = 1,
+  FARM_GEOM_PLANE = 2,
+  FARM_GEOM_CYLINDER = 3
+};
+
 typedef struct {
   double* positions;  // 3 doubles per vertex
   double* normals;    // 3 doubles per vertex
@@ -55,6 +63,7 @@ typedef struct {
   int32_t vertex_count;
   int32_t index_count;
   bool disposed;
+  uint8_t kind;       // FARM_GEOM_*
 } farm_GeometryData;
 
 // Object3D - base scene graph node
@@ -139,6 +148,13 @@ struct farm_PlaneGeometry {
   double height;
 };
 
+struct farm_CylinderGeometry {
+  farm_GeometryData data;
+  double radius;
+  double height;
+  int32_t radialSegments;
+};
+
 // Materials
 struct farm_MeshBasicMaterial {
   uint8_t material_type; // 0 for Basic
@@ -184,7 +200,7 @@ struct farm_Mesh {
   // Mesh-specific
   void* f_geometry;       // Points to one of the geometry types
   void* f_material;       // Points to one of the material types
-  uint8_t geometry_type; // 0=Box, 1=Sphere, 2=Plane
+  uint8_t geometry_type; // 0=Box, 1=Sphere, 2=Plane, 3=Cylinder
   uint8_t material_type; // 0=Basic, 1=Standard
 };
 
@@ -350,6 +366,11 @@ farm_PlaneGeometry* farm_PlaneGeometry_new();
 farm_PlaneGeometry* farm_PlaneGeometry_new_wh(double width, double height);
 void farm_PlaneGeometry_dispose(farm_PlaneGeometry* self);
 
+farm_CylinderGeometry* farm_CylinderGeometry_new();
+farm_CylinderGeometry* farm_CylinderGeometry_new_rh(double radius, double height);
+farm_CylinderGeometry* farm_CylinderGeometry_new_full(double radius, double height, int64_t radialSegments);
+void farm_CylinderGeometry_dispose(farm_CylinderGeometry* self);
+
 // Material methods
 farm_MeshBasicMaterial* farm_MeshBasicMaterial_new();
 farm_MeshBasicMaterial* farm_MeshBasicMaterial_new_color(farm_Color color);
@@ -379,6 +400,7 @@ farm_Mesh* farm_Mesh_new(void* geometry, void* material);
 farm_Mesh* farm_Mesh_new_box(farm_BoxGeometry* geometry, void* material, uint8_t mat_type);
 farm_Mesh* farm_Mesh_new_sphere(farm_SphereGeometry* geometry, void* material, uint8_t mat_type);
 farm_Mesh* farm_Mesh_new_plane(farm_PlaneGeometry* geometry, void* material, uint8_t mat_type);
+farm_Mesh* farm_Mesh_new_cylinder(farm_CylinderGeometry* geometry, void* material, uint8_t mat_type);
 
 // Light methods
 farm_AmbientLight* farm_AmbientLight_new();
@@ -419,9 +441,8 @@ void farm_Renderer_savePNG(farm_Renderer* self, FarmString path);
 void farm_Renderer_dispose(farm_Renderer* self);
 
 static inline farm_GeometryData* farm_mesh_geometry_data(farm_Mesh* mesh) {
-  if (mesh->geometry_type == 0) return &((farm_BoxGeometry*)mesh->f_geometry)->data;
-  if (mesh->geometry_type == 1) return &((farm_SphereGeometry*)mesh->f_geometry)->data;
-  return &((farm_PlaneGeometry*)mesh->f_geometry)->data;
+  /* Every geometry struct starts with farm_GeometryData. */
+  return (farm_GeometryData*)mesh->f_geometry;
 }
 
 #ifdef __cplusplus

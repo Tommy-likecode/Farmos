@@ -89,3 +89,6 @@ farm_Euler farm_Euler_setFromQuaternion(farm_Quaternion q, const char* order);
 // Color functions
 farm_Color farm_Color_setHex(int32_t hex);
 int32_t farm_Color_getHex(farm_Color c);
+
+/* Entropy-backed uniform float in [0, 1). --gc-sections drops it when unused. */
+double farm_random01(void);

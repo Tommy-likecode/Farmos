@@ -19,7 +19,7 @@ Related: `/workspace/farmos/PLAN.md`, `/workspace/farmos/spec/M1-core.md`, `/wor
 
 - Built-in module `farmos:scene` exporting the types in §2.2.
 - Scene graph: `Object3D` hierarchy with `position` / `rotation` / `quaternion` / `scale` / children; local and world matrices.
-- `PerspectiveCamera`, `Mesh`, geometries (`BoxGeometry`, `SphereGeometry`, `PlaneGeometry`), materials (`MeshBasicMaterial`, `MeshStandardMaterial`), lights (`AmbientLight`, `DirectionalLight`, `PointLight`), `Scene`, `Renderer`.
+- `PerspectiveCamera`, `Mesh`, geometries (`BoxGeometry`, `SphereGeometry`, `PlaneGeometry`; later `CylinderGeometry` §7.5), materials (`MeshBasicMaterial`, `MeshStandardMaterial`), lights (`AmbientLight`, `DirectionalLight`, `PointLight`), `Scene`, `Renderer`.
 - `renderer.setSize` / `renderer.render(scene, camera)` / `renderer.savePNG(path)`.
 - Deterministic **CPU software rasterizer** (depth buffer + basic shading) producing canonical PNGs (§11–§12).
 - Explicit `dispose()` on geometries, materials, and `Renderer` (OQ-M1-17 resolution, §13).
@@ -84,7 +84,7 @@ import { Vector3, Color } from "farmos:math";
 
 `Object3D`, `Scene`, `PerspectiveCamera`, `Mesh`, `BoxGeometry`, `SphereGeometry`, `PlaneGeometry`, `MeshBasicMaterial`, `MeshStandardMaterial`, `AmbientLight`, `DirectionalLight`, `PointLight`, `Renderer`.
 
-Geometries MAY share a common undocumented internal base; user-visible types are the four names above (three geometry classes + materials/lights/etc.). There is no public `BufferGeometry` class in M3.
+`CylinderGeometry` is also exported (§7.5; not an M3 AC). Geometries MAY share a common undocumented internal base. There is no public `BufferGeometry` class in M3.
 
 ### 2.3 Linking / DCE
 
@@ -99,7 +99,7 @@ Geometries MAY share a common undocumented internal base; user-visible types are
 
 The following MUST be `class` types with **reference semantics** (M1 §4.7):
 
-`Object3D`, `Scene`, `PerspectiveCamera`, `Mesh`, `BoxGeometry`, `SphereGeometry`, `PlaneGeometry`, `MeshBasicMaterial`, `MeshStandardMaterial`, `AmbientLight`, `DirectionalLight`, `PointLight`, `Renderer`.
+`Object3D`, `Scene`, `PerspectiveCamera`, `Mesh`, `BoxGeometry`, `SphereGeometry`, `PlaneGeometry`, `CylinderGeometry`, `MeshBasicMaterial`, `MeshStandardMaterial`, `AmbientLight`, `DirectionalLight`, `PointLight`, `Renderer`.
 
 | Operation | Semantics |
 |-----------|-----------|
@@ -371,6 +371,22 @@ new SphereGeometry()                        // radius=1, 32, 16
 - UV sphere centered at origin; poles on ±Y; triangles CCW outward.
 - Exact vertex count: `(widthSegments+1) * (heightSegments+1)` style strip topology is fine; golden PNG fixtures in M3 do **not** depend on sphere tessellation (sphere covered by non-PNG run tests / structural tests).
 
+### 7.5 `CylinderGeometry`
+
+Not an M3 acceptance item. Extra geometry used by later examples; DCE MUST still drop it from programs that never construct it.
+
+```
+new CylinderGeometry(radius: float, height: float, radialSegments: int)
+new CylinderGeometry(radius: float, height: float)  // radialSegments=32
+new CylinderGeometry()                             // radius=1, height=1, 32
+```
+
+- Y-up: axis along Y, centered at the origin, extents `±height/2`.
+- Equal radius top and bottom (right circular cylinder). Closed with disks on ±Y.
+- `radialSegments` MUST be ≥ 3; clamp up to the minimum at construction (do not trap). Default 32 is enough for a smooth silhouette.
+- Outward CCW winding. Unique normals on the side vs caps.
+- Consumed as a triangle mesh: `Mesh`, CPU raster, BVH, and `renderPath` use the same `farm_GeometryData` path as box/sphere/plane.
+
 ---
 
 ## 8. Materials
@@ -469,7 +485,7 @@ return clamp(result, 0, 1) per channel
 
 ```
 class Mesh /* Object3D transforms + children */ {
-  geometry: /* BoxGeometry | SphereGeometry | PlaneGeometry */;
+  geometry: /* BoxGeometry | SphereGeometry | PlaneGeometry | CylinderGeometry */;
   material: /* MeshBasicMaterial | MeshStandardMaterial */;
 }
 ```
@@ -481,7 +497,7 @@ new Mesh(geometry: G, material: M)
 - Stores **references** to `geometry` and `material` (sharing allowed).
 - Is an Object3D-like node (transforms, children, add/remove).
 
-Type checking: `geometry` MUST be one of the three geometry classes; `material` one of the two materials; else `E0408` / `E0411` as appropriate.
+Type checking: `geometry` MUST be one of the geometry classes (box / sphere / plane / cylinder); `material` one of the two materials; else `E0408` / `E0411` as appropriate.
 
 ---
 
@@ -663,7 +679,7 @@ Reference: `spec/tests/M3/_ref/raster_ref.py` (golden generator only; not produc
 ### 13.1 Decision (normative)
 
 1. **Keep** the M1 **program-lifetime arena** for all class instances (scene graph nodes, materials, geometries, renderer objects as language objects).
-2. Add explicit **`dispose()`** on `BoxGeometry`, `SphereGeometry`, `PlaneGeometry`, `MeshBasicMaterial`, `MeshStandardMaterial`, and `Renderer` that frees the **native CPU buffers** associated with that object (vertex/index arrays, framebuffer/depth, etc.).
+2. Add explicit **`dispose()`** on `BoxGeometry`, `SphereGeometry`, `PlaneGeometry`, `CylinderGeometry`, `MeshBasicMaterial`, `MeshStandardMaterial`, and `Renderer` that frees the **native CPU buffers** associated with that object (vertex/index arrays, framebuffer/depth, etc.).
 3. Failing to `dispose()` in long-running loops **leaks native buffers until process exit** (arena still holds the tiny object header). Document this for ports.
 4. Scoped arenas / automatic reclaim are **not** in M3 (recorded as closed alternative below).
 

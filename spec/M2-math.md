@@ -68,6 +68,8 @@ import { Vector3, Matrix4, Color } from "farmos:math";
 
 `farmos:math` MUST export exactly the types listed in §1.1 (and their constructors as type names usable with `new` / struct literals). No other names are required in M2.
 
+An additional helper MAY be exported: `random01(): float`, returning a value in `[0, 1)` from an entropy-backed generator (`QueryPerformanceCounter` on Windows; `clock_gettime` / `gettimeofday` on Linux). Unused imports MUST DCE it (hello size/symbols unchanged; AC-M2-01 / B-06 spirit).
+
 ### 2.3 Linking / DCE
 
 - Emitting a reference to a math type, method, operator, or `println` overload MAY pull only the **used** subset of the math runtime.
