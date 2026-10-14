@@ -13,7 +13,8 @@ static bool is_scene_class_sym(const std::string& n) {
   return n == "farm_Scene" || n == "farm_Object3D" ||
          n == "farm_PerspectiveCamera" || n == "farm_Mesh" ||
          n == "farm_BoxGeometry" || n == "farm_SphereGeometry" ||
-         n == "farm_PlaneGeometry" || n == "farm_MeshBasicMaterial" ||
+         n == "farm_PlaneGeometry" || n == "farm_CylinderGeometry" ||
+         n == "farm_MeshBasicMaterial" ||
          n == "farm_MeshStandardMaterial" || n == "farm_AmbientLight" ||
          n == "farm_DirectionalLight" || n == "farm_PointLight" ||
          n == "farm_RectAreaLight" || n == "farm_Texture" ||
@@ -1440,9 +1441,13 @@ struct Emitter {
     }
     out << "/* End M2 forward declarations */\n";
     
+    auto is_runtime_math_fn = [&](const Module& m, const FunctionDecl& f) {
+      return m.path == "farmos:math" && f.body && f.body->kind == StmtKind::Block && f.body->stmts.empty();
+    };
     for (auto& m : prog.modules) {
       if (skip_math_code(m)) continue;
       for (auto& f : m.functions) {
+        if (is_runtime_math_fn(m, f)) continue;
         out << c_type(f.ret) << " " << f.c_sym << "(";
         for (size_t i=0;i<f.params.size();++i) {
           if (i) out << ", ";
@@ -1513,6 +1518,7 @@ struct Emitter {
     for (auto& m : prog.modules) {
       if (skip_math_code(m)) continue;
       for (auto& f : m.functions) {
+        if (is_runtime_math_fn(m, f)) continue;
         out << c_type(f.ret) << " " << f.c_sym << "(";
         for (size_t i=0;i<f.params.size();++i) {
           if (i) out << ", ";

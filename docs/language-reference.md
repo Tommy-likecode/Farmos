@@ -84,13 +84,17 @@ Runtime traps (process exit): 101 integer `/0`, 102 bounds, 103 non-finite `int(
 
 `Vector2/3/4`, `Matrix3/4`, `Quaternion`, `Color`, `Euler`, `Ray`, `Box3`, `Sphere`, `RayHit`. Math types are **structs (values)**. See the [porting guide](porting-guide.md) for the M2 §3.7 copy gotcha (`let p = mesh.position` copies).
 
+`random01(): float` returns a value in `[0, 1)` seeded from `QueryPerformanceCounter` (Windows) or `clock_gettime` / `gettimeofday` (Linux). Unused imports DCE it (hello size unchanged).
+
 Overloadable operators: `+ - * / % == !=` and unary `-`. **Not** overloadable: `!`, `=`, comparisons, `&&` `||`, `[]`, `()`, compound assigns → **E0605**.
 
 Integer literals may coerce to float in float contexts (M2 §4A) when exactly representable.
 
 ## 7. `farmos:scene` and path tracing
 
-Scene graph: `Scene`, `Object3D`, `Mesh`, geometries, materials, lights, `PerspectiveCamera`, `Renderer`.
+Scene graph: `Scene`, `Object3D`, `Mesh`, geometries (`BoxGeometry`, `SphereGeometry`, `PlaneGeometry`, `CylinderGeometry`), materials, lights, `PerspectiveCamera`, `Renderer`.
+
+`CylinderGeometry` is Y-up (axis along Y, centered at the origin). Constructors: `new CylinderGeometry()`, `new CylinderGeometry(radius, height)` (32 radial segments), `new CylinderGeometry(radius, height, radialSegments)` (clamped to ≥ 3). Closed caps; tessellation is a triangle mesh, so Mesh / BVH / `renderPath` treat it like the other geometries.
 
 - `renderer.render(scene, camera)` — M3 CPU rasterizer.
 - `renderer.renderPath(scene, camera)` — M4 CPU path tracer (BVH, glass / mirror / area lights). `setSamples` / `setMaxBounces` / `setSize` apply. `FARMOS_THREADS` unset means 1 worker for `renderPath`.

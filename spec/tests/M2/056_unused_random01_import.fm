@@ -1,0 +1,6 @@
+import { random01 } from "farmos:math";
+
+function main(): int {
+  println("Hello, Farmos");
+  return 0;
+}

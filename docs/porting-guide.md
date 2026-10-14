@@ -4,7 +4,7 @@
 
 | Three.js | Farmos |
 |----------|--------|
-| `Scene`, `Object3D`, `Mesh`, `BoxGeometry`, `SphereGeometry`, `PlaneGeometry` | `farmos:scene` (M3) |
+| `Scene`, `Object3D`, `Mesh`, `BoxGeometry`, `SphereGeometry`, `PlaneGeometry`, `CylinderGeometry` | `farmos:scene` (M3; cylinder is Y-up, radius/height/radialSegments) |
 | `MeshBasicMaterial`, `MeshStandardMaterial` | same names; M3 raster is Lambert+Blinn, not full PBR |
 | `AmbientLight`, `DirectionalLight`, `PointLight` | same |
 | `RectAreaLight` | M4 path tracer |

@@ -86,7 +86,8 @@ struct Sema {
     return c_sym == "farm_Scene" || c_sym == "farm_Object3D" ||
            c_sym == "farm_PerspectiveCamera" || c_sym == "farm_Mesh" ||
            c_sym == "farm_BoxGeometry" || c_sym == "farm_SphereGeometry" ||
-           c_sym == "farm_PlaneGeometry" || c_sym == "farm_MeshBasicMaterial" ||
+           c_sym == "farm_PlaneGeometry" || c_sym == "farm_CylinderGeometry" ||
+           c_sym == "farm_MeshBasicMaterial" ||
            c_sym == "farm_MeshStandardMaterial" || c_sym == "farm_AmbientLight" ||
            c_sym == "farm_DirectionalLight" || c_sym == "farm_PointLight" ||
            c_sym == "farm_RectAreaLight" || c_sym == "farm_Texture" ||
@@ -795,9 +796,9 @@ struct Sema {
               else {
                 bool valid_geometry = e->args[0]->type->kind == TypeKind::Class &&
                   (e->args[0]->type->name == "farm_BoxGeometry" || e->args[0]->type->name == "farm_SphereGeometry" ||
-                   e->args[0]->type->name == "farm_PlaneGeometry");
+                   e->args[0]->type->name == "farm_PlaneGeometry" || e->args[0]->type->name == "farm_CylinderGeometry");
                 if (!valid_geometry)
-                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected geometry type (BoxGeometry, SphereGeometry, or PlaneGeometry)");
+                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected geometry type (BoxGeometry, SphereGeometry, PlaneGeometry, or CylinderGeometry)");
                 bool valid_material = e->args[1]->type->kind == TypeKind::Class &&
                   (e->args[1]->type->name == "farm_MeshBasicMaterial" || e->args[1]->type->name == "farm_MeshStandardMaterial");
                 if (!valid_material)
@@ -816,6 +817,11 @@ struct Sema {
               if (nargs == 2) { variant = "wh"; for (int i=0;i<2;++i) coerce_float(e->args[i]); }
               else if (nargs != 0)
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0 or 2, found " + std::to_string(nargs));
+            } else if (cd->c_sym == "farm_CylinderGeometry") {
+              if (nargs == 2) { variant = "rh"; for (int i=0;i<2;++i) coerce_float(e->args[i]); }
+              else if (nargs == 3) { variant = "full"; for (int i=0;i<3;++i) coerce_float(e->args[i]); }
+              else if (nargs != 0)
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0, 2, or 3, found " + std::to_string(nargs));
             } else if (cd->c_sym == "farm_Renderer") {
               if (nargs == 2) {
                 variant = "wh";
@@ -1134,6 +1140,11 @@ struct Sema {
   void check_function(FunctionDecl& f) {
     cur_fn = f.name; cur_ret = f.ret; cur_class = nullptr; cur_struct = nullptr; in_ctor = false;
     Scope sc; scope = &sc;
+    if (cur_mod && cur_mod->path == "farmos:math" && f.body && f.body->kind == StmtKind::Block &&
+        f.body->stmts.empty()) {
+      scope = nullptr;
+      return;
+    }
     for (auto& p : f.params) sc.declare(p.name, VarInfo{p.type, false, p.loc}, path);
     bool ret=false;
     check_stmt(f.body, &ret);

@@ -28,6 +28,7 @@ static void farm_write_err(const char *buf, size_t n) {
 }
 #else
 #include <unistd.h>
+#include <time.h>
 #ifdef FARM_ENABLE_THREADS
 static void farm_write_raw(const char *buf, size_t n) { (void)!write(STDOUT_FILENO, buf, n); }
 static void farm_write(const char *buf, size_t n);
@@ -366,3 +367,41 @@ void *farm_dyn_index(FarmDynArray *a, int64_t i) {
 }
 
 int64_t farm_dyn_len(FarmDynArray *a) { return a->h->len; }
+
+static uint64_t farm_entropy64(void) {
+#if defined(_WIN32)
+  LARGE_INTEGER c;
+  QueryPerformanceCounter(&c);
+  uint64_t e = (uint64_t)c.QuadPart;
+  e ^= ((uint64_t)GetCurrentProcessId()) << 32;
+  e ^= (uint64_t)(uintptr_t)&c;
+  return e;
+#else
+  struct timespec ts;
+  uint64_t e = 0;
+#if defined(CLOCK_MONOTONIC)
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+#endif
+    clock_gettime(CLOCK_REALTIME, &ts);
+  e = ((uint64_t)(uint32_t)ts.tv_sec << 32) ^ (uint64_t)ts.tv_nsec;
+  e ^= ((uint64_t)getpid()) << 16;
+  e ^= (uint64_t)(uintptr_t)&e;
+  return e;
+#endif
+}
+
+double farm_random01(void) {
+  static uint64_t s = 0;
+  static int inited = 0;
+  if (!inited) {
+    s = farm_entropy64();
+    if (s == 0) s = 0x9E3779B97F4A7C15ULL;
+    inited = 1;
+  }
+  s ^= farm_entropy64();
+  s ^= s >> 12;
+  s ^= s << 25;
+  s ^= s >> 27;
+  uint64_t r = s * 0x2545F4914F6CDD1DULL;
+  return (double)(r >> 11) * (1.0 / 9007199254740992.0);
+}

@@ -10,5 +10,15 @@ Normative names (`spec/M6-hardening.md` §9). Each MUST build with `farmc` and s
 | `04_glass_mirror.fm` | M4 glass + mirror | ≤ 300 KiB |
 | `05_stacking_bounce.fm` | M5 stack + bounce | S_demo − S_scene ≤ 64 KiB |
 | `06_vulkan_cornell.fm` | M7 Cornell with Vulkan opt-in | ≤ 400 KiB GPU-linked |
+| `artwork_silver_still.fm` | 1920×1080 path-traced still (silver sphere + random matte shapes) | not a size gate |
 
 Bodies are production demos derived from `spec/tests/M3|M4|M5|M7` fixtures. Smoke: `scripts/run_examples.ps1` / `scripts/run_examples.sh` (01..05). `examples/m4_cornell_800x600.fm` is the B-05 peak-RAM driver (not part of the 01..05 smoke set). `06_vulkan_cornell.fm` is the M7 GPU-linked size sample; it falls back to CPU when no device is present.
+
+`artwork_silver_still.fm` is a 1080p still (128 samples, 6 bounces). It is **not** in the 01..05 smoke set. On Windows, from the directory where you want the PNG:
+
+```
+farmc build examples\artwork_silver_still.fm -o artwork_silver_still.exe
+.\artwork_silver_still.exe
+```
+
+Writes `artwork_silver_still.png` in the process CWD. Uses Vulkan when `isVulkanPathAvailable()`, else CPU. Matte object positions change each run via `random01()`.

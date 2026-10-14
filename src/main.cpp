@@ -251,7 +251,7 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
   // No imports needed - will wire math types manually in bind_imports
   
   // For M3, we define classes (reference types)
-  // Object3D, Scene, PerspectiveCamera, Mesh, BoxGeometry, SphereGeometry, PlaneGeometry,
+  // Object3D, Scene, PerspectiveCamera, Mesh, BoxGeometry, SphereGeometry, PlaneGeometry, CylinderGeometry,
   // MeshBasicMaterial, MeshStandardMaterial, AmbientLight, DirectionalLight, PointLight, Renderer
   
   // Object3D class
@@ -631,6 +631,40 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       md.name = cd.name;
       md.params.push_back(Param{"width", Type::ty_float(), SourceLoc{1,1}});
       md.params.push_back(Param{"height", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      md.is_ctor = true;
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "dispose";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    m.classes.push_back(std::move(cd));
+  }
+
+  // CylinderGeometry
+  {
+    ClassDecl cd;
+    cd.name = "CylinderGeometry";
+    cd.c_sym = "farm_CylinderGeometry";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    {
+      MethodDecl md;
+      md.name = cd.name;
+      md.params.push_back(Param{"radius", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"height", Type::ty_float(), SourceLoc{1,1}});
+      md.params.push_back(Param{"radialSegments", Type::ty_int(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
       md.loc = SourceLoc{1, 1};
       md.is_ctor = true;
@@ -2072,6 +2106,19 @@ static Module create_farmos_math_module() {
     rh.fields.push_back(FieldDecl{"distance", Type::ty_float(), SourceLoc{1, 1}});
     m.structs.push_back(std::move(rh));
   }
+
+  {
+    FunctionDecl f;
+    f.name = "random01";
+    f.exported = true;
+    f.c_sym = "farm_random01";
+    f.ret = Type::ty_float();
+    f.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    f.body = std::move(block);
+    m.functions.push_back(std::move(f));
+  }
   
   return m;
 }
@@ -2356,7 +2403,8 @@ struct Loader {
       }
       for (auto& f : mod.functions) {
         f.module_id = mod.id;
-        f.c_sym = "fn_" + mod.prefix + "_" + f.name;
+        if (f.c_sym.empty())
+          f.c_sym = "fn_" + mod.prefix + "_" + f.name;
         put_unique(mod.vis_functions, f.name, &f, f.loc);
       }
       for (auto& c : mod.consts) {
