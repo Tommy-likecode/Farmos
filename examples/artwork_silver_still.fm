@@ -27,12 +27,21 @@ function main(): int {
   wall.position.set(0, 3.2, -4.2);
   scene.add(wall);
 
-  const silverMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.92, 0.93, 0.95));
+  const silverMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.95, 0.96, 0.97));
   silverMat.setMetalness(1);
   silverMat.setRoughness(0.04);
   const silver: Mesh = new Mesh(new SphereGeometry(0.52, 32, 16), silverMat);
   silver.position.set(0, 0.52, 0);
   scene.add(silver);
+
+  // Small bright reflection card only — keeps v2 mood; gives the chrome ball something silver to mirror.
+  const cardMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.98, 0.98, 0.99));
+  cardMat.setRoughness(0.9);
+  cardMat.setMetalness(0);
+  const card: Mesh = new Mesh(new PlaneGeometry(1.6, 1.1), cardMat);
+  card.position.set(0.35, 3.55, 1.85);
+  card.lookAt(0, 0.52, 0);
+  scene.add(card);
 
   const boxX: float = -1.55 + random01() * 0.55;
   const boxZ: float = 0.95 + random01() * 0.55;
@@ -63,7 +72,7 @@ function main(): int {
 
   // Large overhead softbox: radiance (not power), so intensity is lower than the
   // old 2.8×1.6 key. No DirectionalLight — that was the hard-edged shadow source.
-  const key: RectAreaLight = new RectAreaLight(0xffffff, 6.5, 8.0, 6.5);
+  const key: RectAreaLight = new RectAreaLight(0xffffff, 7.2, 8.0, 6.5);
   key.position.set(0.15, 5.8, 0.4);
   key.lookAt(0, 0.2, 0);
   scene.add(key);
