@@ -6,7 +6,7 @@ Runtime extras (not a milestone):
 
 - `CylinderGeometry` on `farmos:scene` (Y-up, `radius` / `height` / `radialSegments`; default 32 segments). Mesh, raster, BVH, and `renderPath` consume the same triangle data as box/sphere/plane.
 - `random01(): float` on `farmos:math` — `[0, 1)`, entropy-backed (`QueryPerformanceCounter` / `clock_gettime`). Unused: hello size/symbols unchanged.
-- `examples/artwork_silver_still.fm` — 1920×1080 path-traced still (silver sphere + three random matte shapes). Vulkan when available, else CPU; 128 samples, 6 bounces; writes `artwork_silver_still.png` in CWD.
+- `examples/artwork_silver_still.fm` — 1920×1080 path-traced still (silver sphere + three random matte shapes). Vulkan when available, else CPU; 256 samples, 6 bounces; large overhead `RectAreaLight` (no DirectionalLight); silver roughness 0.04; writes `artwork_silver_still.png` in CWD.
 
 ## v1.01 — 2026-10-13
 

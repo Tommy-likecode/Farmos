@@ -14,7 +14,7 @@ Normative names (`spec/M6-hardening.md` §9). Each MUST build with `farmc` and s
 
 Bodies are production demos derived from `spec/tests/M3|M4|M5|M7` fixtures. Smoke: `scripts/run_examples.ps1` / `scripts/run_examples.sh` (01..05). `examples/m4_cornell_800x600.fm` is the B-05 peak-RAM driver (not part of the 01..05 smoke set). `06_vulkan_cornell.fm` is the M7 GPU-linked size sample; it falls back to CPU when no device is present.
 
-`artwork_silver_still.fm` is a 1080p still (128 samples, 6 bounces). It is **not** in the 01..05 smoke set. On Windows, from the directory where you want the PNG:
+`artwork_silver_still.fm` is a 1080p still (256 samples, 6 bounces, large overhead area light). It is **not** in the 01..05 smoke set. On Windows, from the directory where you want the PNG:
 
 ```
 farmc build examples\artwork_silver_still.fm -o artwork_silver_still.exe

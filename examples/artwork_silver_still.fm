@@ -1,5 +1,5 @@
 import { Scene, PerspectiveCamera, PlaneGeometry, BoxGeometry, SphereGeometry,
-         CylinderGeometry, MeshStandardMaterial, Mesh, DirectionalLight,
+         CylinderGeometry, MeshStandardMaterial, Mesh,
          RectAreaLight, Renderer, PATH_BACKEND_VULKAN } from "farmos:scene";
 import { Color, random01 } from "farmos:math";
 
@@ -29,7 +29,7 @@ function main(): int {
 
   const silverMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.92, 0.93, 0.95));
   silverMat.setMetalness(1);
-  silverMat.setRoughness(0);
+  silverMat.setRoughness(0.04);
   const silver: Mesh = new Mesh(new SphereGeometry(0.52, 32, 16), silverMat);
   silver.position.set(0, 0.52, 0);
   scene.add(silver);
@@ -61,23 +61,20 @@ function main(): int {
   ball.position.set(ballX, 0.40, ballZ);
   scene.add(ball);
 
-  const key: RectAreaLight = new RectAreaLight(0xffffff, 22, 2.8, 1.6);
-  key.position.set(0.9, 4.3, 1.8);
-  key.lookAt(0, 0.4, 0);
+  // Large overhead softbox: radiance (not power), so intensity is lower than the
+  // old 2.8×1.6 key. No DirectionalLight — that was the hard-edged shadow source.
+  const key: RectAreaLight = new RectAreaLight(0xffffff, 6.5, 8.0, 6.5);
+  key.position.set(0.15, 5.8, 0.4);
+  key.lookAt(0, 0.2, 0);
   scene.add(key);
-  const fill: RectAreaLight = new RectAreaLight(0xffe6cc, 7, 1.8, 1.2);
-  fill.position.set(-2.6, 2.6, 1.4);
+  const fill: RectAreaLight = new RectAreaLight(0xffe6cc, 3.2, 3.5, 2.6);
+  fill.position.set(-2.8, 3.1, 2.0);
   fill.lookAt(0, 0.5, 0);
   scene.add(fill);
-  const sun: DirectionalLight = new DirectionalLight(0xffffff, 0.45);
-  sun.position.set(0.25, 6, 0.4);
-  sun.lookAt(0, 0, 0);
-  scene.add(sun);
 
   const renderer: Renderer = new Renderer();
   renderer.setSize(1920, 1080);
-  // 128 spp at 1080p: clean enough for a still; raise to 256 if you have a GPU and time.
-  renderer.setSamples(128);
+  renderer.setSamples(256);
   renderer.setMaxBounces(6);
   if (renderer.isVulkanPathAvailable()) {
     renderer.setPathBackend(PATH_BACKEND_VULKAN);
@@ -85,7 +82,7 @@ function main(): int {
   } else {
     println("cpu");
   }
-  println(128);
+  println(256);
   println(boxX);
   println(boxZ);
   println(cylX);
