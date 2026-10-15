@@ -1135,6 +1135,13 @@ farm_Renderer* farm_Renderer_new() {
   r->width = 0;
   r->height = 0;
   r->path_backend = 0;
+  r->path_sampling = 0;
+  r->path_roulette = 0;
+  r->path_roulette_set = 0;
+  r->path_sampling_set = 0;
+  r->path_adaptive_spp = 0;
+  r->path_adaptive_target = 1e-4;
+  r->spp_count = NULL;
   r->disposed = false;
   return r;
 }
@@ -1157,8 +1164,10 @@ void farm_Renderer_setSize(farm_Renderer* self, int64_t width, int64_t height) {
   self->framebuffer = (uint8_t*)farm_arena_alloc((size_t)n * 3);
   self->depthbuffer = (float*)farm_arena_alloc((size_t)n * sizeof(float));
   self->accum = (double*)farm_arena_alloc((size_t)n * 3 * sizeof(double));
+  self->spp_count = (int32_t*)farm_arena_alloc((size_t)n * sizeof(int32_t));
   memset(self->framebuffer, 0, (size_t)n * 3);
   memset(self->accum, 0, (size_t)n * 3 * sizeof(double));
+  memset(self->spp_count, 0, (size_t)n * sizeof(int32_t));
   self->accum_count = 0;
 }
 
@@ -1180,6 +1189,62 @@ int64_t farm_Renderer_getPathBackend(farm_Renderer* self) {
   return self->path_backend;
 }
 
+static int farm_env_exact_1(const char* name) {
+  const char* e = getenv(name);
+  return e && e[0] == '1' && e[1] == '\0';
+}
+
+void farm_Renderer_setPathRoulette(farm_Renderer* self, int8_t enabled) {
+  self->path_roulette = enabled ? (int8_t)1 : (int8_t)0;
+  self->path_roulette_set = 1;
+}
+
+int farm_renderer_roulette_on(const farm_Renderer* self) {
+  if (self->path_roulette_set) return self->path_roulette ? 1 : 0;
+  return farm_env_exact_1("FARMOS_PATH_ROULETTE");
+}
+
+int8_t farm_Renderer_getPathRoulette(farm_Renderer* self) {
+  return farm_renderer_roulette_on(self) ? (int8_t)1 : (int8_t)0;
+}
+
+void farm_Renderer_setPathSampling(farm_Renderer* self, int64_t mode) {
+  if (mode != 0 && mode != 1 && mode != 2)
+    farm_trap(119, "invalid path sampling mode");
+  self->path_sampling = (int32_t)mode;
+  self->path_sampling_set = 1;
+}
+
+int32_t farm_renderer_sampling_mode(const farm_Renderer* self) {
+  if (self->path_sampling_set) return self->path_sampling;
+  const char* e = getenv("FARMOS_PATH_SAMPLING");
+  if (e && e[0] == '1' && e[1] == '\0') return 1;
+  if (e && e[0] == '2' && e[1] == '\0') return 2;
+  return 0;
+}
+
+int64_t farm_Renderer_getPathSampling(farm_Renderer* self) {
+  return farm_renderer_sampling_mode(self);
+}
+
+void farm_Renderer_setPathAdaptiveSpp(farm_Renderer* self, int8_t enabled) {
+  self->path_adaptive_spp = enabled ? (int8_t)1 : (int8_t)0;
+}
+
+int8_t farm_Renderer_getPathAdaptiveSpp(farm_Renderer* self) {
+  return self->path_adaptive_spp ? (int8_t)1 : (int8_t)0;
+}
+
+void farm_Renderer_setPathAdaptiveTarget(farm_Renderer* self, double varianceOrNoiseHint) {
+  if (varianceOrNoiseHint < 0.0) varianceOrNoiseHint = 0.0;
+  if (!isfinite(varianceOrNoiseHint)) varianceOrNoiseHint = 0.0;
+  self->path_adaptive_target = varianceOrNoiseHint;
+}
+
+double farm_Renderer_getPathAdaptiveTarget(farm_Renderer* self) {
+  return self->path_adaptive_target;
+}
+
 #ifdef FARM_ENABLE_VULKAN
 int farm_vk_probe(void);
 #endif
@@ -1196,6 +1261,9 @@ int8_t farm_Renderer_isVulkanPathAvailable(farm_Renderer* self) {
 void farm_Renderer_resetAccumulation(farm_Renderer* self) {
   if (self->accum && self->width > 0 && self->height > 0) {
     memset(self->accum, 0, (size_t)self->width * (size_t)self->height * 3 * sizeof(double));
+  }
+  if (self->spp_count && self->width > 0 && self->height > 0) {
+    memset(self->spp_count, 0, (size_t)self->width * (size_t)self->height * sizeof(int32_t));
   }
   self->accum_count = 0;
 }

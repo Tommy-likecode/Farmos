@@ -99,6 +99,7 @@ Scene graph: `Scene`, `Object3D`, `Mesh`, geometries (`BoxGeometry`, `SphereGeom
 - `renderer.render(scene, camera)` — M3 CPU rasterizer.
 - `renderer.renderPath(scene, camera)` — M4 CPU path tracer (BVH, glass / mirror / area lights). `setSamples` / `setMaxBounces` / `setSize` apply. `FARMOS_THREADS` unset means 1 worker for `renderPath`.
 - M7: `PATH_BACKEND_CPU` / `PATH_BACKEND_VULKAN`, `setPathBackend` / `getPathBackend` / `isVulkanPathAvailable`. Default CPU. GPU is Vulkan compute after explicit opt-in; `farm_vk.c` is linked only when that opt-in is reachable. `FARMOS_PATH_GPU_STRICT=1` traps 117 on GPU failure; invalid backend traps 118.
+- M8: `setPathRoulette` / `getPathRoulette` (default off; `FARMOS_PATH_ROULETTE=1` if unset by method). `PATH_SAMPLING_M4` / `PATH_SAMPLING_MIS` / `PATH_SAMPLING_AREA_SOLID`, `setPathSampling` / `getPathSampling`; invalid mode traps 119. Adaptive spp setters default off. GPU workgroup 8×8; one `renderPath` dispatch batches all samples.
 
 `farm_ray.c` is linked only when `renderPath` is a reachable call.
 

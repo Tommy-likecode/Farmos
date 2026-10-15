@@ -139,6 +139,8 @@ typedef struct {
   farm_GeometryData* geo;
   int32_t blas_i;
   const double* mw;
+  double inv[16];
+  int has_inv;
   int32_t mesh_index;
   double cx, cy, cz;
 } Instance;
@@ -162,6 +164,8 @@ typedef struct {
 
 typedef struct {
   const double* mw;
+  double inv[16];
+  int has_inv;
   double width, height;
   V3 le;
 } RectL;
@@ -188,6 +192,8 @@ typedef struct {
   int32_t nblas;
   int32_t cap_blas;
   int32_t max_bounces;
+  int32_t sampling; /* 0=M4, 1=MIS, 2=AREA_SOLID */
+  int rr;
 } PathWorld;
 
 typedef struct {
@@ -376,6 +382,21 @@ static int better_hit(double t, int32_t mesh, int32_t tri, const Hit* best) {
   return 0;
 }
 
+static int mat_is_identity16(const double* e) {
+  return e[0]==1 && e[5]==1 && e[10]==1 && e[15]==1 &&
+         e[1]==0 && e[2]==0 && e[3]==0 && e[4]==0 && e[6]==0 && e[7]==0 &&
+         e[8]==0 && e[9]==0 && e[11]==0 && e[12]==0 && e[13]==0 && e[14]==0;
+}
+
+static int fill_inv16(const double* mw, double* inv) {
+  farm_Matrix4 m, im;
+  memcpy(m.elements, mw, 16 * sizeof(double));
+  im = farm_Matrix4_invert(m);
+  memcpy(inv, im.elements, 16 * sizeof(double));
+  if (mat_is_identity16(inv) && !mat_is_identity16(mw)) return 0;
+  return 1;
+}
+
 static void intersect_blas(PathWorld* w, Instance* inst, V3 o, V3 d, double t_max, Hit* best, int any_hit) {
   if (inst->blas_i < 0 || inst->blas_i >= w->nblas) return;
   Blas* b = &w->blases[inst->blas_i];
@@ -384,22 +405,32 @@ static void intersect_blas(PathWorld* w, Instance* inst, V3 o, V3 d, double t_ma
   farm_GeometryData* geo = b->geo;
   LeafList* leaves = b->leaves;
   (void)w;
+  int local = inst->has_inv;
+  V3 ol = o, dl = d;
+  if (local) {
+    ol = xform_point(inst->inv, o);
+    dl = xform_dir(inst->inv, d);
+  }
   int32_t stack[64];
   int32_t sp = 0;
   stack[sp++] = b->root;
   while (sp) {
     int32_t ni = stack[--sp];
     BvhNode* node = &b->nodes[ni];
-    /* World-space AABB of this local node via 8 corners. */
-    V3 corners[8] = {
-      v3(node->minx, node->miny, node->minz), v3(node->maxx, node->miny, node->minz),
-      v3(node->minx, node->maxy, node->minz), v3(node->maxx, node->maxy, node->minz),
-      v3(node->minx, node->miny, node->maxz), v3(node->maxx, node->miny, node->maxz),
-      v3(node->minx, node->maxy, node->maxz), v3(node->maxx, node->maxy, node->maxz)
-    };
-    BvhNode wa; aabb_init(&wa);
-    for (int i = 0; i < 8; i++) aabb_expand(&wa, xform_point(mw, corners[i]));
-    if (!aabb_hit(&wa, o, d, T_MIN, t_max)) continue;
+    if (local) {
+      if (!aabb_hit(node, ol, dl, T_MIN, t_max)) continue;
+    } else {
+      /* World-space AABB of this local node via 8 corners. */
+      V3 corners[8] = {
+        v3(node->minx, node->miny, node->minz), v3(node->maxx, node->miny, node->minz),
+        v3(node->minx, node->maxy, node->minz), v3(node->maxx, node->maxy, node->minz),
+        v3(node->minx, node->miny, node->maxz), v3(node->maxx, node->miny, node->maxz),
+        v3(node->minx, node->maxy, node->maxz), v3(node->maxx, node->maxy, node->maxz)
+      };
+      BvhNode wa; aabb_init(&wa);
+      for (int i = 0; i < 8; i++) aabb_expand(&wa, xform_point(mw, corners[i]));
+      if (!aabb_hit(&wa, o, d, T_MIN, t_max)) continue;
+    }
     if (node->left < 0) {
       LeafList* L = &leaves[node->first];
       for (int32_t k = 0; k < L->n; k++) {
@@ -570,7 +601,7 @@ static V3 albedo_at(farm_MeshStandardMaterial* mat, farm_GeometryData* geo, Blas
 }
 
 static V3 direct_one(V3 acc, V3 n, V3 view, V3 albedo, double metal, double trans, double rough,
-                     V3 ldir, V3 le, double scale, double vis) {
+                     V3 ldir, V3 le, double scale, double vis, double mis_diffuse) {
   if (vis == 0.0 || scale == 0.0) return acc;
   double ndotl = vdot(n, ldir);
   if (ndotl <= 0.0) return acc;
@@ -584,7 +615,9 @@ static V3 direct_one(V3 acc, V3 n, V3 view, V3 albedo, double metal, double tran
   V3 kd = v3((1.0-f.x)*(1.0-metal)*(1.0-trans)*albedo.x/FARM_PI,
              (1.0-f.y)*(1.0-metal)*(1.0-trans)*albedo.y/FARM_PI,
              (1.0-f.z)*(1.0-metal)*(1.0-trans)*albedo.z/FARM_PI);
-  acc = vadd(acc, v3(kd.x*ndotl*le.x*scale, kd.y*ndotl*le.y*scale, kd.z*ndotl*le.z*scale));
+  acc = vadd(acc, v3(kd.x*ndotl*le.x*scale*mis_diffuse,
+                     kd.y*ndotl*le.y*scale*mis_diffuse,
+                     kd.z*ndotl*le.z*scale*mis_diffuse));
   if (rough > 0.0 && ndotv > NDOT_EPS && ndoth > 0.0) {
     double alpha = rough * rough;
     double a2 = alpha * alpha;
@@ -596,6 +629,87 @@ static V3 direct_one(V3 acc, V3 n, V3 view, V3 albedo, double metal, double tran
   return acc;
 }
 
+static int sample_rect(RectL* rect, V3 p, double u, double v, int improved,
+                       V3* sample_pos, V3* ldir, double* dist, double* cos_light, double* pdf_area) {
+  double area = rect->width * rect->height;
+  if (area <= 0.0) return 0;
+  double lx, ly;
+  if (!improved || !rect->has_inv) {
+    lx = (u - 0.5) * rect->width;
+    ly = (v - 0.5) * rect->height;
+    *pdf_area = 1.0 / area;
+  } else {
+    V3 lp = xform_point(rect->inv, p);
+    double halfw = 0.5 * rect->width, halfh = 0.5 * rect->height;
+    double z = lp.z;
+    double az = fabs(z);
+    if (az < 1e-8) {
+      lx = (u - 0.5) * rect->width;
+      ly = (v - 0.5) * rect->height;
+      *pdf_area = 1.0 / area;
+    } else {
+      double dx0 = -halfw - lp.x, dx1 = halfw - lp.x;
+      double dy0 = -halfh - lp.y, dy1 = halfh - lp.y;
+      double ax0 = atan2(dx0, az), ax1 = atan2(dx1, az);
+      double ay0 = atan2(dy0, az), ay1 = atan2(dy1, az);
+      double dax = ax1 - ax0, day = ay1 - ay0;
+      if (fabs(dax) < 1e-12 || fabs(day) < 1e-12) {
+        lx = (u - 0.5) * rect->width;
+        ly = (v - 0.5) * rect->height;
+        *pdf_area = 1.0 / area;
+      } else {
+        double tx = ax0 + u * dax;
+        double ty = ay0 + v * day;
+        lx = lp.x + az * tan(tx);
+        ly = lp.y + az * tan(ty);
+        if (lx < -halfw) lx = -halfw;
+        if (lx > halfw) lx = halfw;
+        if (ly < -halfh) ly = -halfh;
+        if (ly > halfh) ly = halfh;
+        double denx = z * z + (lx - lp.x) * (lx - lp.x);
+        double deny = z * z + (ly - lp.y) * (ly - lp.y);
+        double pdf_lx = az / (fabs(dax) * denx);
+        double pdf_ly = az / (fabs(day) * deny);
+        *pdf_area = pdf_lx * pdf_ly;
+        if (!(*pdf_area > 0.0) || !isfinite(*pdf_area)) *pdf_area = 1.0 / area;
+      }
+    }
+  }
+  *sample_pos = xform_point(rect->mw, v3(lx, ly, 0));
+  V3 lvec = vsub(*sample_pos, p);
+  double dist2 = vdot(lvec, lvec);
+  if (dist2 == 0.0) return 0;
+  *dist = sqrt(dist2);
+  *ldir = vmul(lvec, 1.0 / *dist);
+  V3 nw = vnorm(xform_dir(rect->mw, v3(0, 0, -1)));
+  *cos_light = vdot(nw, vmul(*ldir, -1.0));
+  if (*cos_light <= 0.0) return 0;
+  return 1;
+}
+
+static int intersect_rect_ray(RectL* rect, V3 o, V3 d, double t_max, double* t_hit, V3* n_out) {
+  if (!rect->has_inv) return 0;
+  double w = rect->width, h = rect->height;
+  if (w <= 0.0 || h <= 0.0) return 0;
+  V3 ol = xform_point(rect->inv, o);
+  V3 dl = xform_dir(rect->inv, d);
+  if (fabs(dl.z) < 1e-12) return 0;
+  double t = -ol.z / dl.z;
+  if (t <= T_MIN || t >= t_max) return 0;
+  double lx = ol.x + t * dl.x;
+  double ly = ol.y + t * dl.y;
+  if (lx < -0.5 * w || lx > 0.5 * w || ly < -0.5 * h || ly > 0.5 * h) return 0;
+  *t_hit = t;
+  *n_out = vnorm(xform_dir(rect->mw, v3(0, 0, -1)));
+  return 1;
+}
+
+static double balance_w(double p_this, double p_other) {
+  double s = p_this + p_other;
+  if (!(s > 0.0)) return 1.0;
+  return p_this / s;
+}
+
 static V3 direct_lighting(PathWorld* w, V3 p, V3 n, V3 view, V3 albedo, double metal, double trans,
                           double rough, int32_t px, int32_t py, int32_t s, int depth) {
   V3 acc = v3(0, 0, 0);
@@ -603,7 +717,7 @@ static V3 direct_lighting(PathWorld* w, V3 p, V3 n, V3 view, V3 albedo, double m
   for (int32_t i = 0; i < w->ndir; i++) {
     V3 ldir = vnorm(vmul(w->dirs[i].travel, -1.0));
     int blocked = any_hit(w, origin, ldir, 1e30);
-    acc = direct_one(acc, n, view, albedo, metal, trans, rough, ldir, w->dirs[i].le, 1.0, blocked ? 0.0 : 1.0);
+    acc = direct_one(acc, n, view, albedo, metal, trans, rough, ldir, w->dirs[i].le, 1.0, blocked ? 0.0 : 1.0, 1.0);
   }
   for (int32_t i = 0; i < w->npt; i++) {
     V3 to_l = vsub(w->pts[i].pos, p);
@@ -615,28 +729,33 @@ static V3 direct_lighting(PathWorld* w, V3 p, V3 n, V3 view, V3 albedo, double m
     else atten = 1.0 / fmax(pow(dist, w->pts[i].decay), 1e-6);
     if (w->pts[i].distance > 0.0 && dist >= w->pts[i].distance) atten = 0.0;
     int blocked = any_hit(w, origin, ldir, dist - RAY_EPS);
-    acc = direct_one(acc, n, view, albedo, metal, trans, rough, ldir, w->pts[i].le, atten, blocked ? 0.0 : 1.0);
+    acc = direct_one(acc, n, view, albedo, metal, trans, rough, ldir, w->pts[i].le, atten, blocked ? 0.0 : 1.0, 1.0);
   }
   int base = depth * 16;
+  int improved = (w->sampling == 1 || w->sampling == 2);
+  int do_mis = (w->sampling == 1);
   for (int32_t k = 0; k < w->nrect; k++) {
     RectL* rect = &w->rects[k];
-    double area = rect->width * rect->height;
-    if (area <= 0.0) continue;
     double u = rand01(px, py, s, base + 2 + 2*k);
     double v = rand01(px, py, s, base + 3 + 2*k);
-    V3 local = v3((u - 0.5) * rect->width, (v - 0.5) * rect->height, 0);
-    V3 sample_pos = xform_point(rect->mw, local);
-    V3 lvec = vsub(sample_pos, p);
-    double dist2 = vdot(lvec, lvec);
-    double dist = sqrt(dist2);
-    if (dist == 0.0) continue;
-    V3 ldir = vmul(lvec, 1.0 / dist);
-    V3 nw = vnorm(xform_dir(rect->mw, v3(0, 0, -1)));
-    double cos_light = vdot(nw, vmul(ldir, -1.0));
-    if (cos_light <= 0.0) continue;
-    double scale = cos_light * area / dist2;
+    V3 sample_pos, ldir;
+    double dist, cos_light, pdf_area;
+    if (!sample_rect(rect, p, u, v, improved, &sample_pos, &ldir, &dist, &cos_light, &pdf_area))
+      continue;
+    if (!(pdf_area > 0.0)) continue;
+    double dist2 = dist * dist;
+    double scale = cos_light / (pdf_area * dist2);
     int blocked = any_hit(w, origin, ldir, dist - RAY_EPS);
-    acc = direct_one(acc, n, view, albedo, metal, trans, rough, ldir, rect->le, scale, blocked ? 0.0 : 1.0);
+    double mis_d = 1.0;
+    if (do_mis) {
+      double ndotl = vdot(n, ldir);
+      if (ndotl > 0.0) {
+        double pdf_bsdf = ndotl / FARM_PI;
+        double pdf_light = pdf_area * dist2 / cos_light;
+        mis_d = balance_w(pdf_light, pdf_bsdf);
+      }
+    }
+    acc = direct_one(acc, n, view, albedo, metal, trans, rough, ldir, rect->le, scale, blocked ? 0.0 : 1.0, mis_d);
   }
   return acc;
 }
@@ -667,13 +786,77 @@ static void camera_ray(PathWorld* w, farm_Renderer* r, int32_t x, int32_t y, int
                 e[2]*cx + e[6]*cy + e[10]*(-1.0)));
 }
 
+static double rect_pdf_area_at(RectL* rect, V3 p, V3 hitp, int improved) {
+  double area = rect->width * rect->height;
+  if (area <= 0.0) return 0.0;
+  if (!improved || !rect->has_inv) return 1.0 / area;
+  V3 lp = xform_point(rect->inv, p);
+  V3 lh = xform_point(rect->inv, hitp);
+  double halfw = 0.5 * rect->width, halfh = 0.5 * rect->height;
+  double az = fabs(lp.z);
+  if (az < 1e-8) return 1.0 / area;
+  double dx0 = -halfw - lp.x, dx1 = halfw - lp.x;
+  double dy0 = -halfh - lp.y, dy1 = halfh - lp.y;
+  double dax = atan2(dx1, az) - atan2(dx0, az);
+  double day = atan2(dy1, az) - atan2(dy0, az);
+  if (fabs(dax) < 1e-12 || fabs(day) < 1e-12) return 1.0 / area;
+  double denx = lp.z * lp.z + (lh.x - lp.x) * (lh.x - lp.x);
+  double deny = lp.z * lp.z + (lh.y - lp.y) * (lh.y - lp.y);
+  double pdf = (az / (fabs(dax) * denx)) * (az / (fabs(day) * deny));
+  if (!(pdf > 0.0) || !isfinite(pdf)) return 1.0 / area;
+  return pdf;
+}
+
+static V3 mis_bsdf_rects(PathWorld* w, V3 o, V3 d, V3 n, V3 throughput) {
+  if (w->sampling != 1) return v3(0, 0, 0);
+  double ndotl = vdot(n, d);
+  if (ndotl <= 0.0) return v3(0, 0, 0);
+  double pdf_bsdf = ndotl / FARM_PI;
+  Hit gh;
+  closest_hit(w, o, d, &gh);
+  double t_max = gh.hit ? gh.t : 1e30;
+  int best = -1;
+  double best_t = t_max;
+  V3 best_n = v3(0, 0, 0);
+  for (int32_t k = 0; k < w->nrect; k++) {
+    double t;
+    V3 nn;
+    if (intersect_rect_ray(&w->rects[k], o, d, best_t, &t, &nn)) {
+      best = k; best_t = t; best_n = nn;
+    }
+  }
+  if (best < 0) return v3(0, 0, 0);
+  RectL* rect = &w->rects[best];
+  double dist = best_t;
+  double cos_light = vdot(best_n, vmul(d, -1.0));
+  if (cos_light <= 0.0) return v3(0, 0, 0);
+  if (any_hit(w, o, d, dist - RAY_EPS)) return v3(0, 0, 0);
+  V3 hitp = vadd(o, vmul(d, dist));
+  double pdf_area = rect_pdf_area_at(rect, o, hitp, 1);
+  if (!(pdf_area > 0.0)) return v3(0, 0, 0);
+  double pdf_light = pdf_area * dist * dist / cos_light;
+  double wgt = balance_w(pdf_bsdf, pdf_light);
+  return vmul(cmul(throughput, rect->le), wgt);
+}
+
 static V3 trace_radiance(PathWorld* w, farm_Renderer* r, int32_t x, int32_t y, int32_t s) {
   V3 o, d;
   camera_ray(w, r, x, y, s, &o, &d);
   V3 throughput = v3(1, 1, 1);
   V3 acc = v3(0, 0, 0);
   int ambient_done = 0;
+  int prev_delta = 1; /* camera ray: do not RR until a non-delta scatter */
   for (int depth = 0; depth <= w->max_bounces; depth++) {
+    if (w->rr && depth >= 3 && !prev_delta) {
+      double q = throughput.x;
+      if (throughput.y > q) q = throughput.y;
+      if (throughput.z > q) q = throughput.z;
+      if (q < 0.05) q = 0.05;
+      if (q > 0.95) q = 0.95;
+      double u = rand01(x, y, s, depth * 16 + 15);
+      if (u >= q) break;
+      throughput = vmul(throughput, 1.0 / q);
+    }
     Hit hit;
     closest_hit(w, o, d, &hit);
     if (!hit.hit) {
@@ -742,10 +925,12 @@ static V3 trace_radiance(PathWorld* w, farm_Renderer* r, int32_t x, int32_t y, i
           o = vadd(p, vmul(n, -RAY_EPS));
         }
       }
+      prev_delta = 1;
     } else if (rough == 0.0) {
       throughput = cmul(throughput, schlick(f0_of(albedo, metal), ndotv));
       d = reflect_dir(d, n);
       o = vadd(p, vmul(n, RAY_EPS));
+      prev_delta = 1;
     } else {
       double u1 = rand01(x, y, s, base + 0);
       double u2 = rand01(x, y, s, base + 1);
@@ -760,6 +945,8 @@ static V3 trace_radiance(PathWorld* w, farm_Renderer* r, int32_t x, int32_t y, i
                      (1.0-fv.z)*(1.0-metal)*(1.0-trans)*albedo.z);
       throughput = cmul(throughput, weight);
       o = vadd(p, vmul(n, RAY_EPS));
+      acc = vadd(acc, mis_bsdf_rects(w, o, d, n, throughput));
+      prev_delta = 0;
     }
     if (throughput.x == 0.0 && throughput.y == 0.0 && throughput.z == 0.0) break;
   }
@@ -809,6 +996,7 @@ static void collect_scene(PathWorld* w, farm_Object3D* obj, int32_t* mesh_i,
     in->geo = farm_mesh_geometry_data(mesh);
     in->blas_i = find_or_build_blas(w, in->geo);
     in->mw = mesh->f_matrixWorld.elements;
+    in->has_inv = fill_inv16(in->mw, in->inv);
     in->mesh_index = (*mesh_i)++;
   } else if (obj->type == FARM_OBJECT3D_TYPE_AMBIENT_LIGHT) {
     farm_AmbientLight* L = (farm_AmbientLight*)obj;
@@ -829,8 +1017,14 @@ static void collect_scene(PathWorld* w, farm_Object3D* obj, int32_t* mesh_i,
   } else if (obj->type == FARM_OBJECT3D_TYPE_RECT_AREA_LIGHT) {
     farm_RectAreaLight* L = (farm_RectAreaLight*)obj;
     grow_ptr((void**)&w->rects, cap_rect, w->nrect + 1, sizeof(RectL));
-    w->rects[w->nrect++] = (RectL){L->f_matrixWorld.elements, L->width, L->height,
-      v3(L->f_color.r*L->f_intensity, L->f_color.g*L->f_intensity, L->f_color.b*L->f_intensity)};
+    RectL rl;
+    memset(&rl, 0, sizeof(rl));
+    rl.mw = L->f_matrixWorld.elements;
+    rl.has_inv = fill_inv16(rl.mw, rl.inv);
+    rl.width = L->width;
+    rl.height = L->height;
+    rl.le = v3(L->f_color.r*L->f_intensity, L->f_color.g*L->f_intensity, L->f_color.b*L->f_intensity);
+    w->rects[w->nrect++] = rl;
   }
   for (int32_t i = 0; i < obj->children.count; i++)
     collect_scene(w, obj->children.items[i], mesh_i, cap_inst, cap_amb, cap_dir, cap_pt, cap_rect);
@@ -893,6 +1087,8 @@ typedef struct {
   int W, worker;
   int ntx, nty;
   int samples, start_s;
+  int adaptive;
+  double adapt_target;
 } TileJob;
 
 static void run_tiles(TileJob* job) {
@@ -906,11 +1102,23 @@ static void run_tiles(TileJob* job) {
     int y1 = y0 + TILE; if (y1 > H) y1 = H;
     for (int y = y0; y < y1; y++) {
       for (int x = x0; x < x1; x++) {
+        double* acc = &job->r->accum[((size_t)y * (size_t)W + (size_t)x) * 3];
+        int k = 0;
+        double mean = 0.0, m2 = 0.0;
         for (int s = 0; s < job->samples; s++) {
           V3 L = trace_radiance(job->w, job->r, x, y, job->start_s + s);
-          double* acc = &job->r->accum[((size_t)y * (size_t)W + (size_t)x) * 3];
           acc[0] += L.x; acc[1] += L.y; acc[2] += L.z;
+          k++;
+          if (job->adaptive) {
+            double Y = 0.2126 * L.x + 0.7152 * L.y + 0.0722 * L.z;
+            double delta = Y - mean;
+            mean += delta / (double)k;
+            m2 += delta * (Y - mean);
+            if (k >= 4 && (m2 / (double)k) < job->adapt_target) break;
+          }
         }
+        if (job->r->spp_count)
+          job->r->spp_count[(size_t)y * (size_t)W + (size_t)x] += k;
       }
     }
   }
@@ -960,6 +1168,8 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
   world.scene = scene;
   world.camera = camera;
   world.max_bounces = self->max_bounces;
+  world.sampling = farm_renderer_sampling_mode(self);
+  world.rr = farm_renderer_roulette_on(self);
   if (scene->hasBackground) world.background = v3(scene->background.r, scene->background.g, scene->background.b);
   else world.background = v3(0, 0, 0);
   int32_t cap_inst = 0, cap_amb = 0, cap_dir = 0, cap_pt = 0, cap_rect = 0, mesh_i = 0;
@@ -976,6 +1186,7 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
   if (W < 1) W = 1;
 
   TileJob jobs[256];
+  int adaptive = self->path_adaptive_spp ? 1 : 0;
   for (int i = 0; i < W; i++) {
     jobs[i].w = &world;
     jobs[i].r = self;
@@ -985,6 +1196,8 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
     jobs[i].nty = nty;
     jobs[i].samples = samples;
     jobs[i].start_s = start_s;
+    jobs[i].adaptive = adaptive;
+    jobs[i].adapt_target = self->path_adaptive_target;
   }
   if (W == 1) {
     run_tiles(&jobs[0]);
@@ -1008,9 +1221,11 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
   }
 
   self->accum_count = start_s + samples;
-  double n = (double)self->accum_count;
   int32_t np = self->width * self->height;
   for (int32_t i = 0; i < np; i++) {
+    int32_t c = self->accum_count;
+    if (adaptive && self->spp_count && self->spp_count[i] > 0) c = self->spp_count[i];
+    double n = (double)(c > 0 ? c : 1);
     self->framebuffer[i * 3 + 0] = (uint8_t)quantize(self->accum[i * 3 + 0] / n);
     self->framebuffer[i * 3 + 1] = (uint8_t)quantize(self->accum[i * 3 + 1] / n);
     self->framebuffer[i * 3 + 2] = (uint8_t)quantize(self->accum[i * 3 + 2] / n);

@@ -1,5 +1,18 @@
 # Farmos
 
+## M8 — path tracer engine speedup
+
+Spec: `spec/M8-path-speed.md` (FINAL). Fixtures: `spec/tests/M8/` (ctest `m8_*`).
+
+- Opt-in Russian roulette (`setPathRoulette`; default off). Better RectArea sampling / MIS (`setPathSampling`; default `PATH_SAMPLING_M4`). Additive adaptive spp API (default off).
+- Compat / default CPU remains bit-identical to M4 goldens. Invalid sampling mode: trap 119.
+- Vulkan: 8×8 workgroups, world-space BVH, all spp in one dispatch. M7 fallback / STRICT / FORCE_FAIL unchanged.
+- Artwork bench: `examples/artwork_silver_still.fm` @ 1920×1080 / 256 spp; scripts in `spec/tests/M8/bench/`.
+
+Linux: `bash scripts/run_suite_linux.sh build/farmc spec/tests/M8`
+
+---
+
 ## M7 / v1.01 — optional Vulkan path tracing
 
 Spec: `spec/M7-vulkan-path.md` (FINAL). Fixtures: `spec/tests/M7/` (ctest `m7_*`).

@@ -247,6 +247,9 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
   };
   add_scene_const("PATH_BACKEND_CPU", 0);
   add_scene_const("PATH_BACKEND_VULKAN", 1);
+  add_scene_const("PATH_SAMPLING_M4", 0);
+  add_scene_const("PATH_SAMPLING_MIS", 1);
+  add_scene_const("PATH_SAMPLING_AREA_SOLID", 2);
   
   // No imports needed - will wire math types manually in bind_imports
   
@@ -1101,6 +1104,90 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       MethodDecl md;
       md.name = "isVulkanPathAvailable";
       md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setPathRoulette";
+      md.params.push_back(Param{"enabled", Type::ty_bool(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "getPathRoulette";
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setPathSampling";
+      md.params.push_back(Param{"mode", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "getPathSampling";
+      md.ret = Type::ty_int();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setPathAdaptiveSpp";
+      md.params.push_back(Param{"enabled", Type::ty_bool(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "getPathAdaptiveSpp";
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setPathAdaptiveTarget";
+      md.params.push_back(Param{"varianceOrNoiseHint", Type::ty_float(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "getPathAdaptiveTarget";
+      md.ret = Type::ty_float();
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;

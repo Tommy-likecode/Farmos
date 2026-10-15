@@ -1536,6 +1536,30 @@ void seed_scene_summaries(Analyzer& A) {
   A.sums["farm_Renderer_getPathBackend"] = gb;
   Summary av; av.seeded = true;
   A.sums["farm_Renderer_isVulkanPathAvailable"] = av;
+  Summary rr; rr.seeded = true;
+  add_eff(rr, false, true, A.with_field(rth, "pathRoulette"), CVal::unk());
+  A.sums["farm_Renderer_setPathRoulette"] = rr;
+  Summary grr; grr.seeded = true;
+  add_eff(grr, true, false, A.with_field(rth, "pathRoulette"));
+  A.sums["farm_Renderer_getPathRoulette"] = grr;
+  Summary ps; ps.seeded = true;
+  add_eff(ps, false, true, A.with_field(rth, "pathSampling"), CVal::unk());
+  A.sums["farm_Renderer_setPathSampling"] = ps;
+  Summary gps; gps.seeded = true;
+  add_eff(gps, true, false, A.with_field(rth, "pathSampling"));
+  A.sums["farm_Renderer_getPathSampling"] = gps;
+  Summary ad; ad.seeded = true;
+  add_eff(ad, false, true, A.with_field(rth, "pathAdaptiveSpp"), CVal::unk());
+  A.sums["farm_Renderer_setPathAdaptiveSpp"] = ad;
+  Summary gad; gad.seeded = true;
+  add_eff(gad, true, false, A.with_field(rth, "pathAdaptiveSpp"));
+  A.sums["farm_Renderer_getPathAdaptiveSpp"] = gad;
+  Summary at; at.seeded = true;
+  add_eff(at, false, true, A.with_field(rth, "pathAdaptiveTarget"), CVal::unk());
+  A.sums["farm_Renderer_setPathAdaptiveTarget"] = at;
+  Summary gat; gat.seeded = true;
+  add_eff(gat, true, false, A.with_field(rth, "pathAdaptiveTarget"));
+  A.sums["farm_Renderer_getPathAdaptiveTarget"] = gat;
 
   auto disp = [&](const std::string& cls, const std::string& key) {
     Summary d; d.seeded = true;

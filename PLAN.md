@@ -103,6 +103,17 @@ M7 / Farmos v1.01 — optional Vulkan path tracing [added 2026-10-13 by user]
 - Order: after M6 / post-M6 residuals; coding milestone for poteto.
 - Spec: `spec/M7-vulkan-path.md` (**FINAL**); poteto implements; eggtooth audits against ACs.
 
+M8 — path tracer engine speedup [added 2026-10-15]
+- Engine-level speedups for M4 CPU + M7 Vulkan path. Artwork composition locked; denoise OUT; 256 spp quality OK.
+- DECIDED 2026-10-15 (PM, OQ-M8-01..05 all option A):
+  - RR off by default; `setPathRoulette` / `getPathRoulette`; optional `FARMOS_PATH_ROULETTE=1` (method wins). Start depth ≥ 3; hard cap `maxBounces`.
+  - Additive `setPathSampling` / `getPathSampling`; `PATH_SAMPLING_M4=0` default; `PATH_SAMPLING_MIS=1`; optional `PATH_SAMPLING_AREA_SOLID=2`. Invalid → trap **119**.
+  - Additive adaptive spp API; default OFF; `renderPath` still adds exactly `samples` when adaptive is off.
+  - Vulkan occupancy: 8×8 workgroup, tile dispatch, one host RTT per `renderPath` (all spp in shader); GPU world-space BVH. M7 fallback/STRICT/FORCE_FAIL/117–118/DCE unchanged.
+  - Compat preserves M4 SHA; speed modes use separate goldens / png_tol.
+  - Wall-clock: ≥2× TommyLaptop Vulkan and ≥1.5× Linux CPU vs M7 baseline on `examples/artwork_silver_still.fm` @ 1920×1080 / 256 spp.
+- Spec: `spec/M8-path-speed.md` (**FINAL**); fixtures: `spec/tests/M8/`; bench: `spec/tests/M8/bench/`.
+
 ## Team
 - Projects Manager: plan, priorities, handoffs, acceptance.
 - poteto: all coding (via Cursor cloud agents), per milestone, reports status/blockers.
