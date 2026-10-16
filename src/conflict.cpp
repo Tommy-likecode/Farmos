@@ -1536,6 +1536,8 @@ void seed_scene_summaries(Analyzer& A) {
   A.sums["farm_Renderer_getPathBackend"] = gb;
   Summary av; av.seeded = true;
   A.sums["farm_Renderer_isVulkanPathAvailable"] = av;
+  Summary avrt; avrt.seeded = true;
+  A.sums["farm_Renderer_isVulkanRayTracingAvailable"] = avrt;
   Summary rr; rr.seeded = true;
   add_eff(rr, false, true, A.with_field(rth, "pathRoulette"), CVal::unk());
   A.sums["farm_Renderer_setPathRoulette"] = rr;

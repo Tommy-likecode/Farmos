@@ -3,7 +3,7 @@
 | Document | Role | Language |
 |----------|------|----------|
 | [getting-started.md](getting-started.md) | Install `farmc`, hello, local test script | English (**normative**) |
-| [language-reference.md](language-reference.md) | Language + stdlib surface M1–M8 | English (**normative**) |
+| [language-reference.md](language-reference.md) | Language + stdlib surface M1–M9 | English (**normative**) |
 | [porting-guide.md](porting-guide.md) | Three.js → Farmos; §3.7 gotcha; physics sync | English (**normative**) |
 | [使用手册.md](使用手册.md) | Chinese handbook (M1–M6) | Chinese (**informative**; do not delete) |
 

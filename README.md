@@ -1,5 +1,19 @@
 # Farmos
 
+## M9 — hardware ray tracing
+
+Spec: `spec/M9-hardware-rt.md` (FINAL). Fixtures: `spec/tests/M9/` (ctest `m9_*`).
+
+- `PATH_BACKEND_VULKAN_RT=2` / `isVulkanRayTracingAvailable()`. Trap 118 valid set `{0,1,2}`.
+- Vulkan AS + `VK_KHR_ray_query` inside compute (not OptiX, not SBT RT pipeline). Soft fallback HW RT → compute → CPU; STRICT trap 117. `FARMOS_VULKAN_RT_FORCE_FAIL=1`.
+- M8 RR/MIS/adaptive apply on backend 2 when enabled. CPU compat SHA unchanged. HW RT images: `# png_tol: 2`.
+- Size: hello ≤ 20 KiB unused; compute-only ≤ 400 KiB; **RT-linked ≤ 500 KiB**.
+- Linux CI: `# requires_vulkan_rt: true` soft-skips without a ray-query device. AC-M9-12..14 (≤4 s / ≥8×) are TommyLaptop gates.
+
+Linux: `bash scripts/run_suite_linux.sh build/farmc spec/tests/M9`
+
+---
+
 ## M8 — path tracer engine speedup
 
 Spec: `spec/M8-path-speed.md` (FINAL). Fixtures: `spec/tests/M8/` (ctest `m8_*`).

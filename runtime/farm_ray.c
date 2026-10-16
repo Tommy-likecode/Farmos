@@ -1218,6 +1218,9 @@ static void* tile_thread(void* arg) { run_tiles((TileJob*)arg); return NULL; }
 #ifdef FARM_ENABLE_VULKAN
 int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera);
 #endif
+#ifdef FARM_ENABLE_VULKAN_RT
+int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera);
+#endif
 
 static int farm_env_is_1(const char* name) {
   const char* e = getenv(name);
@@ -1238,7 +1241,24 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
   validate_meshes((farm_Object3D*)scene);
 
 #ifdef FARM_ENABLE_VULKAN
-  if (self->path_backend == 1) {
+  if (self->path_backend == 2) {
+    int rt_ok = 0;
+    int force_rt = farm_env_is_1("FARMOS_VULKAN_RT_FORCE_FAIL") ||
+                   farm_env_is_1("FARMOS_VULKAN_FORCE_FAIL");
+#ifdef FARM_ENABLE_VULKAN_RT
+    if (!force_rt)
+      rt_ok = farm_vk_rt_render_path(self, scene, camera);
+#else
+    (void)force_rt;
+#endif
+    if (rt_ok) return;
+    if (farm_env_is_1("FARMOS_PATH_GPU_STRICT"))
+      farm_trap(117, "vulkan path failed");
+    int gpu_ok = 0;
+    if (!farm_env_is_1("FARMOS_VULKAN_FORCE_FAIL"))
+      gpu_ok = farm_vk_render_path(self, scene, camera);
+    if (gpu_ok) return;
+  } else if (self->path_backend == 1) {
     int gpu_ok = 0;
     if (!farm_env_is_1("FARMOS_VULKAN_FORCE_FAIL"))
       gpu_ok = farm_vk_render_path(self, scene, camera);

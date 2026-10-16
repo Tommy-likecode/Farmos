@@ -27,6 +27,7 @@ B04 = 65536
 B05 = 67108864
 B06 = 20480
 B08 = 409600  # M7 GPU-linked demo (OQ-M7-04 A)
+B09 = 512000  # M9 RT-linked demo (OQ-M9-06 A)
 
 VULKAN_MARKERS = (b"vulkan-1.dll", b"libvulkan.so.1", b"vkGetInstanceProcAddr")
 
@@ -78,12 +79,18 @@ def maybe_strip(path: str) -> None:
 
 
 def assert_no_vulkan_sym(label: str, log: str, blob: bytes) -> None:
-    for m in ("farm_vk.c", "FARM_ENABLE_VULKAN"):
+    for m in ("farm_vk.c", "FARM_ENABLE_VULKAN", "farm_vk_rt.c", "FARM_ENABLE_VULKAN_RT"):
         if m in log:
             fail(f"{label}: verbose link mentions {m}")
     for m in VULKAN_MARKERS:
         if m in blob:
             fail(f"{label}: binary contains Vulkan loader symbol {m.decode('ascii')}")
+
+
+def assert_no_vulkan_rt_sym(label: str, log: str) -> None:
+    for m in ("farm_vk_rt.c", "FARM_ENABLE_VULKAN_RT"):
+        if m in log:
+            fail(f"{label}: verbose link mentions {m}")
 
 
 def assert_no_thread_start(label: str, log: str, blob: bytes) -> None:
@@ -230,6 +237,7 @@ def main() -> int:
     demo_src = os.path.join(root, "examples", "05_stacking_bounce.fm")
     cornell_src = os.path.join(root, "examples", "m4_cornell_800x600.fm")
     gpu_src = os.path.join(root, "examples", "06_vulkan_cornell.fm")
+    rt_src = os.path.join(root, "examples", "07_vulkan_rt_cornell.fm")
 
     with tempfile.TemporaryDirectory(prefix="farmc_m6_size_") as td:
         unused_math = os.path.join(td, "unused_math.fm")
@@ -261,6 +269,7 @@ def main() -> int:
         scene = os.path.join(td, "scene_hello")
 
         gpu = os.path.join(td, "gpu")
+        rt = os.path.join(td, "rt")
         build(farmc, hello_src, hello)
         build(farmc, unused_math, unused)
         build(farmc, cube_src, cube)
@@ -268,7 +277,8 @@ def main() -> int:
         build(farmc, demo_src, demo)
         build(farmc, scene_hello, scene)
         build(farmc, gpu_src, gpu)
-        for p in (hello, unused, cube, glass, demo, scene, gpu):
+        build(farmc, rt_src, rt)
+        for p in (hello, unused, cube, glass, demo, scene, gpu, rt):
             maybe_strip(p)
 
         hs = os.path.getsize(hello)
@@ -278,6 +288,7 @@ def main() -> int:
         ds = os.path.getsize(demo)
         ss = os.path.getsize(scene)
         gps = os.path.getsize(gpu)
+        rps = os.path.getsize(rt)
         delta = ds - ss
 
         with open(hello, "rb") as f:
@@ -291,6 +302,7 @@ def main() -> int:
         report("B-02", "cube (examples/02_rotating_cube.fm)", cs, B02, "B", enforce_pe)
         report("B-03", "glass+mirror (examples/04_glass_mirror.fm)", gs, B03, "B", enforce_pe)
         report("B-08", "GPU-linked vulkan cornell (examples/06_vulkan_cornell.fm)", gps, B08, "B", enforce_pe)
+        report("B-09", "RT-linked vulkan cornell (examples/07_vulkan_rt_cornell.fm)", rps, B09, "B", enforce_pe)
         report("B-04", "S_demo - S_scene", delta, B04, "B", enforce_pe)
         print(f"      S_demo={ds} B  S_scene={ss} B")
         report("B-06", "unused farmos:math import", us, B06, "B", enforce_pe)
@@ -328,6 +340,15 @@ def main() -> int:
         assert_no_vulkan_sym("M7 glass+mirror CPU", glog, gb)
         print("M7   no Vulkan loader symbols on hello / unused-math / scene / cube / CPU glass  OK")
 
+        gpolog = verbose(farmc, gpu_src, os.path.join(td, "gpu_v"))
+        rtlog = verbose(farmc, rt_src, os.path.join(td, "rt_v"))
+        assert_no_vulkan_rt_sym("M9 compute-only GPU cornell", gpolog)
+        if "farm_vk_rt.c" not in rtlog or "FARM_ENABLE_VULKAN_RT" not in rtlog:
+            fail("M9 RT-linked demo did not link farm_vk_rt.c")
+        if "farm_vk.c" not in rtlog:
+            fail("M9 RT-linked demo did not link farm_vk.c (compute fallback)")
+        print("M9   compute-only omits farm_vk_rt.c; RT-linked includes RT + compute fallback  OK")
+
         ver = subprocess.run([farmc, "version"], capture_output=True)
         vout = ver.stdout.decode("utf-8", errors="replace")
         if "1.01" not in vout:
@@ -343,12 +364,12 @@ def main() -> int:
 
         if "farm_par" in hlog or "FARM_ENABLE_THREADS" in hlog:
             fail("hello pulled parallel runtime")
-        if "farm_math.c" in hlog or "farm_scene.c" in hlog or "farm_ray.c" in hlog or "farm_physics.c" in hlog or "farm_vk.c" in hlog:
+        if "farm_math.c" in hlog or "farm_scene.c" in hlog or "farm_ray.c" in hlog or "farm_physics.c" in hlog or "farm_vk.c" in hlog or "farm_vk_rt.c" in hlog:
             fail("hello linked a stdlib unit beyond farm_rt.c")
         if "farm_math.c" in ulog:
             fail("unused math import linked farm_math.c")
-        if "farm_vk.c" in glog:
-            fail("CPU glass+mirror linked farm_vk.c")
+        if "farm_vk.c" in glog or "farm_vk_rt.c" in glog:
+            fail("CPU glass+mirror linked farm_vk.c / farm_vk_rt.c")
         print("DCE  hello / unused-math link only farm_rt.c  OK")
 
         if args.peak_ram:

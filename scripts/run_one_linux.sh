@@ -50,6 +50,7 @@ def parse_expected(path):
     diag_exact = False
     epsilon = None
     requires_vulkan = False
+    requires_vulkan_rt = False
     png_tol = None
     envs = []
     stdout_alts = []
@@ -115,6 +116,9 @@ def parse_expected(path):
             m = re.match(r"^# requires_vulkan:[ \t]*true[ \t]*$", line)
             if m:
                 requires_vulkan = True; continue
+            m = re.match(r"^# requires_vulkan_rt:[ \t]*true[ \t]*$", line)
+            if m:
+                requires_vulkan_rt = True; continue
             m = re.match(r"^# env:[ \t]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
             if m:
                 envs.append((m.group(1), m.group(2))); continue
@@ -151,7 +155,8 @@ def parse_expected(path):
     return dict(kind=kind, exit=exit_code, stdout=stdout, stderr=stderr,
                 diags=diags, png=png_path, sha256=sha256, stderr_exact=stderr_exact,
                 flags=flags, repeat=repeat, threads=threads, diag_exact=diag_exact,
-                epsilon=epsilon, requires_vulkan=requires_vulkan, png_tol=png_tol,
+                epsilon=epsilon, requires_vulkan=requires_vulkan,
+                requires_vulkan_rt=requires_vulkan_rt, png_tol=png_tol,
                 envs=envs, stdout_alts=stdout_alts)
 
 png_scratch = None
@@ -270,6 +275,80 @@ def host_has_vulkan_device():
     destroy(inst, None)
     return rc == VK_SUCCESS and count.value > 0
 
+def host_has_vulkan_rt_device():
+    import ctypes
+    lib = None
+    for n in ("libvulkan.so.1", "libvulkan.so", "vulkan-1.dll"):
+        try:
+            lib = ctypes.CDLL(n)
+            break
+        except OSError:
+            continue
+    if not lib:
+        return False
+    VK_SUCCESS = 0
+    class App(ctypes.Structure):
+        _fields_ = [
+            ("sType", ctypes.c_uint32), ("pNext", ctypes.c_void_p),
+            ("pApplicationName", ctypes.c_char_p), ("applicationVersion", ctypes.c_uint32),
+            ("pEngineName", ctypes.c_char_p), ("engineVersion", ctypes.c_uint32),
+            ("apiVersion", ctypes.c_uint32),
+        ]
+    class InstCI(ctypes.Structure):
+        _fields_ = [
+            ("sType", ctypes.c_uint32), ("pNext", ctypes.c_void_p), ("flags", ctypes.c_uint32),
+            ("pApplicationInfo", ctypes.POINTER(App)),
+            ("enabledLayerCount", ctypes.c_uint32), ("ppEnabledLayerNames", ctypes.c_void_p),
+            ("enabledExtensionCount", ctypes.c_uint32), ("ppEnabledExtensionNames", ctypes.c_void_p),
+        ]
+    class Ext(ctypes.Structure):
+        _fields_ = [("extensionName", ctypes.c_char * 256), ("specVersion", ctypes.c_uint32)]
+    create = lib.vkCreateInstance
+    create.restype = ctypes.c_int32
+    create.argtypes = [ctypes.POINTER(InstCI), ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    enumd = lib.vkEnumeratePhysicalDevices
+    enumd.restype = ctypes.c_int32
+    enumext = lib.vkEnumerateDeviceExtensionProperties
+    enumext.restype = ctypes.c_int32
+    destroy = lib.vkDestroyInstance
+    app = App(0, None, b"farmos-harness-rt", 0, None, 0, (1 << 22) | (2 << 12))
+    ci = InstCI(1, None, 0, ctypes.pointer(app), 0, None, 0, None)
+    inst = ctypes.c_void_p()
+    if create(ctypes.byref(ci), None, ctypes.byref(inst)) != VK_SUCCESS or not inst.value:
+        return False
+    count = ctypes.c_uint32(0)
+    enumd.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32), ctypes.c_void_p]
+    rc = enumd(inst, ctypes.byref(count), None)
+    if rc != VK_SUCCESS or count.value == 0:
+        destroy.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        destroy(inst, None)
+        return False
+    devices = (ctypes.c_void_p * count.value)()
+    enumd.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32), ctypes.c_void_p]
+    if enumd(inst, ctypes.byref(count), devices) != VK_SUCCESS:
+        destroy.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        destroy(inst, None)
+        return False
+    need = (b"VK_KHR_acceleration_structure", b"VK_KHR_ray_query")
+    found_rt = False
+    enumext.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32), ctypes.c_void_p]
+    for i in range(count.value):
+        n = ctypes.c_uint32(0)
+        if enumext(devices[i], None, ctypes.byref(n), None) != VK_SUCCESS:
+            continue
+        if n.value == 0:
+            continue
+        exts = (Ext * n.value)()
+        if enumext(devices[i], None, ctypes.byref(n), exts) != VK_SUCCESS:
+            continue
+        names = set(exts[j].extensionName.split(b"\x00", 1)[0] for j in range(n.value))
+        if all(x in names for x in need):
+            found_rt = True
+            break
+    destroy.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    destroy(inst, None)
+    return found_rt
+
 def parse_farmc_diags(err):
     got = []
     for ln in err.split("\n"):
@@ -377,6 +456,10 @@ if exp["kind"] == "compile_error":
 
 if exp.get("requires_vulkan") and not host_has_vulkan_device():
     print(f"SKIP {name}: requires_vulkan (no usable Vulkan device)")
+    sys.exit(0)
+
+if exp.get("requires_vulkan_rt") and not host_has_vulkan_rt_device():
+    print(f"SKIP {name}: requires_vulkan_rt (no usable Vulkan RT device)")
     sys.exit(0)
 
 p = run_build()

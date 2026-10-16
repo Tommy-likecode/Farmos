@@ -114,6 +114,17 @@ M8 — path tracer engine speedup [added 2026-10-15]
   - Wall-clock: ≥2× TommyLaptop Vulkan and ≥1.5× Linux CPU vs M7 baseline on `examples/artwork_silver_still.fm` @ 1920×1080 / 256 spp.
 - Spec: `spec/M8-path-speed.md` (**FINAL**); fixtures: `spec/tests/M8/`; bench: `spec/tests/M8/bench/`.
 
+M9 — hardware ray tracing [added 2026-10-16]
+- Optional Vulkan AS / `VK_KHR_ray_query` (inside compute) backend for the M4 path tracer. Not OptiX; not full RT pipeline / SBT. Denoise / DLSS / frame-gen / Swapper / GPU raster OUT.
+- DECIDED 2026-10-16 (PM, OQ-M9-01..07 all option A):
+  - API: `PATH_BACKEND_VULKAN_RT=2` + `isVulkanRayTracingAvailable()`; trap **118** valid set `{0,1,2}`.
+  - Soft fallback HW RT → compute Vulkan → CPU; stored backend stays `2`. STRICT (`FARMOS_PATH_GPU_STRICT=1`) → trap **117** on selected HW RT fail. `FARMOS_VULKAN_RT_FORCE_FAIL=1`.
+  - M8 RR / MIS / adaptive apply on backend 2 when enabled; CPU compat SHA unchanged.
+  - Images: `# png_tol: 2`; harness `# requires_vulkan_rt:` soft-skip.
+  - Size: hello ≤ 20 KiB unused; CPU glass+mirror ≤ 300 KiB; compute-only ≤ 400 KiB; RT-linked ≤ **500 KiB**.
+  - Primary wall-clock: silver still 1920×1080 / 256 spp on TommyLaptop HW RT median ≤ 4 s after 1 warm-up; secondary ≥ 8× vs post-M8 compute. Pending TommyLaptop / poteto.
+- Spec: `spec/M9-hardware-rt.md` (**FINAL**); fixtures: `spec/tests/M9/`; bench: `spec/tests/M9/bench/`.
+
 ## Team
 - Projects Manager: plan, priorities, handoffs, acceptance.
 - poteto: all coding (via Cursor cloud agents), per milestone, reports status/blockers.

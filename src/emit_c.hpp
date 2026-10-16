@@ -10,6 +10,8 @@ bool program_uses_parallel(Program& prog);
 bool program_uses_ray(Program& prog);
 // True when a reachable user module opts into the Vulkan path backend (gates farm_vk.c).
 bool program_uses_vulkan(Program& prog);
+// True when HW RT (backend 2 / isVulkanRayTracingAvailable) is reachable (gates farm_vk_rt.c).
+bool program_uses_vulkan_rt(Program& prog);
 // True when a user module actually uses a farmos:physics type or BODY_* const.
 bool program_uses_physics(Program& prog);
 // True when a user module actually uses a farmos:math type (not merely imports a name).
