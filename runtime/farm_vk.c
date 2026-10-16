@@ -421,9 +421,9 @@ static int ensure_device(void) {
   sm.pCode = farm_vk_path_spv;
   if (vkCreateShaderModule(g_dev, &sm, NULL, &g_shader) != VK_SUCCESS) return 0;
 
-  VkDescriptorSetLayoutBinding b[6];
+  VkDescriptorSetLayoutBinding b[8];
   memset(b, 0, sizeof(b));
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 8; i++) {
     b[i].binding = (uint32_t)i;
     b[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     b[i].descriptorCount = 1;
@@ -432,7 +432,7 @@ static int ensure_device(void) {
   VkDescriptorSetLayoutCreateInfo dl;
   memset(&dl, 0, sizeof(dl));
   dl.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-  dl.bindingCount = 6;
+  dl.bindingCount = 8;
   dl.pBindings = b;
   if (vkCreateDescriptorSetLayout(g_dev, &dl, NULL, &g_dsl) != VK_SUCCESS) return 0;
 
@@ -500,6 +500,103 @@ static void xform_p(const double* e, double x, double y, double z, double* ox, d
   *ox = e[0]*x + e[4]*y + e[8]*z + e[12];
   *oy = e[1]*x + e[5]*y + e[9]*z + e[13];
   *oz = e[2]*x + e[6]*y + e[10]*z + e[14];
+}
+
+typedef struct {
+  float minx, miny, minz, leftf;
+  float maxx, maxy, maxz, rightf;
+  float countf, firstf, pad0, pad1;
+} GpuBvhNodeHost;
+
+typedef struct { float minx, miny, minz, maxx, maxy, maxz; } GpuAabb;
+typedef struct { double key; int32_t orig; int32_t idx; } GpuSort;
+typedef struct { int32_t n; int32_t* ids; } GpuLeaf;
+
+static void gpu_sort(GpuSort* keys, int32_t n) {
+  for (int32_t i = 1; i < n; i++) {
+    GpuSort tmp = keys[i];
+    int32_t j = i;
+    while (j > 0) {
+      const GpuSort* p = &keys[j - 1];
+      int greater = (p->key > tmp.key) || (p->key == tmp.key && p->orig > tmp.orig);
+      if (!greater) break;
+      keys[j] = keys[j - 1];
+      j--;
+    }
+    keys[j] = tmp;
+  }
+}
+
+static int32_t gpu_bvh_build(GpuBvhNodeHost* nodes, int32_t* nnodes, GpuLeaf* leaves,
+                             int32_t* idx, int32_t n,
+                             float* cx, float* cy, float* cz, int32_t* orig,
+                             GpuAabb* box) {
+  int32_t node_i = (*nnodes)++;
+  GpuBvhNodeHost* node = &nodes[node_i];
+  memset(node, 0, sizeof(*node));
+  node->minx = node->miny = node->minz = 1e30f;
+  node->maxx = node->maxy = node->maxz = -1e30f;
+  float cminx = 1e30f, cminy = 1e30f, cminz = 1e30f;
+  float cmaxx = -1e30f, cmaxy = -1e30f, cmaxz = -1e30f;
+  for (int32_t i = 0; i < n; i++) {
+    int32_t p = idx[i];
+    if (box[p].minx < node->minx) node->minx = box[p].minx;
+    if (box[p].miny < node->miny) node->miny = box[p].miny;
+    if (box[p].minz < node->minz) node->minz = box[p].minz;
+    if (box[p].maxx > node->maxx) node->maxx = box[p].maxx;
+    if (box[p].maxy > node->maxy) node->maxy = box[p].maxy;
+    if (box[p].maxz > node->maxz) node->maxz = box[p].maxz;
+    if (cx[p] < cminx) cminx = cx[p];
+    if (cy[p] < cminy) cminy = cy[p];
+    if (cz[p] < cminz) cminz = cz[p];
+    if (cx[p] > cmaxx) cmaxx = cx[p];
+    if (cy[p] > cmaxy) cmaxy = cy[p];
+    if (cz[p] > cmaxz) cmaxz = cz[p];
+  }
+  int make_leaf = (n <= 4);
+  if (!make_leaf) {
+    float ex = cmaxx - cminx, ey = cmaxy - cminy, ez = cmaxz - cminz;
+    int axis = 0;
+    if (ey > ex && ey >= ez) axis = 1;
+    else if (ez > ex && ez >= ey) axis = 2;
+    int all_eq = 1;
+    float c0 = (axis == 0) ? cx[idx[0]] : (axis == 1) ? cy[idx[0]] : cz[idx[0]];
+    for (int32_t i = 1; i < n; i++) {
+      float c = (axis == 0) ? cx[idx[i]] : (axis == 1) ? cy[idx[i]] : cz[idx[i]];
+      if (c != c0) { all_eq = 0; break; }
+    }
+    int32_t mid = n / 2;
+    if (!all_eq) {
+      GpuSort* keys = (GpuSort*)malloc((size_t)n * sizeof(GpuSort));
+      if (keys) {
+        for (int32_t i = 0; i < n; i++) {
+          int32_t p = idx[i];
+          keys[i].key = (axis == 0) ? cx[p] : (axis == 1) ? cy[p] : cz[p];
+          keys[i].orig = orig[p];
+          keys[i].idx = p;
+        }
+        gpu_sort(keys, n);
+        for (int32_t i = 0; i < n; i++) idx[i] = keys[i].idx;
+        free(keys);
+      } else make_leaf = 1;
+    }
+    if (mid == 0 || mid == n) make_leaf = 1;
+    if (!make_leaf) {
+      int32_t L = gpu_bvh_build(nodes, nnodes, leaves, idx, mid, cx, cy, cz, orig, box);
+      int32_t R = gpu_bvh_build(nodes, nnodes, leaves, idx + mid, n - mid, cx, cy, cz, orig, box);
+      node->leftf = (float)L;
+      node->rightf = (float)R;
+      node->countf = 0.f;
+      return node_i;
+    }
+  }
+  node->leftf = -1.f;
+  node->countf = (float)n;
+  node->firstf = (float)node_i;
+  leaves[node_i].n = n;
+  leaves[node_i].ids = (int32_t*)malloc((size_t)n * sizeof(int32_t));
+  if (leaves[node_i].ids) memcpy(leaves[node_i].ids, idx, (size_t)n * sizeof(int32_t));
+  return node_i;
 }
 
 static void grow(void** p, int32_t* cap, int32_t n, size_t elem) {
@@ -689,15 +786,68 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
     lights[lo++] = (float)rects[i].height; lights[lo++] = 0; lights[lo++] = 0; lights[lo++] = 0;
   }
 
+  /* World-space triangle BVH (M8 occupancy: fewer ray tests per bounce). */
+  int32_t nnodes = 0, bvh_root = -1, nid = 0;
+  GpuBvhNodeHost* bvh = NULL;
+  int32_t* prim_ids = NULL;
+  if (ntri > 0) {
+    int32_t maxn = ntri * 2 + 2;
+    bvh = (GpuBvhNodeHost*)calloc((size_t)maxn, sizeof(GpuBvhNodeHost));
+    GpuLeaf* leaves = (GpuLeaf*)calloc((size_t)maxn, sizeof(GpuLeaf));
+    int32_t* idx = (int32_t*)malloc((size_t)ntri * sizeof(int32_t));
+    int32_t* orig = (int32_t*)malloc((size_t)ntri * sizeof(int32_t));
+    float* cx = (float*)malloc((size_t)ntri * sizeof(float));
+    float* cy = (float*)malloc((size_t)ntri * sizeof(float));
+    float* cz = (float*)malloc((size_t)ntri * sizeof(float));
+    GpuAabb* box = (GpuAabb*)malloc((size_t)ntri * sizeof(GpuAabb));
+    if (bvh && leaves && idx && orig && cx && cy && cz && box) {
+      for (int32_t t = 0; t < ntri; t++) {
+        float ax = tris[t].v0[0], ay = tris[t].v0[1], az = tris[t].v0[2];
+        float bx = tris[t].v1[0], by = tris[t].v1[1], bz = tris[t].v1[2];
+        float cxv = tris[t].v2[0], cyv = tris[t].v2[1], czv = tris[t].v2[2];
+        box[t].minx = fminf(ax, fminf(bx, cxv));
+        box[t].miny = fminf(ay, fminf(by, cyv));
+        box[t].minz = fminf(az, fminf(bz, czv));
+        box[t].maxx = fmaxf(ax, fmaxf(bx, cxv));
+        box[t].maxy = fmaxf(ay, fmaxf(by, cyv));
+        box[t].maxz = fmaxf(az, fmaxf(bz, czv));
+        cx[t] = (ax + bx + cxv) / 3.f;
+        cy[t] = (ay + by + cyv) / 3.f;
+        cz[t] = (az + bz + czv) / 3.f;
+        orig[t] = t; idx[t] = t;
+      }
+      bvh_root = gpu_bvh_build(bvh, &nnodes, leaves, idx, ntri, cx, cy, cz, orig, box);
+      for (int32_t i = 0; i < nnodes; i++)
+        if (leaves[i].n > 0) nid += leaves[i].n;
+      prim_ids = (int32_t*)calloc((size_t)(nid > 0 ? nid : 1), sizeof(int32_t));
+      int32_t off = 0;
+      for (int32_t i = 0; i < nnodes; i++) {
+        if (leaves[i].n <= 0) continue;
+        bvh[i].firstf = (float)off;
+        if (leaves[i].ids && prim_ids) {
+          memcpy(prim_ids + off, leaves[i].ids, (size_t)leaves[i].n * sizeof(int32_t));
+        }
+        off += leaves[i].n;
+      }
+    }
+    if (leaves) {
+      for (int32_t i = 0; i < maxn; i++) free(leaves[i].ids);
+      free(leaves);
+    }
+    free(idx); free(orig); free(cx); free(cy); free(cz); free(box);
+  }
+
   typedef struct {
     int32_t size[4];
     int32_t counts[4];
     int32_t counts2[4];
+    int32_t flags[4];   /* roulette, sampling, adaptive, nnodes */
     float background[4];
     float cam_pos[4];
     float cam_x[4];
     float cam_y[4];
     float cam_z[4];
+    float extra[4];     /* adaptive_target, bvh_root, 0, 0 */
   } GpuParams;
   GpuParams params;
   memset(&params, 0, sizeof(params));
@@ -707,6 +857,12 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   params.counts[2] = nmat; params.counts[3] = namb;
   params.counts2[0] = ndir; params.counts2[1] = npt;
   params.counts2[2] = nrect; params.counts2[3] = ntex;
+  params.flags[0] = farm_renderer_roulette_on(r);
+  params.flags[1] = farm_renderer_sampling_mode(r);
+  params.flags[2] = r->path_adaptive_spp ? 1 : 0;
+  params.flags[3] = nnodes;
+  params.extra[0] = (float)r->path_adaptive_target;
+  params.extra[1] = (float)bvh_root;
   if (scene->hasBackground) {
     params.background[0] = (float)scene->background.r;
     params.background[1] = (float)scene->background.g;
@@ -721,22 +877,25 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   params.cam_z[0] = (float)e[8]; params.cam_z[1] = (float)e[9]; params.cam_z[2] = (float)e[10];
 
   int32_t npix = r->width * r->height;
-  VkBuffer bufs[6] = {0}; VkDeviceMemory mems[6] = {0}; void* maps[6] = {0};
-  VkDeviceSize sizes[6];
+  VkBuffer bufs[8] = {0}; VkDeviceMemory mems[8] = {0}; void* maps[8] = {0};
+  VkDeviceSize sizes[8];
   sizes[0] = sizeof(GpuParams);
   sizes[1] = sizeof(GpuTriHost) * (size_t)(ntri > 0 ? ntri : 1);
   sizes[2] = sizeof(float) * 16 * (size_t)nmat;
   sizes[3] = sizeof(float) * 4 * (size_t)nlight_vec4;
   sizes[4] = sizeof(float) * (size_t)(ntex > 0 ? ntex : 4);
   sizes[5] = sizeof(float) * 3 * (size_t)npix;
+  sizes[6] = sizeof(GpuBvhNodeHost) * (size_t)(nnodes > 0 ? nnodes : 1);
+  sizes[7] = sizeof(int32_t) * (size_t)(nid > 0 ? nid : 1);
   int ok = 1;
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 8; i++) {
     if (!make_ssbo(sizes[i], &bufs[i], &mems[i], &maps[i])) { ok = 0; break; }
   }
   if (!ok) {
-    for (int i = 0; i < 6; i++) destroy_ssbo(bufs[i], mems[i]);
+    for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
     free(inst); free(amb); free(dirs); free(pts); free(rects);
     free(tris); free(mmap); free(mat4); free(texels); free(lights);
+    free(bvh); free(prim_ids);
     return 0;
   }
   memcpy(maps[0], &params, sizeof(params));
@@ -745,10 +904,14 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   memcpy(maps[3], lights, sizes[3]);
   if (ntex > 0) memcpy(maps[4], texels, (size_t)ntex * sizeof(float));
   memset(maps[5], 0, (size_t)sizes[5]);
+  if (nnodes > 0 && bvh) memcpy(maps[6], bvh, (size_t)nnodes * sizeof(GpuBvhNodeHost));
+  else memset(maps[6], 0, (size_t)sizes[6]);
+  if (nid > 0 && prim_ids) memcpy(maps[7], prim_ids, (size_t)nid * sizeof(int32_t));
+  else memset(maps[7], 0, (size_t)sizes[7]);
 
   VkDescriptorPoolSize psz;
   psz.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-  psz.descriptorCount = 6;
+  psz.descriptorCount = 8;
   VkDescriptorPoolCreateInfo dpi;
   memset(&dpi, 0, sizeof(dpi));
   dpi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -757,9 +920,10 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   dpi.pPoolSizes = &psz;
   VkDescriptorPool pool = 0;
   if (vkCreateDescriptorPool(g_dev, &dpi, NULL, &pool) != VK_SUCCESS) {
-    for (int i = 0; i < 6; i++) destroy_ssbo(bufs[i], mems[i]);
+    for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
     free(inst); free(amb); free(dirs); free(pts); free(rects);
     free(tris); free(mmap); free(mat4); free(texels); free(lights);
+    free(bvh); free(prim_ids);
     return 0;
   }
   VkDescriptorSetAllocateInfo dai;
@@ -771,15 +935,16 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   VkDescriptorSet dset = 0;
   if (vkAllocateDescriptorSets(g_dev, &dai, &dset) != VK_SUCCESS) {
     vkDestroyDescriptorPool(g_dev, pool, NULL);
-    for (int i = 0; i < 6; i++) destroy_ssbo(bufs[i], mems[i]);
+    for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
     free(inst); free(amb); free(dirs); free(pts); free(rects);
     free(tris); free(mmap); free(mat4); free(texels); free(lights);
+    free(bvh); free(prim_ids);
     return 0;
   }
-  VkDescriptorBufferInfo bin[6];
-  VkWriteDescriptorSet wr[6];
+  VkDescriptorBufferInfo bin[8];
+  VkWriteDescriptorSet wr[8];
   memset(wr, 0, sizeof(wr));
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 8; i++) {
     bin[i].buffer = bufs[i];
     bin[i].offset = 0;
     bin[i].range = VK_WHOLE_SIZE;
@@ -790,7 +955,7 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
     wr[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     wr[i].pBufferInfo = &bin[i];
   }
-  vkUpdateDescriptorSets(g_dev, 6, wr, 0, NULL);
+  vkUpdateDescriptorSets(g_dev, 8, wr, 0, NULL);
 
   VkCommandBufferAllocateInfo cai;
   memset(&cai, 0, sizeof(cai));
@@ -801,9 +966,10 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   VkCommandBuffer cmd = NULL;
   if (vkAllocateCommandBuffers(g_dev, &cai, &cmd) != VK_SUCCESS) {
     vkDestroyDescriptorPool(g_dev, pool, NULL);
-    for (int i = 0; i < 6; i++) destroy_ssbo(bufs[i], mems[i]);
+    for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
     free(inst); free(amb); free(dirs); free(pts); free(rects);
     free(tris); free(mmap); free(mat4); free(texels); free(lights);
+    free(bvh); free(prim_ids);
     return 0;
   }
   VkCommandBufferBeginInfo bi;
@@ -812,9 +978,10 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
   if (vkBeginCommandBuffer(cmd, &bi) != VK_SUCCESS) {
     vkDestroyDescriptorPool(g_dev, pool, NULL);
-    for (int i = 0; i < 6; i++) destroy_ssbo(bufs[i], mems[i]);
+    for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
     free(inst); free(amb); free(dirs); free(pts); free(rects);
     free(tris); free(mmap); free(mat4); free(texels); free(lights);
+    free(bvh); free(prim_ids);
     return 0;
   }
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_pipe);
@@ -835,9 +1002,10 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   }
   if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
     vkDestroyDescriptorPool(g_dev, pool, NULL);
-    for (int i = 0; i < 6; i++) destroy_ssbo(bufs[i], mems[i]);
+    for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
     free(inst); free(amb); free(dirs); free(pts); free(rects);
     free(tris); free(mmap); free(mat4); free(texels); free(lights);
+    free(bvh); free(prim_ids);
     return 0;
   }
   VkSubmitInfo si;
@@ -848,9 +1016,10 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS ||
       vkQueueWaitIdle(g_queue) != VK_SUCCESS) {
     vkDestroyDescriptorPool(g_dev, pool, NULL);
-    for (int i = 0; i < 6; i++) destroy_ssbo(bufs[i], mems[i]);
+    for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
     free(inst); free(amb); free(dirs); free(pts); free(rects);
     free(tris); free(mmap); free(mat4); free(texels); free(lights);
+    free(bvh); free(prim_ids);
     return 0;
   }
 
@@ -858,11 +1027,15 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   int start_s = r->accum_count;
   int samples = r->samples;
   r->accum_count = start_s + samples;
-  double n = (double)r->accum_count;
+  int adaptive = r->path_adaptive_spp ? 1 : 0;
   for (int32_t i = 0; i < npix; i++) {
     r->accum[i * 3 + 0] += (double)gpu_acc[i * 3 + 0];
     r->accum[i * 3 + 1] += (double)gpu_acc[i * 3 + 1];
     r->accum[i * 3 + 2] += (double)gpu_acc[i * 3 + 2];
+    if (r->spp_count) r->spp_count[i] += samples;
+    int32_t c = r->accum_count;
+    if (adaptive && r->spp_count && r->spp_count[i] > 0) c = r->spp_count[i];
+    double n = (double)(c > 0 ? c : 1);
     float mx = (float)(r->accum[i * 3 + 0] / n);
     float my = (float)(r->accum[i * 3 + 1] / n);
     float mz = (float)(r->accum[i * 3 + 2] / n);
@@ -872,8 +1045,9 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   }
 
   vkDestroyDescriptorPool(g_dev, pool, NULL);
-  for (int i = 0; i < 6; i++) destroy_ssbo(bufs[i], mems[i]);
+  for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
   free(inst); free(amb); free(dirs); free(pts); free(rects);
   free(tris); free(mmap); free(mat4); free(texels); free(lights);
+  free(bvh); free(prim_ids);
   return 1;
 }

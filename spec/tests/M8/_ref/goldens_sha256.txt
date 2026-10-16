@@ -1,0 +1,3 @@
+# CPU compat twins (from M4/_ref/goldens_sha256.txt)
+001_compat_m4_background.golden.png  e7655a2c9a205f90786991219a3b558e27b2314377a4f5d4a66891b5b25915dd
+002_roulette_off_golden.golden.png  e7655a2c9a205f90786991219a3b558e27b2314377a4f5d4a66891b5b25915dd

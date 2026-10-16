@@ -55,7 +55,7 @@ Set `FARM_CC` to override the C compiler; set `FARM_RUNTIME` if `runtime/farm_rt
 scripts\build_and_test.ps1
 ```
 
-That configures, builds, and runs default ctest (`-LE conformance_bundle`): M1–M7 fixtures plus local gates (DCE, size budgets, docs, examples, benchmarks, TEMP abort). GPU fixtures with `# requires_vulkan: true` soft-skip when no Vulkan device is present.
+That configures, builds, and runs default ctest (`-LE conformance_bundle`): M1–M8 fixtures plus local gates (DCE, size budgets, docs, examples, benchmarks, TEMP abort). GPU fixtures with `# requires_vulkan: true` soft-skip when no Vulkan device is present.
 
 One fixture:
 
@@ -76,8 +76,8 @@ Linux: `bash scripts/run_one_linux.sh build/farmc spec/tests/M6 001_for_continue
 
 ## Where things live
 
-- Language / stdlib specs: `spec/M1-core.md` … `spec/M6-hardening.md`
-- Fixtures: `spec/tests/M1` … `spec/tests/M6`
+- Language / stdlib specs: `spec/M1-core.md` … `spec/M8-path-speed.md`
+- Fixtures: `spec/tests/M1` … `spec/tests/M8`
 - Examples: `examples/`
 - Benchmarks: `benchmarks/`
 - This guide: [language-reference.md](language-reference.md), [porting-guide.md](porting-guide.md)

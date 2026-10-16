@@ -1,0 +1,27 @@
+===== host cursor Linux 6.12.94+ x86_64 nproc=4 threads=4 =====
+farmc=/workspace/build/farmc
+FARMOS_VULKAN_FORCE_FAIL=1 FARMOS_THREADS=4
+examples/artwork_silver_still.fm 1920x1080 / 256 spp / 6 bounces (speed lane caps RR at 4)
+
+===== BASELINE 2026-10-16T00:43:59+00:00 RR=0 sampling=0 =====
+host=cursor  Linux 6.12.94+ x86_64
+threads=4
+roulette=0  sampling=0
+  warmup 158736 ms  stdout=cpu
+  156582 ms  stdout=cpu
+  156533 ms  stdout=cpu
+  160345 ms  stdout=cpu
+median_ms=156582  runs=156582 156533 160345  warmup_ms=158736
+
+===== SPEED 2026-10-16T01:02+00:00 RR=1 sampling=1 (after speed-path fix) =====
+host=cursor  Linux 6.12.94+ x86_64
+threads=4
+roulette=1  sampling=1
+  warmup 107819 ms  stdout=cpu
+  103693 ms  stdout=cpu
+  102025 ms  stdout=cpu
+  101932 ms  stdout=cpu
+median_ms=102025  runs=103693 102025 101932  warmup_ms=107819
+
+ratio=156582/102025=1.535x  (target >=1.5x; speed <=104388 ms)
+===== DONE =====

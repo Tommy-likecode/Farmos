@@ -11,11 +11,13 @@ layout(std430, binding = 0) buffer ParamBuf {
   ivec4 size;      // width, height, samples, start_s
   ivec4 counts;    // max_bounces, ntri, nmat, namb
   ivec4 counts2;   // ndir, npt, nrect, ntexels
+  ivec4 flags;     // roulette, sampling, adaptive, nnodes
   vec4 background; // rgb, fov_deg
   vec4 cam_pos;    // xyz, aspect
   vec4 cam_x;
   vec4 cam_y;
   vec4 cam_z;
+  vec4 extra;      // adaptive_target, bvh_root, 0, 0
 } P;
 
 struct GpuTri {
@@ -33,6 +35,15 @@ layout(std430, binding = 2) buffer MatBuf {
 layout(std430, binding = 3) buffer LightBuf { vec4 lights[]; };
 layout(std430, binding = 4) buffer TexBuf { float texels[]; };
 layout(std430, binding = 5) buffer AccumBuf { float accum[]; };
+
+struct GpuBvhNode {
+  vec4 bmin;  // xyz, left
+  vec4 bmax;  // xyz, right
+  vec4 extra; // count, first, 0, 0
+};
+
+layout(std430, binding = 6) buffer BvhBuf { GpuBvhNode bvh[]; };
+layout(std430, binding = 7) buffer IdBuf { int ids[]; };
 
 uint mix32(uint a, uint b) {
   uint x = a * 1664525u + b + 1013904223u;
@@ -113,6 +124,75 @@ struct Hit {
   int mesh_index, tri_index, mat_id, tri_i;
 };
 
+bool aabb_hit(vec3 mn, vec3 mx, vec3 o, vec3 d, float tmin, float tmax) {
+  for (int a = 0; a < 3; a++) {
+    float orig = (a == 0) ? o.x : (a == 1) ? o.y : o.z;
+    float dir = (a == 0) ? d.x : (a == 1) ? d.y : d.z;
+    float bmn = (a == 0) ? mn.x : (a == 1) ? mn.y : mn.z;
+    float bmx = (a == 0) ? mx.x : (a == 1) ? mx.y : mx.z;
+    if (dir == 0.0) {
+      if (orig < bmn || orig > bmx) return false;
+      continue;
+    }
+    float inv = 1.0 / dir;
+    float t0 = (bmn - orig) * inv;
+    float t1 = (bmx - orig) * inv;
+    if (t0 > t1) { float tmp = t0; t0 = t1; t1 = tmp; }
+    if (t0 > tmin) tmin = t0;
+    if (t1 < tmax) tmax = t1;
+    if (tmax < tmin) return false;
+  }
+  return true;
+}
+
+void consider_tri(int i, vec3 o, vec3 d, inout Hit best, float t_max, bool any) {
+  GpuTri tr = tris[i];
+  vec3 a = tr.v0.xyz, b = tr.v1.xyz, c = tr.v2.xyz;
+  vec3 ng = cross(b - a, c - a);
+  if (length(ng) < 1e-15) return;
+  float t, u, v;
+  if (!intersect_tri(o, d, a, b, c, t, u, v)) return;
+  if (any) {
+    if (t > T_MIN && t < t_max) { best.hit = true; best.t = t; }
+    return;
+  }
+  int mesh = int(tr.v1.w);
+  int trii = int(tr.v2.w);
+  if (t >= t_max) return;
+  if (better_hit(t, mesh, trii, best.hit, best.t, best.mesh_index, best.tri_index)) {
+    best.hit = true;
+    best.t = t; best.u = u; best.v = v;
+    best.mesh_index = mesh; best.tri_index = trii;
+    best.mat_id = int(tr.v0.w);
+    best.tri_i = i;
+  }
+}
+
+void traverse_bvh(vec3 o, vec3 d, inout Hit best, float t_max, bool any) {
+  int root = int(P.extra.y);
+  if (root < 0 || P.flags.w <= 0) return;
+  int stack[64];
+  int sp = 0;
+  stack[sp++] = root;
+  while (sp > 0) {
+    GpuBvhNode node = bvh[stack[--sp]];
+    float tmax = any ? t_max : (best.hit ? best.t : t_max);
+    if (!aabb_hit(node.bmin.xyz, node.bmax.xyz, o, d, T_MIN, tmax)) continue;
+    int left = int(node.bmin.w);
+    if (left < 0) {
+      int count = int(node.extra.x);
+      int first = int(node.extra.y);
+      for (int k = 0; k < count; k++) {
+        consider_tri(ids[first + k], o, d, best, any ? t_max : (best.hit ? best.t : t_max), any);
+        if (any && best.hit) return;
+      }
+    } else if (sp < 62) {
+      stack[sp++] = left;
+      stack[sp++] = int(node.bmax.w);
+    }
+  }
+}
+
 Hit closest_hit(vec3 o, vec3 d) {
   Hit best;
   best.hit = false;
@@ -120,22 +200,12 @@ Hit closest_hit(vec3 o, vec3 d) {
   best.u = 0.0; best.v = 0.0;
   best.mesh_index = 0; best.tri_index = 0; best.mat_id = 0; best.tri_i = 0;
   int ntri = P.counts.y;
+  if (P.flags.w > 0) {
+    traverse_bvh(o, d, best, 1e30, false);
+    return best;
+  }
   for (int i = 0; i < ntri; i++) {
-    GpuTri tr = tris[i];
-    vec3 a = tr.v0.xyz, b = tr.v1.xyz, c = tr.v2.xyz;
-    vec3 ng = cross(b - a, c - a);
-    if (length(ng) < 1e-15) continue;
-    float t, u, v;
-    if (!intersect_tri(o, d, a, b, c, t, u, v)) continue;
-    int mesh = int(tr.v1.w);
-    int trii = int(tr.v2.w);
-    if (better_hit(t, mesh, trii, best.hit, best.t, best.mesh_index, best.tri_index)) {
-      best.hit = true;
-      best.t = t; best.u = u; best.v = v;
-      best.mesh_index = mesh; best.tri_index = trii;
-      best.mat_id = int(tr.v0.w);
-      best.tri_i = i;
-    }
+    consider_tri(i, o, d, best, best.t, false);
   }
   return best;
 }
@@ -143,14 +213,17 @@ Hit closest_hit(vec3 o, vec3 d) {
 bool any_hit(vec3 o, vec3 d, float t_max) {
   if (t_max <= T_MIN) return false;
   int ntri = P.counts.y;
+  Hit h;
+  h.hit = false; h.t = t_max;
+  h.u = 0.0; h.v = 0.0;
+  h.mesh_index = 0; h.tri_index = 0; h.mat_id = 0; h.tri_i = 0;
+  if (P.flags.w > 0) {
+    traverse_bvh(o, d, h, t_max, true);
+    return h.hit;
+  }
   for (int i = 0; i < ntri; i++) {
-    GpuTri tr = tris[i];
-    vec3 a = tr.v0.xyz, b = tr.v1.xyz, c = tr.v2.xyz;
-    vec3 ng = cross(b - a, c - a);
-    if (length(ng) < 1e-15) continue;
-    float t, u, v;
-    if (!intersect_tri(o, d, a, b, c, t, u, v)) continue;
-    if (t > T_MIN && t < t_max) return true;
+    consider_tri(i, o, d, h, t_max, true);
+    if (h.hit) return true;
   }
   return false;
 }
@@ -252,7 +325,7 @@ vec3 albedo_at(int mat_id, GpuTri tr, float u, float v) {
 }
 
 vec3 direct_one(vec3 acc, vec3 n, vec3 view, vec3 albedo, float metal, float trans, float rough,
-                vec3 ldir, vec3 le, float scale, float vis) {
+                vec3 ldir, vec3 le, float scale, float vis, float mis_d) {
   if (vis == 0.0 || scale == 0.0) return acc;
   float ndotl = dot(n, ldir);
   if (ndotl <= 0.0) return acc;
@@ -262,7 +335,7 @@ vec3 direct_one(vec3 acc, vec3 n, vec3 view, vec3 albedo, float metal, float tra
   float vdoth = max(dot(view, h), 0.0);
   vec3 f = schlick(f0_of(albedo, metal), vdoth);
   vec3 kd = (vec3(1.0) - f) * (1.0 - metal) * (1.0 - trans) * albedo / FARM_PI;
-  acc += kd * ndotl * le * scale;
+  acc += kd * ndotl * le * scale * mis_d;
   if (rough > 0.0 && ndotv > NDOT_EPS && ndoth > 0.0) {
     float alpha = rough * rough;
     float a2 = alpha * alpha;
@@ -272,6 +345,64 @@ vec3 direct_one(vec3 acc, vec3 n, vec3 view, vec3 albedo, float metal, float tra
     acc += f * s * le;
   }
   return acc;
+}
+
+mat4 rect_mw(vec4 r0, vec4 r1, vec4 r2, vec4 r3) {
+  return mat4(r0, r1, r2, r3);
+}
+
+bool sample_rect(vec4 r0, vec4 r1, vec4 r2, vec4 r3, float width, float height,
+                 vec3 p, float u, float v, int improved,
+                 out vec3 sample_pos, out vec3 ldir, out float dist, out float cos_light, out float pdf_area) {
+  float area = width * height;
+  if (area <= 0.0) return false;
+  float lx, ly;
+  pdf_area = 1.0 / area;
+  if (improved != 0) {
+    mat4 inv = inverse(rect_mw(r0, r1, r2, r3));
+    vec3 lp = (inv * vec4(p, 1.0)).xyz;
+    float halfw = 0.5 * width, halfh = 0.5 * height;
+    float z = lp.z;
+    float az = abs(z);
+    if (az >= 1e-8) {
+      float dx0 = -halfw - lp.x, dx1 = halfw - lp.x;
+      float dy0 = -halfh - lp.y, dy1 = halfh - lp.y;
+      float ax0 = atan(dx0, az), ax1 = atan(dx1, az);
+      float ay0 = atan(dy0, az), ay1 = atan(dy1, az);
+      float dax = ax1 - ax0, day = ay1 - ay0;
+      if (abs(dax) >= 1e-12 && abs(day) >= 1e-12) {
+        float tx = ax0 + u * dax;
+        float ty = ay0 + v * day;
+        lx = lp.x + az * tan(tx);
+        ly = lp.y + az * tan(ty);
+        lx = clamp(lx, -halfw, halfw);
+        ly = clamp(ly, -halfh, halfh);
+        float denx = z * z + (lx - lp.x) * (lx - lp.x);
+        float deny = z * z + (ly - lp.y) * (ly - lp.y);
+        pdf_area = (az / (abs(dax) * denx)) * (az / (abs(day) * deny));
+        if (!(pdf_area > 0.0)) pdf_area = 1.0 / area;
+      } else {
+        lx = (u - 0.5) * width;
+        ly = (v - 0.5) * height;
+      }
+    } else {
+      lx = (u - 0.5) * width;
+      ly = (v - 0.5) * height;
+    }
+  } else {
+    lx = (u - 0.5) * width;
+    ly = (v - 0.5) * height;
+  }
+  sample_pos = xform_point(r0, r1, r2, r3, vec3(lx, ly, 0.0));
+  vec3 lvec = sample_pos - p;
+  float dist2 = dot(lvec, lvec);
+  if (dist2 == 0.0) return false;
+  dist = sqrt(dist2);
+  ldir = lvec / dist;
+  vec3 nw = normalize(xform_dir(r0, r1, r2, vec3(0.0, 0.0, -1.0)));
+  cos_light = dot(nw, -ldir);
+  if (cos_light <= 0.0) return false;
+  return true;
 }
 
 int amb_off() { return 0; }
@@ -290,7 +421,7 @@ vec3 direct_lighting(vec3 p, vec3 n, vec3 view, vec3 albedo, float metal, float 
     vec3 le = lights[base_dir + i * 2 + 1].xyz;
     vec3 ldir = normalize(-travel);
     bool blocked = any_hit(origin, ldir, 1e30);
-    acc = direct_one(acc, n, view, albedo, metal, trans, rough, ldir, le, 1.0, blocked ? 0.0 : 1.0);
+    acc = direct_one(acc, n, view, albedo, metal, trans, rough, ldir, le, 1.0, blocked ? 0.0 : 1.0, 1.0);
   }
   int npt = P.counts2.y;
   int base_pt = pt_off();
@@ -310,7 +441,7 @@ vec3 direct_lighting(vec3 p, vec3 n, vec3 view, vec3 albedo, float metal, float 
     else atten = 1.0 / max(pow(dist, decay), 1e-6);
     if (distance > 0.0 && dist >= distance) atten = 0.0;
     bool blocked = any_hit(origin, ldir, dist - RAY_EPS);
-    acc = direct_one(acc, n, view, albedo, metal, trans, rough, ldir, le, atten, blocked ? 0.0 : 1.0);
+    acc = direct_one(acc, n, view, albedo, metal, trans, rough, ldir, le, atten, blocked ? 0.0 : 1.0, 1.0);
   }
   int base = depth * 16;
   int nrect = P.counts2.z;
@@ -326,19 +457,26 @@ vec3 direct_lighting(vec3 p, vec3 n, vec3 view, vec3 albedo, float metal, float 
     if (area <= 0.0) continue;
     float u = rand01(px, py, s, base + 2 + 2 * k);
     float v = rand01(px, py, s, base + 3 + 2 * k);
-    vec3 local = vec3((u - 0.5) * width, (v - 0.5) * height, 0.0);
-    vec3 sample_pos = xform_point(r0, r1, r2, r3, local);
-    vec3 lvec = sample_pos - p;
-    float dist2 = dot(lvec, lvec);
-    float dist = sqrt(dist2);
-    if (dist == 0.0) continue;
-    vec3 ldir = lvec / dist;
-    vec3 nw = normalize(xform_dir(r0, r1, r2, vec3(0.0, 0.0, -1.0)));
-    float cos_light = dot(nw, -ldir);
-    if (cos_light <= 0.0) continue;
-    float scale = cos_light * area / dist2;
+    int improved = (P.flags.y == 1 || P.flags.y == 2) ? 1 : 0;
+    vec3 sample_pos, ldir;
+    float dist, cos_light, pdf_area;
+    if (!sample_rect(r0, r1, r2, r3, width, height, p, u, v, improved,
+                     sample_pos, ldir, dist, cos_light, pdf_area)) continue;
+    if (!(pdf_area > 0.0)) continue;
+    float dist2 = dist * dist;
+    float scale = cos_light / (pdf_area * dist2);
     bool blocked = any_hit(origin, ldir, dist - RAY_EPS);
-    acc = direct_one(acc, n, view, albedo, metal, trans, rough, ldir, le, scale, blocked ? 0.0 : 1.0);
+    float mis_d = 1.0;
+    if (P.flags.y == 1) {
+      float ndotl = dot(n, ldir);
+      if (ndotl > 0.0) {
+        float pdf_bsdf = ndotl / FARM_PI;
+        float pdf_light = pdf_area * dist2 / cos_light;
+        float sm = pdf_light + pdf_bsdf;
+        if (sm > 0.0) mis_d = pdf_light / sm;
+      }
+    }
+    acc = direct_one(acc, n, view, albedo, metal, trans, rough, ldir, le, scale, blocked ? 0.0 : 1.0, mis_d);
   }
   return acc;
 }
@@ -374,8 +512,16 @@ vec3 trace_radiance(int x, int y, int s) {
   vec3 throughput = vec3(1.0);
   vec3 acc = vec3(0.0);
   int ambient_done = 0;
+  int prev_delta = 1;
   int maxb = P.counts.x;
   for (int depth = 0; depth <= maxb; depth++) {
+    if (P.flags.x != 0 && depth >= 3 && prev_delta == 0) {
+      float q = max(throughput.x, max(throughput.y, throughput.z));
+      q = clamp(q, 0.05, 0.95);
+      float ru = rand01(x, y, s, depth * 16 + 15);
+      if (ru >= q) break;
+      throughput /= q;
+    }
     Hit hit = closest_hit(o, d);
     if (!hit.hit) {
       acc += throughput * P.background.xyz;
@@ -435,10 +581,12 @@ vec3 trace_radiance(int x, int y, int s) {
           o = p + n * (-RAY_EPS);
         }
       }
+      prev_delta = 1;
     } else if (rough == 0.0) {
       throughput *= schlick(f0_of(albedo, metal), ndotv);
       d = reflect_dir(d, n);
       o = p + n * RAY_EPS;
+      prev_delta = 1;
     } else {
       float u1 = rand01(x, y, s, base + 0);
       float u2 = rand01(x, y, s, base + 1);
@@ -450,6 +598,7 @@ vec3 trace_radiance(int x, int y, int s) {
       vec3 weight = (vec3(1.0) - fv) * (1.0 - metal) * (1.0 - trans) * albedo;
       throughput *= weight;
       o = p + n * RAY_EPS;
+      prev_delta = 0;
     }
     if (throughput.x == 0.0 && throughput.y == 0.0 && throughput.z == 0.0) break;
   }
@@ -464,8 +613,19 @@ void main() {
   int samples = P.size.z;
   int start_s = P.size.w;
   vec3 sum = vec3(0.0);
+  float mean = 0.0, m2 = 0.0;
+  int k = 0;
   for (int s = 0; s < samples; s++) {
-    sum += trace_radiance(x, y, start_s + s);
+    vec3 L = trace_radiance(x, y, start_s + s);
+    sum += L;
+    k++;
+    if (P.flags.z != 0) {
+      float Y = 0.2126 * L.x + 0.7152 * L.y + 0.0722 * L.z;
+      float delta = Y - mean;
+      mean += delta / float(k);
+      m2 += delta * (Y - mean);
+      if (k >= 4 && (m2 / float(k)) < P.extra.x) break;
+    }
   }
   int i = (y * W + x) * 3;
   accum[i + 0] = sum.x;

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+M8 — path tracer engine speedup (`spec/M8-path-speed.md` FINAL):
+
+- `setPathRoulette` / `getPathRoulette` (default off). Optional `FARMOS_PATH_ROULETTE=1` if the method was never called. RR start depth ≥ 3; RNG slot `depth*16+15`; delta glass/mirror skips RR.
+- `PATH_SAMPLING_M4` (0), `PATH_SAMPLING_MIS` (1), `PATH_SAMPLING_AREA_SOLID` (2); `setPathSampling` / `getPathSampling`. Invalid mode traps **119** (`runtime error: invalid path sampling mode`). Optional `FARMOS_PATH_SAMPLING` bench hook.
+- `setPathAdaptiveSpp` / `getPathAdaptiveSpp` / `setPathAdaptiveTarget` / `getPathAdaptiveTarget`; default off (M4 spp count).
+- CPU: local-space BLAS AABB tests (compat-safe). GPU: world-space triangle BVH, 8×8 workgroup, one dispatch per `renderPath` for all samples.
+- Fixtures: `spec/tests/M8/`. Artwork bench: `spec/tests/M8/bench/`. Denoise is out of scope.
+
 Runtime extras (not a milestone):
 
 - `CylinderGeometry` on `farmos:scene` (Y-up, `radius` / `height` / `radialSegments`; default 32 segments). Mesh, raster, BVH, and `renderPath` consume the same triangle data as box/sphere/plane.

@@ -299,6 +299,13 @@ struct farm_Renderer {
   int32_t width;
   int32_t height;
   int32_t path_backend;  // 0=CPU, 1=Vulkan (M7)
+  int32_t path_sampling; // 0=M4, 1=MIS, 2=AREA_SOLID (M8)
+  int8_t path_roulette;
+  int8_t path_roulette_set;
+  int8_t path_sampling_set;
+  int8_t path_adaptive_spp;
+  double path_adaptive_target;
+  int32_t* spp_count;    // per-pixel counts when adaptive has run
   bool disposed;
 };
 
@@ -437,6 +444,16 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
 void farm_Renderer_setPathBackend(farm_Renderer* self, int64_t backend);
 int64_t farm_Renderer_getPathBackend(farm_Renderer* self);
 int8_t farm_Renderer_isVulkanPathAvailable(farm_Renderer* self);
+void farm_Renderer_setPathRoulette(farm_Renderer* self, int8_t enabled);
+int8_t farm_Renderer_getPathRoulette(farm_Renderer* self);
+void farm_Renderer_setPathSampling(farm_Renderer* self, int64_t mode);
+int64_t farm_Renderer_getPathSampling(farm_Renderer* self);
+void farm_Renderer_setPathAdaptiveSpp(farm_Renderer* self, int8_t enabled);
+int8_t farm_Renderer_getPathAdaptiveSpp(farm_Renderer* self);
+void farm_Renderer_setPathAdaptiveTarget(farm_Renderer* self, double varianceOrNoiseHint);
+double farm_Renderer_getPathAdaptiveTarget(farm_Renderer* self);
+int farm_renderer_roulette_on(const farm_Renderer* self);
+int32_t farm_renderer_sampling_mode(const farm_Renderer* self);
 void farm_Renderer_savePNG(farm_Renderer* self, FarmString path);
 void farm_Renderer_dispose(farm_Renderer* self);
 

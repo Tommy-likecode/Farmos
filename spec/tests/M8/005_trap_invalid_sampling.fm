@@ -1,0 +1,7 @@
+import { Scene, PerspectiveCamera, Renderer } from "farmos:scene";
+
+function main(): int {
+  const renderer: Renderer = new Renderer(8, 8);
+  renderer.setPathSampling(99);
+  return 0;
+}
