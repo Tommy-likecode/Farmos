@@ -1,0 +1,38 @@
+===== host cursor Linux 6.12.94+ x86_64 nproc=4 threads=4 2026-10-15T23:51:22+00:00 =====
+farmc=/workspace/build/farmc
+===== BASELINE 2026-10-15T23:51:22+00:00 RR=0 sampling=0 =====
+host=cursor  Linux 6.12.94+ x86_64
+farmc=/workspace/build/farmc
+threads=4
+roulette=0  sampling=0
+building...
+warmup...
+  warmup 184549 ms  stdout=cpu
+timed run 1...
+  165453 ms  stdout=cpu
+timed run 2...
+  161744 ms  stdout=cpu
+timed run 3...
+  161744 ms  stdout=cpu
+median_ms=161744  runs=165453 161744 161744  warmup_ms=184549
+png=/workspace/spec/tests/M8/bench/out-linux-cpu-baseline/artwork_silver_still.png
+===== SPEED 2026-10-16T00:02:37+00:00 RR=1 sampling=1 =====
+host=cursor  Linux 6.12.94+ x86_64
+farmc=/workspace/build/farmc
+threads=4
+roulette=1  sampling=1
+building...
+warmup...
+  warmup 239314 ms  stdout=cpu
+timed run 1...
+  237836 ms  stdout=cpu
+timed run 2...
+  241771 ms  stdout=cpu
+timed run 3...
+  243371 ms  stdout=cpu
+median_ms=241771  runs=237836 241771 243371  warmup_ms=239314
+png=/workspace/spec/tests/M8/bench/out-linux-cpu-speed/artwork_silver_still.png
+===== DONE 2026-10-16T00:18:41+00:00 =====
+baseline_log=/workspace/spec/tests/M8/bench/out-linux-cpu-baseline/log.txt
+speed_log=/workspace/spec/tests/M8/bench/out-linux-cpu-speed/log.txt
+EXIT:0

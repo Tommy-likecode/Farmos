@@ -22,7 +22,11 @@ echo "roulette=${FARMOS_PATH_ROULETTE:-0}  sampling=${FARMOS_PATH_SAMPLING:-0}"
 echo "building..."
 "$FARMC" build "$SRC" -o "$OUT/artwork"
 echo "warmup..."
-(cd "$OUT" && ./artwork >/dev/null)
+t0=$(date +%s%N)
+(cd "$OUT" && ./artwork >"$OUT/warmup.stdout")
+t1=$(date +%s%N)
+warmup_ms=$(( (t1 - t0) / 1000000 ))
+echo "  warmup ${warmup_ms} ms  stdout=$(head -n1 "$OUT/warmup.stdout")"
 times=()
 for i in 1 2 3; do
   echo "timed run $i..."
@@ -35,7 +39,7 @@ for i in 1 2 3; do
 done
 IFS=$'\n' sorted=($(sort -n <<<"${times[*]}")); unset IFS
 median="${sorted[1]}"
-echo "median_ms=$median  runs=${times[*]}"
+echo "median_ms=$median  runs=${times[*]}  warmup_ms=$warmup_ms"
 echo "png=$OUT/artwork_silver_still.png"
 echo "$median" > "$OUT/median_ms.txt"
-echo "host=$(uname -n) threads=$FARMOS_THREADS roulette=${FARMOS_PATH_ROULETTE:-0} sampling=${FARMOS_PATH_SAMPLING:-0} median_ms=$median runs=${times[*]}" >> "$OUT/log.txt"
+echo "host=$(uname -n) threads=$FARMOS_THREADS roulette=${FARMOS_PATH_ROULETTE:-0} sampling=${FARMOS_PATH_SAMPLING:-0} warmup_ms=$warmup_ms median_ms=$median runs=${times[*]}" >> "$OUT/log.txt"
