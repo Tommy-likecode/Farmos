@@ -52,9 +52,9 @@ M7 baseline measured by coordinator on tip `a8a75541` (do not re-run Vulkan in t
 | Lane | backend | RR | sampling | adaptive | spp | res | workgroup | median ms | notes |
 |------|---------|----|----------|----------|-----|-----|-----------|-----------|-------|
 | M7 baseline | Vulkan | off | M4 | off | 256 | 1920×1080 | 8×8 | **2217574** | tip a8a75541; warmup 1438860; timed 1476426 / 2217574 / 2753274; backend vulkan confirmed |
-| M8 speed | Vulkan | on | MIS | off | 256 | 1920×1080 | 8×8 | *pending poteto / TommyLaptop* | BVH + RR + MIS; one dispatch / renderPath |
+| M8 speed | Vulkan | on | MIS | off | 256 | 1920×1080 | 8×8 | **31716** | tip 9ecc5abf; warmup ~34000; timed 31716 / 33008 / 30624; backend vulkan confirmed all runs; FARMOS_PATH_ROULETTE=1 FARMOS_PATH_SAMPLING=1 |
 
-Target: ≥ **2×** vs the recorded M7 Vulkan baseline → M8 speed median **≤ 1108787 ms**.
+Ratio = 2217574 / 31716 = **69.92×**. Target ≥**2×** → median ≤1108787 ms → **PASS** (AC-M8-13).
 
 ## Size / DCE (AC-M8-10)
 
