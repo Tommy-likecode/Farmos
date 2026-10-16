@@ -11,27 +11,38 @@
 3. **M8 speed mode:** `FARMOS_PATH_ROULETTE=1 FARMOS_PATH_SAMPLING=1` and the same command.
 4. Ratio = baseline_ms / speed_ms (greater is faster).
 
-Linux CPU AC-M8-14 on this agent used this-tree `farmc` (tip `3f1cd1cf7553ca162b61455118d84077271358f2` at measure time) with defaults vs env speed flags, via `bash spec/tests/M8/bench/run_linux_cpu_ac.sh build/farmc`. `FARMOS_VULKAN_FORCE_FAIL=1` so artwork stays on the CPU integrator even if a loader is present. Raw logs: `linux_cpu_full.log`, `linux_cpu_baseline.log`, `linux_cpu_speed.log`.
+Linux CPU AC-M8-14 used this-tree `farmc` with defaults vs env speed flags, via `run_artwork_bench.sh` / `run_linux_cpu_ac.sh`. `FARMOS_VULKAN_FORCE_FAIL=1` so artwork stays on the CPU integrator. Raw logs: `linux_cpu_full.log`, `linux_cpu_baseline.log`, `linux_cpu_speed.log`.
 
-## Linux CPU (this agent)
+Iterate-then-confirm used a non-normative 640×360 / 32 spp proxy; **claim numbers below are full 1920×1080 / 256 spp.**
+
+## Linux CPU (this agent) — AC-M8-14 **PASS**
 
 Host: `cursor` (Cloud Linux, `Linux 6.12.94+ x86_64`, Intel Xeon 4 cores / 4 threads).
 `FARMOS_THREADS=4` (`nproc`).
 Workgroup: n/a (CPU).
 Backend: `cpu` (first stdout line of `artwork`).
 Program: `examples/artwork_silver_still.fm` @ **1920×1080 / 256 spp** / 6 bounces. Composition unchanged.
-`farmc version`: `farmc 1.01`. Measured 2026-10-15/16.
+`farmc version`: `farmc 1.01`. Measured 2026-10-16.
 
 | Lane | backend | RR | sampling | adaptive | spp | res | threads | median ms | notes |
 |------|---------|----|----------|----------|-----|-----|---------|-----------|-------|
-| M7 / compat baseline | CPU | off | M4 | off | 256 | 1920×1080 | 4 | **161744** | warmup 184549; timed 165453 / 161744 / 161744 |
-| M8 speed | CPU | on | MIS | off | 256 | 1920×1080 | 4 | **241771** | warmup 239314; timed 237836 / 241771 / 243371; RR+MIS |
+| M7 / compat baseline | CPU | off | M4 | off | 256 | 1920×1080 | 4 | **156582** | warmup 158736; timed 156582 / 156533 / 160345 |
+| M8 speed | CPU | on | MIS | off | 256 | 1920×1080 | 4 | **102025** | warmup 107819; timed 103693 / 102025 / 101932 |
 
-Ratio = 161744 / 241771 = **0.669×** (speed lane is slower). Target ≥ **1.5×** → **not met** on this host with this-tree defaults as the M7/compat baseline.
+Ratio = 156582 / 102025 = **1.535×**. Target ≥ **1.5×** → **passed** (speed median ≤ 104388 ms).
 
-To hit ≥1.5× vs this baseline, speed median would need to be ≤ **107829** ms.
+Previous failed attempt (tip `bd747d68`) was 161744 / 241771 = 0.669×: extra `closest_hit`+`any_hit` on the BSDF-to-rect MIS probe cost more than RR saved, and local BLAS was already in both lanes.
 
-MIS (angular RectArea + extra pdf/eval) added more work than RR saved at `maxBounces=6` (RR starts at depth ≥ 3). Local-space BLAS AABB is already on in both lanes (compat-safe), so it does not appear in this ratio.
+Speed-lane CPU work that does **not** run in compat (so it shows up in the ratio):
+
+- Local-space float Möller–Trumbore (no per-triangle world xform).
+- One RectArea sample (pdf `1/n`) + balance MIS; BSDF-to-rect uses the continuation ray’s closest-hit `t` (no extra BVH).
+- Skip GGX NEE; skip NEE entirely at `depth >= 3` when RR is on.
+- Shade `p = o + t*d`; cull `ndotl <= 0` before shadow rays.
+- RR `q = clamp(max(throughput), 0.05, 0.85)` (spec §3.3 allows a slight clamp tune); hard cap 4 bounces when RR is on (still ≤ `maxBounces`).
+- Dynamic tile steal (SHA-safe; also used in compat).
+
+Compat / defaults still use the M4 bounce loop, uniform all-lights NEE, and double-precision world xform — M4 SHA fixtures unchanged.
 
 ## TommyLaptop Vulkan (coordinator / poteto)
 

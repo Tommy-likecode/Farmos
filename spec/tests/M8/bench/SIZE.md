@@ -7,7 +7,7 @@ Windows PE budgets are the normative ACs; Linux numbers are informative but show
 | Artifact | Size (this Linux ELF) | Budget | Status |
 |----------|----------------------|--------|--------|
 | Hello `examples/01_hello.fm` | 14512 B | ≤ 20 KiB (20480) | OK |
-| CPU glass+mirror `examples/04_glass_mirror.fm` | 55648 B | ≤ 300 KiB (307200) | OK |
+| CPU glass+mirror `examples/04_glass_mirror.fm` | 59744 B | ≤ 300 KiB (307200) | OK |
 | GPU-linked `examples/06_vulkan_cornell.fm` | 153984 B | ≤ 400 KiB (409600) | OK |
 
 DCE:

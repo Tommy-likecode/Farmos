@@ -1,1 +1,1 @@
-host=cursor threads=4 roulette=0 sampling=0 warmup_ms=184549 median_ms=161744 runs=165453 161744 161744
+host=cursor threads=4 roulette=0 sampling=0 warmup_ms=158736 median_ms=156582 runs=156582 156533 160345
