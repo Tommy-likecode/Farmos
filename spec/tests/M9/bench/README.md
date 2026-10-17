@@ -20,8 +20,8 @@ Secondary baseline: post-M8 compute Vulkan (`PATH_BACKEND_VULKAN`) on the same h
 | **Primary** | Silver still 1920×1080 @ 256 spp on TommyLaptop with HW RT: median ≤ **4 s** after 1 warm-up |
 | **Secondary** | Same setup: ≥ **8×** wall-clock vs post-M8 compute baseline when measurable |
 
-AC-M9-12 is the harness. Clean floor at `d91887b` is RT **4953 ms** (see
-`NOTES.md`). This tip is **one** host persist lever; shader unchanged.
+AC-M9-12 is the harness. Persist floor at `eaeb0c6` is RT **4881 ms** (see
+`NOTES.md`). This tip adds **one** BLAS-compact lever; shader unchanged.
 AC-M9-13/14 still FAIL / pending poteto re-bench. Do not invent Windows
 numbers from Linux CI.
 

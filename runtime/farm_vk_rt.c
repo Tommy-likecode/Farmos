@@ -35,6 +35,7 @@ typedef uint64_t VkPipeline;
 typedef uint64_t VkDescriptorPool;
 typedef uint64_t VkDescriptorSet;
 typedef uint64_t VkCommandPool;
+typedef uint64_t VkQueryPool;
 typedef uint64_t VkAccelerationStructureKHR;
 
 #define VK_SUCCESS 0
@@ -96,7 +97,17 @@ typedef uint64_t VkAccelerationStructureKHR;
 #define VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR 0
 #define VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR 1
 #define VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR 0
+#define VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR 2
 #define VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR 4
+#define VK_BUILD_ACCELERATION_STRUCTURE_BUILD_FLAGS_KHR \
+  (VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | \
+   VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR)
+#define VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO 11
+#define VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR 1000150001
+#define VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR 1000150000
+#define VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR 1
+#define VK_QUERY_RESULT_64_BIT 8
+#define VK_QUERY_RESULT_WAIT_BIT 1
 #define VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR 1
 #define VK_FORMAT_R32G32B32_SFLOAT 106
 #define VK_MAKE_VERSION(maj, min, pat) (((maj)<<22)|((min)<<12)|(pat))
@@ -251,6 +262,12 @@ VK_FN(vkDestroyAccelerationStructureKHR, void, (VkDevice, VkAccelerationStructur
 VK_FN(vkGetAccelerationStructureBuildSizesKHR, void, (VkDevice, uint32_t, const void*, const uint32_t*, void*));
 VK_FN(vkCmdBuildAccelerationStructuresKHR, void, (VkCommandBuffer, uint32_t, const void*, const void* const*));
 VK_FN(vkGetAccelerationStructureDeviceAddressKHR, VkDeviceAddress, (VkDevice, const void*));
+VK_FN(vkCreateQueryPool, VkResult, (VkDevice, const void*, const void*, VkQueryPool*));
+VK_FN(vkDestroyQueryPool, void, (VkDevice, VkQueryPool, const void*));
+VK_FN(vkGetQueryPoolResults, VkResult, (VkDevice, VkQueryPool, uint32_t, uint32_t, size_t, void*, VkDeviceSize, uint32_t));
+VK_FN(vkResetQueryPool, void, (VkDevice, VkQueryPool, uint32_t, uint32_t));
+VK_FN(vkCmdWriteAccelerationStructuresPropertiesKHR, void, (VkCommandBuffer, uint32_t, const VkAccelerationStructureKHR*, uint32_t, VkQueryPool, uint32_t));
+VK_FN(vkCmdCopyAccelerationStructureKHR, void, (VkCommandBuffer, const void*));
 #undef VK_FN
 
 static void* g_loader;
@@ -445,6 +462,9 @@ static VkDeviceSize g_ssbo_sz[6];
 static uint64_t g_as_fp;
 static int32_t g_as_tri_cached;
 static int g_persist_live;
+static VkQueryPool g_qpool;
+static int g_can_compact;
+static VkDeviceSize g_blas_sz;
 
 static void rt_buf_destroy(RtBuf* b) {
   if (!g_dev) return;
@@ -577,6 +597,28 @@ static int ensure_rt_device(void) {
   LOADD(vkCmdBuildAccelerationStructuresKHR);
   LOADD(vkGetAccelerationStructureDeviceAddressKHR);
 #undef LOADD
+#define LOADOPT(name) name = (PFN_##name)vkGetDeviceProcAddr(g_dev, #name)
+  LOADOPT(vkCreateQueryPool);
+  LOADOPT(vkDestroyQueryPool);
+  LOADOPT(vkGetQueryPoolResults);
+  LOADOPT(vkResetQueryPool);
+  LOADOPT(vkCmdWriteAccelerationStructuresPropertiesKHR);
+  LOADOPT(vkCmdCopyAccelerationStructureKHR);
+#undef LOADOPT
+  g_can_compact = vkCreateQueryPool && vkDestroyQueryPool && vkGetQueryPoolResults &&
+                  vkResetQueryPool && vkCmdWriteAccelerationStructuresPropertiesKHR &&
+                  vkCmdCopyAccelerationStructureKHR;
+  if (g_can_compact) {
+    uint8_t qci[32];
+    memset(qci, 0, sizeof(qci));
+    *(uint32_t*)qci = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    *(uint32_t*)(qci + 20) = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR;
+    *(uint32_t*)(qci + 24) = 1;
+    if (vkCreateQueryPool(g_dev, qci, NULL, &g_qpool) != VK_SUCCESS) {
+      g_qpool = 0;
+      g_can_compact = 0;
+    }
+  }
 
   vkGetDeviceQueue(g_dev, g_qfam, 0, &g_queue);
 
@@ -760,6 +802,7 @@ static void rt_persist_reset(void) {
   g_as_fp = 0;
   g_as_tri_cached = 0;
   g_persist_live = 0;
+  g_blas_sz = 0;
 }
 
 static int fill_tri_geom(uint8_t* geom96, VkDeviceAddress vtx_addr, uint32_t nverts) {
@@ -793,12 +836,106 @@ static void fill_build_info(uint8_t* inf80, uint32_t type, VkAccelerationStructu
   memset(inf80, 0, 80);
   *(uint32_t*)inf80 = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
   *(uint32_t*)(inf80 + 16) = type;
-  *(uint32_t*)(inf80 + 20) = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+  *(uint32_t*)(inf80 + 20) = VK_BUILD_ACCELERATION_STRUCTURE_BUILD_FLAGS_KHR;
   *(uint32_t*)(inf80 + 24) = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
   memcpy(inf80 + 40, &dst, 8);
   *(uint32_t*)(inf80 + 48) = geom_count;
   memcpy(inf80 + 56, &pgeoms, sizeof(void*));
   memcpy(inf80 + 72, &scratch, 8);
+}
+
+static int rt_begin_cmd(void) {
+  if (vkResetCommandBuffer(g_cmd, 0) != VK_SUCCESS) return 0;
+  VkCommandBufferBeginInfo bi;
+  memset(&bi, 0, sizeof(bi));
+  bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  return vkBeginCommandBuffer(g_cmd, &bi) == VK_SUCCESS;
+}
+
+static int rt_submit_wait(void) {
+  VkSubmitInfo si;
+  memset(&si, 0, sizeof(si));
+  si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  si.commandBufferCount = 1;
+  si.pCommandBuffers = &g_cmd;
+  return vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) == VK_SUCCESS &&
+         vkQueueWaitIdle(g_queue) == VK_SUCCESS;
+}
+
+static void rt_write_instance(void) {
+  uint8_t addr_info[24];
+  memset(addr_info, 0, sizeof(addr_info));
+  *(uint32_t*)addr_info = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+  memcpy(addr_info + 16, &g_blas, 8);
+  VkDeviceAddress blas_addr = vkGetAccelerationStructureDeviceAddressKHR(g_dev, addr_info);
+  uint8_t inst_bytes[64];
+  memset(inst_bytes, 0, 64);
+  float* xf = (float*)inst_bytes;
+  xf[0] = 1.f; xf[5] = 1.f; xf[10] = 1.f;
+  uint32_t custom_mask = 0xFFu << 24;
+  memcpy(inst_bytes + 48, &custom_mask, 4);
+  uint32_t sbt_flags = 1u << 24;
+  memcpy(inst_bytes + 52, &sbt_flags, 4);
+  memcpy(inst_bytes + 56, &blas_addr, 8);
+  memcpy(g_instb.mapped, inst_bytes, 64);
+}
+
+/* Optional: replace BLAS with a compacted copy if smaller. Failure keeps the original. */
+static void rt_try_compact_blas(void) {
+  if (!g_can_compact || !g_qpool || !g_blas || g_blas_sz < 16) return;
+  uint64_t csz = 0;
+  if (vkGetQueryPoolResults(g_dev, g_qpool, 0, 1, sizeof(csz), &csz, sizeof(csz),
+                            VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT) != VK_SUCCESS)
+    return;
+  if (csz < 16 || csz >= g_blas_sz) return;
+  uint32_t as_store_usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
+                            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+  RtBuf compact_store;
+  VkAccelerationStructureKHR compact_as = 0;
+  if (!rt_buf_create(csz, as_store_usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, 0, &compact_store))
+    return;
+  uint8_t ci[64];
+  memset(ci, 0, sizeof(ci));
+  *(uint32_t*)ci = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+  memcpy(ci + 24, &compact_store.buf, 8);
+  memcpy(ci + 40, &csz, 8);
+  *(uint32_t*)(ci + 48) = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+  if (vkCreateAccelerationStructureKHR(g_dev, ci, NULL, &compact_as) != VK_SUCCESS) {
+    rt_buf_destroy(&compact_store);
+    return;
+  }
+  if (!rt_begin_cmd()) {
+    vkDestroyAccelerationStructureKHR(g_dev, compact_as, NULL);
+    rt_buf_destroy(&compact_store);
+    return;
+  }
+  uint8_t copy[40];
+  memset(copy, 0, sizeof(copy));
+  *(uint32_t*)copy = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
+  memcpy(copy + 16, &g_blas, 8);
+  memcpy(copy + 24, &compact_as, 8);
+  *(uint32_t*)(copy + 32) = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
+  vkCmdCopyAccelerationStructureKHR(g_cmd, copy);
+  {
+    VkMemoryBarrier mb;
+    memset(&mb, 0, sizeof(mb));
+    mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    mb.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+    mb.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+    vkCmdPipelineBarrier(g_cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                         VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0, 1, &mb, 0, NULL, 0, NULL);
+  }
+  if (vkEndCommandBuffer(g_cmd) != VK_SUCCESS || !rt_submit_wait()) {
+    vkDestroyAccelerationStructureKHR(g_dev, compact_as, NULL);
+    rt_buf_destroy(&compact_store);
+    return;
+  }
+  vkDestroyAccelerationStructureKHR(g_dev, g_blas, NULL);
+  rt_buf_destroy(&g_blas_store);
+  g_blas = compact_as;
+  g_blas_store = compact_store;
+  g_blas_sz = csz;
 }
 
 int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera) {
@@ -1054,6 +1191,7 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
     memcpy(blas_ci + 40, &blas_sz, 8);
     *(uint32_t*)(blas_ci + 48) = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
     if (vkCreateAccelerationStructureKHR(g_dev, blas_ci, NULL, &g_blas) != VK_SUCCESS) goto done;
+    g_blas_sz = blas_sz;
 
     uint8_t tlas_ci[64];
     memset(tlas_ci, 0, sizeof(tlas_ci));
@@ -1063,23 +1201,7 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
     *(uint32_t*)(tlas_ci + 48) = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
     if (vkCreateAccelerationStructureKHR(g_dev, tlas_ci, NULL, &g_tlas) != VK_SUCCESS) goto done;
 
-    uint8_t addr_info[24];
-    memset(addr_info, 0, sizeof(addr_info));
-    *(uint32_t*)addr_info = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-    memcpy(addr_info + 16, &g_blas, 8);
-    VkDeviceAddress blas_addr = vkGetAccelerationStructureDeviceAddressKHR(g_dev, addr_info);
-    if (!blas_addr) goto done;
-
-    uint8_t inst_bytes[64];
-    memset(inst_bytes, 0, 64);
-    float* xf = (float*)inst_bytes;
-    xf[0] = 1.f; xf[5] = 1.f; xf[10] = 1.f;
-    uint32_t custom_mask = 0xFFu << 24;
-    memcpy(inst_bytes + 48, &custom_mask, 4);
-    uint32_t sbt_flags = 1u << 24;
-    memcpy(inst_bytes + 52, &sbt_flags, 4);
-    memcpy(inst_bytes + 56, &blas_addr, 8);
-    memcpy(g_instb.mapped, inst_bytes, 64);
+    rt_write_instance();
 
     VkDescriptorPoolSize psz[2];
     psz[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -1140,18 +1262,11 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
   memcpy(g_ssbo[3].mapped, lights, sizes[3]);
   if (ntex > 0) memcpy(g_ssbo[4].mapped, texels, (size_t)ntex * sizeof(float));
 
-  if (vkResetCommandBuffer(g_cmd, 0) != VK_SUCCESS) goto done;
-  VkCommandBufferBeginInfo bi;
-  memset(&bi, 0, sizeof(bi));
-  bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-  if (vkBeginCommandBuffer(g_cmd, &bi) != VK_SUCCESS) goto done;
+  if (!rt_begin_cmd()) goto done;
 
   if (!reuse) {
     fill_tri_geom(blas_geom, g_vtx.addr, (uint32_t)as_tri * 3);
-    fill_inst_geom(inst_geom, g_instb.addr);
     fill_build_info(blas_info, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, g_blas, 1, blas_geom, g_scratch.addr);
-    fill_build_info(tlas_info, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, g_tlas, 1, inst_geom, g_scratch.addr);
     vkCmdBuildAccelerationStructuresKHR(g_cmd, 1, blas_info, (const void* const*)&blas_range_ptr);
     {
       VkMemoryBarrier mb;
@@ -1162,6 +1277,17 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
       vkCmdPipelineBarrier(g_cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
                            VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0, 1, &mb, 0, NULL, 0, NULL);
     }
+    if (g_can_compact && g_qpool) {
+      vkResetQueryPool(g_dev, g_qpool, 0, 1);
+      vkCmdWriteAccelerationStructuresPropertiesKHR(g_cmd, 1, &g_blas,
+          VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, g_qpool, 0);
+    }
+    if (vkEndCommandBuffer(g_cmd) != VK_SUCCESS || !rt_submit_wait()) goto done;
+    rt_try_compact_blas();
+    rt_write_instance();
+    if (!rt_begin_cmd()) goto done;
+    fill_inst_geom(inst_geom, g_instb.addr);
+    fill_build_info(tlas_info, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, g_tlas, 1, inst_geom, g_scratch.addr);
     vkCmdBuildAccelerationStructuresKHR(g_cmd, 1, tlas_info, (const void* const*)&tlas_range_ptr);
     {
       VkMemoryBarrier mb;
