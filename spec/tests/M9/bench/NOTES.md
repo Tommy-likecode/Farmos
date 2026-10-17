@@ -1,6 +1,6 @@
 # M9 silver-still HW RT bench notes
 
-**Status: speed work RESET to `061ebe62` (hard floor 8773 ms). AC-M9-13/14 still FAIL / pending poteto re-bench. Do not invent new Windows numbers.**
+**Status: tip `d91887b` re-bench on TommyLaptop — AC-M9-13/14 FAIL; steady RT REGRESSED vs 8773 floor (contaminated?). Do not invent numbers.**
 
 This Linux CI / cloud-agent host does not provide a hardware ray-tracing device
 (`VK_KHR_ray_query` + acceleration structures). Windows numbers below are
@@ -22,54 +22,37 @@ TommyLaptop / poteto measurements only.
 | `061ebe62` | 33699 ms | **8773 ms** (8792, 8711, 8773) | 3.841× | 76497 |
 | `754b6a5` | 42986 ms | **11697 ms** (11611, 11697, 11732) | 3.675× | 12739 |
 | `5127765` | 47381 ms | **9773 ms** (10224, 9636, 9773) | 4.848× | 10729 |
+| `d91887b` | 34281 ms | **10123 ms** (10123, 10118, 10129); rerun (9052, 10139, 10123) med **10123** | 3.386× | 9201 / 9128 |
 
-`754b6a5` (8×4×4 fat rayQuery) and `5127765` (8×8 revert + persist / host inverse /
-single-proceed / SPIR-V thinning) both **REGRESSED** vs `061ebe62` on steady RT.
-Those commits are **dropped**. Do not celebrate cold-AS drops.
+`d91887b` parent is `061ebe62`; runtime / `farm_vk_rt.c` / SPIR-V / `.comp` **git blob-identical** to `061ebe62`. Expected ~8773-class. Measured steady **10123 > 8773** → treat as **REGRESS vs floor** for claim purposes, with caveat: TommyLaptop had **DeltaForceClient + Steam** resident during both RT passes (possible GPU contention). One rerun sample hit **9052** (still >8773). AC power connected (BatteryStatus=2, ~19% charge). Do not celebrate; do not merge.
 
-`5127765` PE RT cornell **244736** (PASS). Bench dirs `out/m9_compute_bench2`,
-`out/m9_rt_bench2`.
+`754b6a5` / `5127765` remain dropped dead ends.
 
-### Detail (`061ebe62` — hard floor)
+### Detail (`d91887b` — this re-bench)
 
 | Field | Value |
 |-------|--------|
 | Host | TommyLaptop |
-| GPU | Intel(R) Arc(TM) Graphics (driver 32.0.101.8331) |
-| farmc SHA | `061ebe6214bc8bb64437785f450f67204e1313e3` |
-| Windows suite | **430/430 PASS** |
-| PE sizes | hello **13824**; glass **61952**; compute **159232**; RT **242176** — **PASS** |
-| Downgrade? | **no** — stdout `vulkan_rt`, STRICT exit 0 |
-| AC-M9-13 / 14 | **FAIL** (8773 > 4000; 3.841× < 8×) |
+| GPU | Intel(R) Arc(TM) Graphics |
+| farmc SHA | `d91887b350b86ed7c5f09c18f48b4d3f95988a6d` |
+| PE sizes (AC-M9-10) | hello **13824**; glass **61952**; compute cornell **159232**; RT (`006_rt_png_tol`) **235520** — **PASS** (≤20/300/400/500 KiB) |
+| Compute median | **34281** (36277, 34281, 33259); stdout `vulkan` |
+| HW RT median | **10123** (primary 10123/10118/10129; confirm rerun med 10123) |
+| stdout | `vulkan_rt`; STRICT exit 0; downgrade **no** |
+| vs 8773 floor | **REGRESSED** (10123 > 8773; >5% band) |
+| AC-M9-13 / 14 | **FAIL** (10123 > 4000; 3.386× < 8×) |
+| Artifacts | `out/m9_compute_baseline.txt`, `out/m9_vulkan_rt_speed.txt`, `out/m9_pe_size.txt`, `out/m9_compute_bench3/`, `out/m9_rt_bench3/` |
 
-### Detail (`754b6a5` — dead end)
+### Detail (`061ebe62` — hard floor reference)
 
-8×4×4 + shared reduce + `barrier()` + `spirv-opt -O`. Occupancy collapse on Xe-LPG.
-PE RT cornell **249344**. Suite skipped that pass.
-
-### Detail (`5127765` — dead end)
-
-8×8 restore plus host inverse, AS persist, single `rayQueryProceedEXT`, dead-code
-cut, bary skip. Still **9773 > 8773**. Compute 47381 (runs 48690, 47381, 43249).
-Artifacts: attached `m9_vulkan_rt_speed` / `m9_compute_baseline` for this SHA.
+| Field | Value |
+|-------|--------|
+| HW RT median ms | **8773** (8792, 8711, 8773) |
+| Compute median ms | **33699** |
+| Ratio | 3.841× |
+| PE RT cornell | **242176** |
 
 Method (all): median of 3 after 1 warm-up; `FARMOS_PATH_ROULETTE=1 FARMOS_PATH_SAMPLING=1`.
-
-## This tip (reset)
-
-Runtime / shader / SPIR-V are **bit-identical to `061ebe62`**. No persist, no host
-inverse, no workgroup change, no `spirv-opt`. Those deltas are not proven-safe:
-every post-floor kernel/host packing change missed the 8773 floor.
-
-Expected steady RT: **8773-class** (same binary kernel). Must not exceed 8773.
-Not a claim of ≤4000.
-
-How ≤4000 could still be reached (not shipped here): the 8.7 s is the 8×8
-integrator × ~2M×256×(closest + 2 shadow `rayQuery`s). Occupancy stacking and
-“thin SPIR-V” both made Intel’s compiler worse. The next lever has to be
-**one change, measured on TommyLaptop**, not a stack. Candidates that were
-**not** tried in isolation: none remain that are proven-safe. Do not re-apply
-`754b6a5` / `5127765` deltas.
 
 `farmc version`: `farmc 1.01`.
 
