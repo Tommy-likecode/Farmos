@@ -20,7 +20,10 @@ Secondary baseline: post-M8 compute Vulkan (`PATH_BACKEND_VULKAN`) on the same h
 | **Primary** | Silver still 1920×1080 @ 256 spp on TommyLaptop with HW RT: median ≤ **4 s** after 1 warm-up |
 | **Secondary** | Same setup: ≥ **8×** wall-clock vs post-M8 compute baseline when measurable |
 
-AC-M9-12..14 are **pending TommyLaptop / poteto**. Do not invent Windows numbers from Linux CI.
+AC-M9-12 is the harness. AC-M9-13/14 **FAILED** at `061ebe62` (8773 ms) and
+**REGRESSED** at `754b6a5` (11697 ms) and `5127765` (9773 ms). Speed work is
+**RESET** to `061ebe62` (see `NOTES.md`). Pending poteto re-bench. Do not
+invent Windows numbers from Linux CI.
 
 ## Scripts
 
