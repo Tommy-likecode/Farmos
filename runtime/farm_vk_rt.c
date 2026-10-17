@@ -236,6 +236,7 @@ VK_FN(vkUpdateDescriptorSets, void, (VkDevice, uint32_t, const VkWriteDescriptor
 VK_FN(vkCreateCommandPool, VkResult, (VkDevice, const VkCommandPoolCreateInfo*, const void*, VkCommandPool*));
 VK_FN(vkDestroyCommandPool, void, (VkDevice, VkCommandPool, const void*));
 VK_FN(vkAllocateCommandBuffers, VkResult, (VkDevice, const VkCommandBufferAllocateInfo*, VkCommandBuffer*));
+VK_FN(vkResetCommandBuffer, VkResult, (VkCommandBuffer, uint32_t));
 VK_FN(vkBeginCommandBuffer, VkResult, (VkCommandBuffer, const VkCommandBufferBeginInfo*));
 VK_FN(vkEndCommandBuffer, VkResult, (VkCommandBuffer));
 VK_FN(vkCmdBindPipeline, void, (VkCommandBuffer, uint32_t, VkPipeline));
@@ -271,6 +272,7 @@ static VkDescriptorSetLayout g_dsl;
 static VkPipelineLayout g_pl;
 static VkPipeline g_pipe;
 static VkCommandPool g_cpool;
+static VkCommandBuffer g_cmd;
 static int g_device_ready;
 
 static const char* k_req_ext[] = {
@@ -434,6 +436,16 @@ typedef struct {
   int mapped_ok;
 } RtBuf;
 
+static RtBuf g_ssbo[6];
+static RtBuf g_vtx, g_instb, g_blas_store, g_tlas_store, g_scratch;
+static VkAccelerationStructureKHR g_blas, g_tlas;
+static VkDescriptorPool g_pool;
+static VkDescriptorSet g_dset;
+static VkDeviceSize g_ssbo_sz[6];
+static uint64_t g_as_fp;
+static int32_t g_as_tri_cached;
+static int g_persist_live;
+
 static void rt_buf_destroy(RtBuf* b) {
   if (!g_dev) return;
   if (b->mapped_ok && b->mem) vkUnmapMemory(g_dev, b->mem);
@@ -549,6 +561,7 @@ static int ensure_rt_device(void) {
   LOADD(vkCreateCommandPool);
   LOADD(vkDestroyCommandPool);
   LOADD(vkAllocateCommandBuffers);
+  LOADD(vkResetCommandBuffer);
   LOADD(vkBeginCommandBuffer);
   LOADD(vkEndCommandBuffer);
   LOADD(vkCmdBindPipeline);
@@ -617,6 +630,15 @@ static int ensure_rt_device(void) {
   cpi.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
   cpi.queueFamilyIndex = g_qfam;
   if (vkCreateCommandPool(g_dev, &cpi, NULL, &g_cpool) != VK_SUCCESS) return 0;
+  {
+    VkCommandBufferAllocateInfo cai;
+    memset(&cai, 0, sizeof(cai));
+    cai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cai.commandPool = g_cpool;
+    cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cai.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(g_dev, &cai, &g_cmd) != VK_SUCCESS) return 0;
+  }
 
   g_device_ready = 1;
   return 1;
@@ -713,6 +735,31 @@ static int quantize_f(float c) {
 static VkDeviceSize align_up(VkDeviceSize v, VkDeviceSize a) {
   if (a <= 1) return v;
   return (v + a - 1) / a * a;
+}
+
+static uint64_t fnv64(uint64_t h, const void* p, size_t n) {
+  const unsigned char* b = (const unsigned char*)p;
+  for (size_t i = 0; i < n; i++) {
+    h ^= (uint64_t)b[i];
+    h *= 1099511628211ull;
+  }
+  return h;
+}
+
+static void rt_persist_reset(void) {
+  if (g_pool) { vkDestroyDescriptorPool(g_dev, g_pool, NULL); g_pool = 0; g_dset = 0; }
+  if (g_tlas) { vkDestroyAccelerationStructureKHR(g_dev, g_tlas, NULL); g_tlas = 0; }
+  if (g_blas) { vkDestroyAccelerationStructureKHR(g_dev, g_blas, NULL); g_blas = 0; }
+  rt_buf_destroy(&g_vtx);
+  rt_buf_destroy(&g_instb);
+  rt_buf_destroy(&g_blas_store);
+  rt_buf_destroy(&g_tlas_store);
+  rt_buf_destroy(&g_scratch);
+  for (int i = 0; i < 6; i++) rt_buf_destroy(&g_ssbo[i]);
+  memset(g_ssbo_sz, 0, sizeof(g_ssbo_sz));
+  g_as_fp = 0;
+  g_as_tri_cached = 0;
+  g_persist_live = 0;
 }
 
 static int fill_tri_geom(uint8_t* geom96, VkDeviceAddress vtx_addr, uint32_t nverts) {
@@ -925,8 +972,6 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
   int32_t npix = r->width * r->height;
   uint32_t host_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
   uint32_t ssbo_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-  RtBuf ssbo[6];
-  memset(ssbo, 0, sizeof(ssbo));
   VkDeviceSize sizes[6];
   sizes[0] = sizeof(GpuParams);
   sizes[1] = sizeof(GpuTriHost) * (size_t)as_tri;
@@ -934,227 +979,227 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
   sizes[3] = sizeof(float) * 4 * (size_t)nlight_vec4;
   sizes[4] = sizeof(float) * (size_t)(ntex > 0 ? ntex : 4);
   sizes[5] = sizeof(float) * 3 * (size_t)npix;
-  int ok = 1;
-  for (int i = 0; i < 6; i++) {
-    if (!rt_buf_create(sizes[i], ssbo_usage, host_props, 0, 1, &ssbo[i])) { ok = 0; break; }
-  }
-  if (!ok) {
-    for (int i = 0; i < 6; i++) rt_buf_destroy(&ssbo[i]);
-    free(inst); free(amb); free(dirs); free(pts); free(rects);
-    free(tris); free(positions); free(mmap); free(mat4); free(texels); free(lights);
-    return 0;
-  }
-  memcpy(ssbo[0].mapped, &params, sizeof(params));
-  memcpy(ssbo[1].mapped, tris, sizes[1]);
-  memcpy(ssbo[2].mapped, mat4, sizes[2]);
-  memcpy(ssbo[3].mapped, lights, sizes[3]);
-  if (ntex > 0) memcpy(ssbo[4].mapped, texels, (size_t)ntex * sizeof(float));
-  memset(ssbo[5].mapped, 0, (size_t)sizes[5]);
 
-  uint32_t as_in_usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
-                         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-  uint32_t as_store_usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
-                            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-  uint32_t scratch_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+  /* Lever: persist BLAS/TLAS + SSBOs. Shader / packing / 8×8 dispatch unchanged. */
+  uint64_t as_fp = 1469598103934665603ull;
+  as_fp = fnv64(as_fp, &as_tri, sizeof(as_tri));
+  as_fp = fnv64(as_fp, positions, (size_t)as_tri * 9 * sizeof(float));
+  int reuse = g_persist_live && g_as_fp == as_fp && g_as_tri_cached == as_tri &&
+              g_tlas && g_blas && g_dset && g_cmd;
+  if (reuse) {
+    for (int i = 0; i < 6; i++) {
+      if (g_ssbo_sz[i] < sizes[i] || !g_ssbo[i].mapped_ok) { reuse = 0; break; }
+    }
+  }
 
-  RtBuf vtx = {0}, instb = {0}, blas_store = {0}, tlas_store = {0}, scratch = {0};
-  VkAccelerationStructureKHR blas = 0, tlas = 0;
-  VkDescriptorPool pool = 0;
-  VkCommandBuffer cmd = NULL;
   int success = 0;
-
-  if (!rt_buf_create((VkDeviceSize)as_tri * 9 * sizeof(float), as_in_usage, host_props, 1, 1, &vtx))
-    goto done;
-  memcpy(vtx.mapped, positions, (size_t)as_tri * 9 * sizeof(float));
-
-  uint8_t blas_geom[96];
-  fill_tri_geom(blas_geom, vtx.addr, (uint32_t)as_tri * 3);
-  uint8_t blas_info[80];
-  fill_build_info(blas_info, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, 0, 1, blas_geom, 0);
-  uint8_t blas_sizes[40];
-  memset(blas_sizes, 0, sizeof(blas_sizes));
-  *(uint32_t*)blas_sizes = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-  uint32_t prim_count = (uint32_t)as_tri;
-  vkGetAccelerationStructureBuildSizesKHR(g_dev, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
-                                          blas_info, &prim_count, blas_sizes);
-  VkDeviceSize blas_sz = *(VkDeviceSize*)(blas_sizes + 16);
-  VkDeviceSize blas_scratch_sz = *(VkDeviceSize*)(blas_sizes + 32);
-
-  uint8_t inst_geom[96];
-  /* Instance buffer filled after BLAS address is known; query TLAS sizes with a dummy address. */
-  if (!rt_buf_create(64, as_in_usage, host_props, 1, 1, &instb)) goto done;
-  fill_inst_geom(inst_geom, instb.addr);
-  uint8_t tlas_info[80];
-  fill_build_info(tlas_info, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, 0, 1, inst_geom, 0);
-  uint8_t tlas_sizes[40];
-  memset(tlas_sizes, 0, sizeof(tlas_sizes));
-  *(uint32_t*)tlas_sizes = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-  uint32_t inst_count = 1;
-  vkGetAccelerationStructureBuildSizesKHR(g_dev, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
-                                          tlas_info, &inst_count, tlas_sizes);
-  VkDeviceSize tlas_sz = *(VkDeviceSize*)(tlas_sizes + 16);
-  VkDeviceSize tlas_scratch_sz = *(VkDeviceSize*)(tlas_sizes + 32);
-  VkDeviceSize scratch_need = align_up(blas_scratch_sz > tlas_scratch_sz ? blas_scratch_sz : tlas_scratch_sz,
-                                       g_scratch_align);
-
-  uint32_t dev_local = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-  if (!rt_buf_create(blas_sz, as_store_usage, dev_local, 1, 0, &blas_store)) goto done;
-  if (!rt_buf_create(tlas_sz, as_store_usage, dev_local, 1, 0, &tlas_store)) goto done;
-  if (!rt_buf_create(scratch_need, scratch_usage, dev_local, 1, 0, &scratch)) goto done;
-
-  uint8_t blas_ci[64];
-  memset(blas_ci, 0, sizeof(blas_ci));
-  *(uint32_t*)blas_ci = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
-  memcpy(blas_ci + 24, &blas_store.buf, 8);
-  memcpy(blas_ci + 40, &blas_sz, 8);
-  *(uint32_t*)(blas_ci + 48) = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-  if (vkCreateAccelerationStructureKHR(g_dev, blas_ci, NULL, &blas) != VK_SUCCESS) goto done;
-
-  uint8_t tlas_ci[64];
-  memset(tlas_ci, 0, sizeof(tlas_ci));
-  *(uint32_t*)tlas_ci = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
-  memcpy(tlas_ci + 24, &tlas_store.buf, 8);
-  memcpy(tlas_ci + 40, &tlas_sz, 8);
-  *(uint32_t*)(tlas_ci + 48) = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-  if (vkCreateAccelerationStructureKHR(g_dev, tlas_ci, NULL, &tlas) != VK_SUCCESS) goto done;
-
-  uint8_t addr_info[24];
-  memset(addr_info, 0, sizeof(addr_info));
-  *(uint32_t*)addr_info = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-  memcpy(addr_info + 16, &blas, 8);
-  VkDeviceAddress blas_addr = vkGetAccelerationStructureDeviceAddressKHR(g_dev, addr_info);
-  if (!blas_addr) goto done;
-
-  /* VkAccelerationStructureInstanceKHR: 12 floats transform, custom+mask, sbt+flags, as ref. */
-  uint8_t inst_bytes[64];
-  memset(inst_bytes, 0, 64);
-  float* xf = (float*)inst_bytes;
-  xf[0] = 1.f; xf[5] = 1.f; xf[10] = 1.f;
-  uint32_t custom_mask = 0xFFu << 24; /* mask=0xFF, customIndex=0 */
-  memcpy(inst_bytes + 48, &custom_mask, 4);
-  /* flags = TRIANGLE_FACING_CULL_DISABLE (bit 0 of the flags byte). */
-  uint32_t sbt_flags = 1u << 24;
-  memcpy(inst_bytes + 52, &sbt_flags, 4);
-  memcpy(inst_bytes + 56, &blas_addr, 8);
-  memcpy(instb.mapped, inst_bytes, 64);
-
-  fill_build_info(blas_info, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, blas, 1, blas_geom, scratch.addr);
-  fill_inst_geom(inst_geom, instb.addr);
-  fill_build_info(tlas_info, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, tlas, 1, inst_geom, scratch.addr);
-
+  uint8_t blas_geom[96], inst_geom[96], blas_info[80], tlas_info[80];
   uint32_t blas_range[4] = { (uint32_t)as_tri, 0, 0, 0 };
   uint32_t tlas_range[4] = { 1, 0, 0, 0 };
   const uint32_t* blas_range_ptr = blas_range;
   const uint32_t* tlas_range_ptr = tlas_range;
 
-  VkDescriptorPoolSize psz[2];
-  psz[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-  psz[0].descriptorCount = 6;
-  psz[1].type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-  psz[1].descriptorCount = 1;
-  VkDescriptorPoolCreateInfo dpi;
-  memset(&dpi, 0, sizeof(dpi));
-  dpi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  dpi.maxSets = 1;
-  dpi.poolSizeCount = 2;
-  dpi.pPoolSizes = psz;
-  if (vkCreateDescriptorPool(g_dev, &dpi, NULL, &pool) != VK_SUCCESS) goto done;
-  VkDescriptorSetAllocateInfo dai;
-  memset(&dai, 0, sizeof(dai));
-  dai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  dai.descriptorPool = pool;
-  dai.descriptorSetCount = 1;
-  dai.pSetLayouts = &g_dsl;
-  VkDescriptorSet dset = 0;
-  if (vkAllocateDescriptorSets(g_dev, &dai, &dset) != VK_SUCCESS) goto done;
+  if (!reuse) {
+    rt_persist_reset();
+    int ok = 1;
+    for (int i = 0; i < 6; i++) {
+      if (!rt_buf_create(sizes[i], ssbo_usage, host_props, 0, 1, &g_ssbo[i])) { ok = 0; break; }
+      g_ssbo_sz[i] = sizes[i];
+    }
+    if (!ok) goto done;
 
-  VkDescriptorBufferInfo bin[6];
-  VkWriteDescriptorSet wr[7];
-  memset(wr, 0, sizeof(wr));
-  for (int i = 0; i < 6; i++) {
-    bin[i].buffer = ssbo[i].buf;
-    bin[i].offset = 0;
-    bin[i].range = VK_WHOLE_SIZE;
-    wr[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    wr[i].dstSet = dset;
-    wr[i].dstBinding = (uint32_t)i;
-    wr[i].descriptorCount = 1;
-    wr[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    wr[i].pBufferInfo = &bin[i];
+    uint32_t as_in_usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    uint32_t as_store_usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
+                              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    uint32_t scratch_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    if (!rt_buf_create((VkDeviceSize)as_tri * 9 * sizeof(float), as_in_usage, host_props, 1, 1, &g_vtx))
+      goto done;
+    memcpy(g_vtx.mapped, positions, (size_t)as_tri * 9 * sizeof(float));
+
+    fill_tri_geom(blas_geom, g_vtx.addr, (uint32_t)as_tri * 3);
+    fill_build_info(blas_info, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, 0, 1, blas_geom, 0);
+    uint8_t blas_sizes[40];
+    memset(blas_sizes, 0, sizeof(blas_sizes));
+    *(uint32_t*)blas_sizes = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+    uint32_t prim_count = (uint32_t)as_tri;
+    vkGetAccelerationStructureBuildSizesKHR(g_dev, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+                                            blas_info, &prim_count, blas_sizes);
+    VkDeviceSize blas_sz = *(VkDeviceSize*)(blas_sizes + 16);
+    VkDeviceSize blas_scratch_sz = *(VkDeviceSize*)(blas_sizes + 32);
+
+    if (!rt_buf_create(64, as_in_usage, host_props, 1, 1, &g_instb)) goto done;
+    fill_inst_geom(inst_geom, g_instb.addr);
+    fill_build_info(tlas_info, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, 0, 1, inst_geom, 0);
+    uint8_t tlas_sizes[40];
+    memset(tlas_sizes, 0, sizeof(tlas_sizes));
+    *(uint32_t*)tlas_sizes = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+    uint32_t inst_count = 1;
+    vkGetAccelerationStructureBuildSizesKHR(g_dev, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+                                            tlas_info, &inst_count, tlas_sizes);
+    VkDeviceSize tlas_sz = *(VkDeviceSize*)(tlas_sizes + 16);
+    VkDeviceSize tlas_scratch_sz = *(VkDeviceSize*)(tlas_sizes + 32);
+    VkDeviceSize scratch_need = align_up(blas_scratch_sz > tlas_scratch_sz ? blas_scratch_sz : tlas_scratch_sz,
+                                         g_scratch_align);
+
+    uint32_t dev_local = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    if (!rt_buf_create(blas_sz, as_store_usage, dev_local, 1, 0, &g_blas_store)) goto done;
+    if (!rt_buf_create(tlas_sz, as_store_usage, dev_local, 1, 0, &g_tlas_store)) goto done;
+    if (!rt_buf_create(scratch_need, scratch_usage, dev_local, 1, 0, &g_scratch)) goto done;
+
+    uint8_t blas_ci[64];
+    memset(blas_ci, 0, sizeof(blas_ci));
+    *(uint32_t*)blas_ci = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+    memcpy(blas_ci + 24, &g_blas_store.buf, 8);
+    memcpy(blas_ci + 40, &blas_sz, 8);
+    *(uint32_t*)(blas_ci + 48) = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+    if (vkCreateAccelerationStructureKHR(g_dev, blas_ci, NULL, &g_blas) != VK_SUCCESS) goto done;
+
+    uint8_t tlas_ci[64];
+    memset(tlas_ci, 0, sizeof(tlas_ci));
+    *(uint32_t*)tlas_ci = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+    memcpy(tlas_ci + 24, &g_tlas_store.buf, 8);
+    memcpy(tlas_ci + 40, &tlas_sz, 8);
+    *(uint32_t*)(tlas_ci + 48) = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    if (vkCreateAccelerationStructureKHR(g_dev, tlas_ci, NULL, &g_tlas) != VK_SUCCESS) goto done;
+
+    uint8_t addr_info[24];
+    memset(addr_info, 0, sizeof(addr_info));
+    *(uint32_t*)addr_info = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+    memcpy(addr_info + 16, &g_blas, 8);
+    VkDeviceAddress blas_addr = vkGetAccelerationStructureDeviceAddressKHR(g_dev, addr_info);
+    if (!blas_addr) goto done;
+
+    uint8_t inst_bytes[64];
+    memset(inst_bytes, 0, 64);
+    float* xf = (float*)inst_bytes;
+    xf[0] = 1.f; xf[5] = 1.f; xf[10] = 1.f;
+    uint32_t custom_mask = 0xFFu << 24;
+    memcpy(inst_bytes + 48, &custom_mask, 4);
+    uint32_t sbt_flags = 1u << 24;
+    memcpy(inst_bytes + 52, &sbt_flags, 4);
+    memcpy(inst_bytes + 56, &blas_addr, 8);
+    memcpy(g_instb.mapped, inst_bytes, 64);
+
+    VkDescriptorPoolSize psz[2];
+    psz[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    psz[0].descriptorCount = 6;
+    psz[1].type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    psz[1].descriptorCount = 1;
+    VkDescriptorPoolCreateInfo dpi;
+    memset(&dpi, 0, sizeof(dpi));
+    dpi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    dpi.maxSets = 1;
+    dpi.poolSizeCount = 2;
+    dpi.pPoolSizes = psz;
+    if (vkCreateDescriptorPool(g_dev, &dpi, NULL, &g_pool) != VK_SUCCESS) goto done;
+    VkDescriptorSetAllocateInfo dai;
+    memset(&dai, 0, sizeof(dai));
+    dai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    dai.descriptorPool = g_pool;
+    dai.descriptorSetCount = 1;
+    dai.pSetLayouts = &g_dsl;
+    if (vkAllocateDescriptorSets(g_dev, &dai, &g_dset) != VK_SUCCESS) goto done;
+
+    VkDescriptorBufferInfo bin[6];
+    VkWriteDescriptorSet wr[7];
+    memset(wr, 0, sizeof(wr));
+    for (int i = 0; i < 6; i++) {
+      bin[i].buffer = g_ssbo[i].buf;
+      bin[i].offset = 0;
+      bin[i].range = VK_WHOLE_SIZE;
+      wr[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      wr[i].dstSet = g_dset;
+      wr[i].dstBinding = (uint32_t)i;
+      wr[i].descriptorCount = 1;
+      wr[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      wr[i].pBufferInfo = &bin[i];
+    }
+    uint8_t as_write[32];
+    memset(as_write, 0, sizeof(as_write));
+    *(uint32_t*)as_write = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+    *(uint32_t*)(as_write + 16) = 1;
+    const VkAccelerationStructureKHR* tlas_ptr = &g_tlas;
+    memcpy(as_write + 24, &tlas_ptr, sizeof(void*));
+    wr[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    wr[6].pNext = as_write;
+    wr[6].dstSet = g_dset;
+    wr[6].dstBinding = 6;
+    wr[6].descriptorCount = 1;
+    wr[6].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    vkUpdateDescriptorSets(g_dev, 7, wr, 0, NULL);
+
+    g_as_fp = as_fp;
+    g_as_tri_cached = as_tri;
+    g_persist_live = 1;
   }
-  uint8_t as_write[32];
-  memset(as_write, 0, sizeof(as_write));
-  *(uint32_t*)as_write = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
-  *(uint32_t*)(as_write + 16) = 1;
-  const VkAccelerationStructureKHR* tlas_ptr = &tlas;
-  memcpy(as_write + 24, &tlas_ptr, sizeof(void*));
-  wr[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  wr[6].pNext = as_write;
-  wr[6].dstSet = dset;
-  wr[6].dstBinding = 6;
-  wr[6].descriptorCount = 1;
-  wr[6].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-  vkUpdateDescriptorSets(g_dev, 7, wr, 0, NULL);
 
-  VkCommandBufferAllocateInfo cai;
-  memset(&cai, 0, sizeof(cai));
-  cai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  cai.commandPool = g_cpool;
-  cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  cai.commandBufferCount = 1;
-  if (vkAllocateCommandBuffers(g_dev, &cai, &cmd) != VK_SUCCESS) goto done;
+  memcpy(g_ssbo[0].mapped, &params, sizeof(params));
+  memcpy(g_ssbo[1].mapped, tris, sizes[1]);
+  memcpy(g_ssbo[2].mapped, mat4, sizes[2]);
+  memcpy(g_ssbo[3].mapped, lights, sizes[3]);
+  if (ntex > 0) memcpy(g_ssbo[4].mapped, texels, (size_t)ntex * sizeof(float));
+
+  if (vkResetCommandBuffer(g_cmd, 0) != VK_SUCCESS) goto done;
   VkCommandBufferBeginInfo bi;
   memset(&bi, 0, sizeof(bi));
   bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-  if (vkBeginCommandBuffer(cmd, &bi) != VK_SUCCESS) goto done;
+  if (vkBeginCommandBuffer(g_cmd, &bi) != VK_SUCCESS) goto done;
 
-  vkCmdBuildAccelerationStructuresKHR(cmd, 1, blas_info, (const void* const*)&blas_range_ptr);
-  {
-    VkMemoryBarrier mb;
-    memset(&mb, 0, sizeof(mb));
-    mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    mb.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-    mb.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                         VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0, 1, &mb, 0, NULL, 0, NULL);
+  if (!reuse) {
+    fill_tri_geom(blas_geom, g_vtx.addr, (uint32_t)as_tri * 3);
+    fill_inst_geom(inst_geom, g_instb.addr);
+    fill_build_info(blas_info, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, g_blas, 1, blas_geom, g_scratch.addr);
+    fill_build_info(tlas_info, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, g_tlas, 1, inst_geom, g_scratch.addr);
+    vkCmdBuildAccelerationStructuresKHR(g_cmd, 1, blas_info, (const void* const*)&blas_range_ptr);
+    {
+      VkMemoryBarrier mb;
+      memset(&mb, 0, sizeof(mb));
+      mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+      mb.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+      mb.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+      vkCmdPipelineBarrier(g_cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                           VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0, 1, &mb, 0, NULL, 0, NULL);
+    }
+    vkCmdBuildAccelerationStructuresKHR(g_cmd, 1, tlas_info, (const void* const*)&tlas_range_ptr);
+    {
+      VkMemoryBarrier mb;
+      memset(&mb, 0, sizeof(mb));
+      mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+      mb.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+      mb.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_SHADER_READ_BIT;
+      vkCmdPipelineBarrier(g_cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+    }
   }
-  vkCmdBuildAccelerationStructuresKHR(cmd, 1, tlas_info, (const void* const*)&tlas_range_ptr);
-  {
-    VkMemoryBarrier mb;
-    memset(&mb, 0, sizeof(mb));
-    mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    mb.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-    mb.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_SHADER_READ_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
-  }
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_pipe);
-  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_pl, 0, 1, &dset, 0, NULL);
+
+  vkCmdBindPipeline(g_cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_pipe);
+  vkCmdBindDescriptorSets(g_cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_pl, 0, 1, &g_dset, 0, NULL);
   uint32_t gx = ((uint32_t)r->width + 7u) / 8u;
   uint32_t gy = ((uint32_t)r->height + 7u) / 8u;
   if (gx < 1) gx = 1;
   if (gy < 1) gy = 1;
-  vkCmdDispatch(cmd, gx, gy, 1);
+  vkCmdDispatch(g_cmd, gx, gy, 1);
   {
     VkMemoryBarrier mb;
     memset(&mb, 0, sizeof(mb));
     mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     mb.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+    vkCmdPipelineBarrier(g_cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
                          0, 1, &mb, 0, NULL, 0, NULL);
   }
-  if (vkEndCommandBuffer(cmd) != VK_SUCCESS) goto done;
+  if (vkEndCommandBuffer(g_cmd) != VK_SUCCESS) goto done;
   VkSubmitInfo si;
   memset(&si, 0, sizeof(si));
   si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   si.commandBufferCount = 1;
-  si.pCommandBuffers = &cmd;
+  si.pCommandBuffers = &g_cmd;
   if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS ||
       vkQueueWaitIdle(g_queue) != VK_SUCCESS) goto done;
 
-  float* gpu_acc = (float*)ssbo[5].mapped;
+  float* gpu_acc = (float*)g_ssbo[5].mapped;
   int start_s = r->accum_count;
   int samples = r->samples;
   r->accum_count = start_s + samples;
@@ -1177,15 +1222,7 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
   success = 1;
 
 done:
-  if (pool) vkDestroyDescriptorPool(g_dev, pool, NULL);
-  if (tlas) vkDestroyAccelerationStructureKHR(g_dev, tlas, NULL);
-  if (blas) vkDestroyAccelerationStructureKHR(g_dev, blas, NULL);
-  rt_buf_destroy(&vtx);
-  rt_buf_destroy(&instb);
-  rt_buf_destroy(&blas_store);
-  rt_buf_destroy(&tlas_store);
-  rt_buf_destroy(&scratch);
-  for (int i = 0; i < 6; i++) rt_buf_destroy(&ssbo[i]);
+  if (!success) rt_persist_reset();
   free(inst); free(amb); free(dirs); free(pts); free(rects);
   free(tris); free(positions); free(mmap); free(mat4); free(texels); free(lights);
   return success;
