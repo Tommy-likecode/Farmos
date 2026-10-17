@@ -1,0 +1,21 @@
+host=TommyLaptop
+gpu=Intel(R) Arc(TM) Graphics
+sha=d91887b350b86ed7c5f09c18f48b4d3f95988a6d
+backend=vulkan_rt (PATH_BACKEND_VULKAN_RT; FARMOS_PATH_GPU_STRICT=1)
+roulette=1
+sampling=1
+adaptive=0
+spp=256
+res=1920x1080
+cold_warmup_ms=5356
+runs_ms=4953,4996,4950
+median_ms=4953
+stdout_first_line=vulkan_rt
+strict=1
+downgrade=no (STRICT exit 0 on all runs)
+compute_baseline_median_ms=28218
+ratio_vs_compute=5.697
+AC-M9-13_le_4000ms=FAIL
+AC-M9-14_ge_8x=FAIL
+vs_061ebe62_8773=LE_8773_class
+note=CLEAN re-bench; DeltaForce/Steam/steamwebhelper confirmed absent before both benches

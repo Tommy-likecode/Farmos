@@ -1,0 +1,10 @@
+# kind: run_png
+# exit: 0
+# requires_vulkan_rt: true
+# env: FARMOS_PATH_GPU_STRICT=1
+# png: out.png
+# sha256: e7655a2c9a205f90786991219a3b558e27b2314377a4f5d4a66891b5b25915dd
+# png_tol: 2
+## HW RT vs M4-001 CPU golden. Soft-skip without ray-query device. STRICT so CI cannot pass via silent compute/CPU.
+# stdout:
+# end

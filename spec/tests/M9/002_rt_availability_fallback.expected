@@ -1,0 +1,12 @@
+# kind: run
+# exit: 0
+## Backend stays 2 after renderPath even if compute/CPU fallback ran.
+## Second line is 1 if HW RT probe succeeded this process, else 0.
+# stdout:
+2
+0
+# end
+# stdout_alt:
+2
+1
+# end

@@ -128,6 +128,11 @@ static bool is_vulkan_opt_in_name(const std::string& n) {
          n == "isVulkanPathAvailable";
 }
 
+static bool is_vulkan_rt_opt_in_name(const std::string& n) {
+  return n == "PATH_BACKEND_VULKAN_RT" ||
+         n == "isVulkanRayTracingAvailable";
+}
+
 static bool expr_uses_vulkan(ExprPtr e) {
   if (!e) return false;
   if (e->kind == ExprKind::Ident && is_vulkan_opt_in_name(e->name)) return true;
@@ -141,6 +146,22 @@ static bool expr_uses_vulkan(ExprPtr e) {
   if (expr_uses_vulkan(e->lhs) || expr_uses_vulkan(e->rhs)) return true;
   for (auto& a : e->args) if (expr_uses_vulkan(a)) return true;
   for (auto& fv : e->fields) if (expr_uses_vulkan(fv.second)) return true;
+  return false;
+}
+
+static bool expr_uses_vulkan_rt(ExprPtr e) {
+  if (!e) return false;
+  if (e->kind == ExprKind::Ident && is_vulkan_rt_opt_in_name(e->name)) return true;
+  if (e->kind == ExprKind::Field && is_vulkan_rt_opt_in_name(e->name)) return true;
+  if (e->kind == ExprKind::Call && e->lhs && e->lhs->kind == ExprKind::Field) {
+    if (e->lhs->name == "isVulkanRayTracingAvailable") return true;
+    if (e->lhs->name == "setPathBackend" && !e->args.empty() && e->args[0] &&
+        e->args[0]->kind == ExprKind::IntLit && e->args[0]->int_val == 2)
+      return true;
+  }
+  if (expr_uses_vulkan_rt(e->lhs) || expr_uses_vulkan_rt(e->rhs)) return true;
+  for (auto& a : e->args) if (expr_uses_vulkan_rt(a)) return true;
+  for (auto& fv : e->fields) if (expr_uses_vulkan_rt(fv.second)) return true;
   return false;
 }
 
@@ -165,6 +186,31 @@ bool program_uses_vulkan(Program& prog) {
     for (auto& s : m.structs)
       for (auto& md : s.methods) if (stmt_uses_vulkan(md.body)) return true;
     for (auto& op : m.operators) if (stmt_uses_vulkan(op.body)) return true;
+  }
+  return false;
+}
+
+static bool stmt_uses_vulkan_rt(StmtPtr s) {
+  if (!s) return false;
+  if (expr_uses_vulkan_rt(s->init) || expr_uses_vulkan_rt(s->cond) || expr_uses_vulkan_rt(s->lhs) ||
+      expr_uses_vulkan_rt(s->rhs) || expr_uses_vulkan_rt(s->for_cond) || expr_uses_vulkan_rt(s->ret))
+    return true;
+  if (stmt_uses_vulkan_rt(s->then_b) || stmt_uses_vulkan_rt(s->else_b) ||
+      stmt_uses_vulkan_rt(s->for_init) || stmt_uses_vulkan_rt(s->for_update))
+    return true;
+  for (auto& x : s->stmts) if (stmt_uses_vulkan_rt(x)) return true;
+  return false;
+}
+
+bool program_uses_vulkan_rt(Program& prog) {
+  for (auto& m : prog.modules) {
+    if (is_stdlib_mod(m.path)) continue;
+    for (auto& f : m.functions) if (stmt_uses_vulkan_rt(f.body)) return true;
+    for (auto& c : m.classes)
+      for (auto& md : c.methods) if (stmt_uses_vulkan_rt(md.body)) return true;
+    for (auto& s : m.structs)
+      for (auto& md : s.methods) if (stmt_uses_vulkan_rt(md.body)) return true;
+    for (auto& op : m.operators) if (stmt_uses_vulkan_rt(op.body)) return true;
   }
   return false;
 }

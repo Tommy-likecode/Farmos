@@ -1,0 +1,7 @@
+# kind: runtime_trap
+# exit: 117
+# env: FARMOS_PATH_GPU_STRICT=1
+# env: FARMOS_VULKAN_RT_FORCE_FAIL=1
+# stderr:
+runtime error: vulkan path failed
+# end

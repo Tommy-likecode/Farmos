@@ -100,6 +100,7 @@ Scene graph: `Scene`, `Object3D`, `Mesh`, geometries (`BoxGeometry`, `SphereGeom
 - `renderer.renderPath(scene, camera)` — M4 CPU path tracer (BVH, glass / mirror / area lights). `setSamples` / `setMaxBounces` / `setSize` apply. `FARMOS_THREADS` unset means 1 worker for `renderPath`.
 - M7: `PATH_BACKEND_CPU` / `PATH_BACKEND_VULKAN`, `setPathBackend` / `getPathBackend` / `isVulkanPathAvailable`. Default CPU. GPU is Vulkan compute after explicit opt-in; `farm_vk.c` is linked only when that opt-in is reachable. `FARMOS_PATH_GPU_STRICT=1` traps 117 on GPU failure; invalid backend traps 118.
 - M8: `setPathRoulette` / `getPathRoulette` (default off; `FARMOS_PATH_ROULETTE=1` if unset by method). `PATH_SAMPLING_M4` / `PATH_SAMPLING_MIS` / `PATH_SAMPLING_AREA_SOLID`, `setPathSampling` / `getPathSampling`; invalid mode traps 119. Adaptive spp setters default off. GPU workgroup 8×8; one `renderPath` dispatch batches all samples.
+- M9: `PATH_BACKEND_VULKAN_RT` (2), `isVulkanRayTracingAvailable()`. Trap 118 valid set `{0,1,2}`. Hardware RT is Vulkan acceleration structures + `VK_KHR_ray_query` inside compute (`farm_vk_rt.c` linked only when that opt-in is reachable; compute `farm_vk.c` is also linked for fallback). Soft fallback HW RT → compute → CPU; `FARMOS_PATH_GPU_STRICT=1` traps 117 on selected HW RT fail. `FARMOS_VULKAN_RT_FORCE_FAIL=1`. M8 RR/MIS/adaptive apply on backend 2 when enabled.
 
 `farm_ray.c` is linked only when `renderPath` is a reachable call.
 
@@ -123,6 +124,7 @@ Budgets (stripped Windows x64 PE unless noted) are in `spec/M6-hardening.md` §3
 | B-02 | rotating cube | ≤ 96 KiB |
 | B-03 | glass + mirror (CPU, no Vulkan opt-in) | ≤ 300 KiB |
 | B-08 | GPU-linked path demo (Vulkan opt-in reachable) | ≤ 400 KiB |
+| B-09 | RT-linked path demo (`PATH_BACKEND_VULKAN_RT` reachable) | ≤ 500 KiB |
 | B-04 | `S_demo − S_scene` | ≤ 64 KiB |
 | B-05 | Cornell 800×600 `renderPath` peak working set | ≤ 64 MiB |
 | B-06 | unused `farmos:math` import | ≤ 20 KiB |

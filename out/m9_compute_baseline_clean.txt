@@ -1,0 +1,14 @@
+host=TommyLaptop
+gpu=Intel(R) Arc(TM) Graphics
+sha=d91887b350b86ed7c5f09c18f48b4d3f95988a6d
+backend=vulkan (PATH_BACKEND_VULKAN forced; compute not RT)
+roulette=1
+sampling=1
+adaptive=0
+spp=256
+res=1920x1080
+cold_warmup_ms=28564
+runs_ms=26810,29985,28218
+median_ms=28218
+stdout_first_line=vulkan
+note=CLEAN re-bench; DeltaForce/Steam/steamwebhelper confirmed absent
