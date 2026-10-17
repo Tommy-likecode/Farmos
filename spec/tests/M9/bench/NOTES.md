@@ -1,6 +1,6 @@
 # M9 silver-still HW RT bench notes
 
-**Status: persist kept (`eaeb0c6` CLEAN RT **4881 ms**). This tip is ONE extra lever: BLAS compact. AC-M9-13/14 still FAIL / pending poteto re-bench. Do not invent new Windows numbers.**
+**Status: tip `1003468` BLAS compact TommyLaptop CLEAN re-bench FAIL + REGRESS. RT median **6067 ms** > floor **4881** (`eaeb0c6`). AC-M9-13 FAIL. Stop — no further CloudAgent lever. Do not invent new Windows numbers.**
 
 This Linux CI / cloud-agent host does not provide a hardware ray-tracing device.
 Windows numbers below are TommyLaptop / poteto only.
@@ -11,7 +11,7 @@ Windows numbers below are TommyLaptop / poteto only.
 - 1920×1080 / 256 spp, RR+MIS, STRICT HW RT
 - AC-M9-13: median ≤ **4000 ms** after 1 warm-up
 - AC-M9-14: ≥ **8×** vs post-M8 compute
-- Need ~**880 ms** / ~1.22× from the persist floor **4881 ms**
+- Hard floor before this tip: **4881 ms** (`eaeb0c6` persist CLEAN)
 
 ## TommyLaptop measured rows (do not invent numbers)
 
@@ -19,27 +19,35 @@ Windows numbers below are TommyLaptop / poteto only.
 |-----|----------------|--------------------------------|-------|------|
 | `d91887b` CLEAN | **28218 ms** | **4953 ms** | 5.697× | 5356 |
 | `eaeb0c6` persist CLEAN | **29335 ms** (25863, 29335, 384095*) | **4881 ms** (4881, 4678, 6724) | **6.010×** | 5287 |
+| `1003468` BLAS compact CLEAN | **353747 ms** (385416, 353747, 349691)† | **6067 ms** (6067, 5056, 6077) | 58.307×† | 36439 |
 
-\*compute run3 outlier 384095 ms (machine noise); RT run3 6724 elevated; median used.
+\*compute run3 outlier 384095 ms on `eaeb0c6` (machine noise); median used.
+†`1003468` compute lane ~12× slower than prior ~29 s class (possible Arc thermal / driver state after long compute); ratio inflated. RT hard gate uses wall RT median vs 4881 only.
 
-`eaeb0c6` persist is **≤4953** (~72 ms better). Keep persist. New hard floor: **4881 ms**. Must not exceed 4881; absolute never past 4953/8773.
+`eaeb0c6` persist remains best CLEAN floor: **4881 ms**. `1003468` **REGRESS** (6067 > 4881; best timed run 5056 still > 4881). Do not keep compact as the speed tip.
 
-Dropped dead ends: `754b6a5` (8×4×4), `5127765` (thin-SPIR-V). Dirty 10123 was GPU contention.
+Dropped dead ends: `754b6a5` (8×4×4), `5127765` (thin-SPIR-V), dirty 10123 (GPU contention), and now **`1003468` BLAS compact** (RT regress).
 
-### Detail (`eaeb0c6` CLEAN — persist)
+### Detail (`1003468` CLEAN — BLAS compact after persist)
 
-Games closed. PE: hello **13824**; glass **61952**; compute **159232**; RT cornell **242176** — **PASS**.
-stdout `vulkan_rt`; STRICT exit 0. Artifacts: `out/m9_*_eaeb0c6*`.
+Games closed before sync and during runs. Confirmed absent: DeltaForceClient, Steam, steamwebhelper, df_launcher, artwork, DeltaForce.
 
-## This tip — ONE lever (hypothesis)
+| Field | Value |
+|-------|--------|
+| Host | TommyLaptop |
+| GPU | Intel(R) Arc(TM) Graphics |
+| farmc SHA | `1003468d4273b9621014bd200e1c7ffb5c565765` |
+| PE sizes | hello **13824**; glass **61952** — **PASS** (B-01/02). (cornell RT PE not re-sampled same as prior 242176 path this pass) |
+| Compute median | **353747** (385416, 353747, 349691); stdout `vulkan`; cold 388595 |
+| HW RT median | **6067** (6067, 5056, 6077); cold 36439 |
+| stdout | `vulkan_rt`; STRICT exit 0; downgrade **no** |
+| vs 4881 floor | **REGRESS** (6067 > 4881) |
+| AC-M9-13 / 14 | **FAIL** / (ratio 58.3× on inflated compute — ignore for gate; RT fails 13) |
+| Artifacts | `out/m9_compute_baseline_1003468.txt`, `out/m9_vulkan_rt_speed_1003468.txt`, `out/m9_compute_bench_1003468/`, `out/m9_rt_bench_1003468/` |
 
-**Class: AS quality (compact), not occupancy / SPIR-V / persist.** After the first BLAS build, query compacted size and `vkCmdCopyAccelerationStructureKHR` (COMPACT) if smaller. Persist then reuses the compacted BLAS. TLAS is rebuilt once from the compacted BLAS address (warmup only).
+Lever class: host BLAS compact after first persist build (`vkCmdCopyAccelerationStructureKHR` COMPACT). Kernel / SPIR-V / 8×8 / persist fingerprint unchanged vs `eaeb0c6`.
 
-**Not changed:** `farm_vk_rt_path.comp`, committed SPIR-V, 8×8 dispatch, light packing, confirm-loop closest-hit, persist-on-fingerprint.
-
-**Why it should not exceed 4881:** shader binary is unchanged. Compact is warmup-only; timed runs dispatch against a same-or-smaller FAST_TRACE BLAS. If compact is unavailable or not smaller, the uncompacted persist path is kept (the 4881 path). Compact failure does not tear down persist.
-
-**Expected path to ≤4000:** ~5e9 `rayQuery` traversals. If uncompacted BLAS traffic is a large slice of 4.9 s, a tighter BLAS can return part of the ~880 ms. If shading dominates, this lever misses. Not a claimed Windows number.
+Decision: **stop**. Hard-stop on regress past 4881. No merge / no eggtooth. Best tip remains `eaeb0c6` at **4881 ms**.
 
 `farmc version`: `farmc 1.01`.
 
