@@ -1,7 +1,3 @@
-# kind: run
-# exit: 0
-# stdout:
-# stderr:
 import { Scene, PerspectiveCamera, Renderer,
          PATH_DENOISE_OFF, PATH_DENOISE_SPATIAL } from "farmos:scene";
 import { Color } from "farmos:math";

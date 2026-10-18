@@ -1,1 +1,8 @@
-exit 0
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: 47c97c56ff810f808bce062c9e1e373bbcf2455717c62fc46475832f7116cc44
+# png_tol: 8
+## 32x32 background smoke, PATH_DENOISE_SPATIAL
+# stdout:
+# end

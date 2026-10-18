@@ -1,2 +1,5 @@
-exit 120
+# kind: runtime_trap
+# exit: 120
+# stderr:
 runtime error: invalid path denoise mode
+# end

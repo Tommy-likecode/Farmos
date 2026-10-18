@@ -1,13 +1,18 @@
 # AC-M10-09 size / DCE notes
 
-Windows PE budgets are normative. Linux ELF sizes are informative.
+Measured on the M10 Linux cloud agent (ELF, stripped via `llvm-strip --strip-all` /
+`strip --strip-all` when available) with `python3 scripts/check_size_budgets.py build/farmc .`.
 
-| Artifact | Budget |
-|----------|--------|
-| hello | ≤ 20 KiB; no Vulkan / RT / denoise symbols |
-| CPU glass+mirror | ≤ 300 KiB; no `farm_denoise.c` |
-| Compute-linked | ≤ 400 KiB |
-| RT-linked | ≤ 500 KiB |
-| Denoise-linked (path + `PATH_DENOISE_SPATIAL`) | ≤ **600 KiB** |
+Windows PE budgets are the normative ACs; Linux numbers are informative but show
+the same DCE gates. Script result: **PASS size_budgets**.
 
-See `scripts/check_size_budgets.py` B-10. TommyLaptop PE numbers go in NOTES when measured.
+| Artifact | Linux ELF | Budget | Status |
+|----------|-----------|--------|--------|
+| Hello `examples/01_hello.fm` | 14512 B | ≤ 20 KiB; no Vulkan/RT/denoise | OK (DCE) |
+| CPU glass+mirror `examples/04_glass_mirror.fm` | 59744 B | ≤ 300 KiB; no `farm_denoise.c` | OK (DCE) |
+| Compute-only GPU-linked `examples/06_vulkan_cornell.fm` | 153984 B | ≤ 400 KiB | OK |
+| RT-linked `examples/07_vulkan_rt_cornell.fm` | 235944 B | ≤ 500 KiB | OK |
+| Denoise-linked path demo | 47456 B | ≤ **600 KiB** | OK (DCE) |
+
+B-04 `S_demo − S_scene` = 12288 B (budget 65536 B). B-06 unused-math size matches hello.
+PE budgets are not enforced on ELF; Windows TommyLaptop still gates B-01/B-03/B-08/B-09/B-10.

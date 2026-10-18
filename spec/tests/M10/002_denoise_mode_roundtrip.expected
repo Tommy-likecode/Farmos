@@ -1,4 +1,9 @@
-exit 0
+# kind: run
+# exit: 0
+# stdout:
 0
 1
 0
+# end
+# stderr:
+# end

@@ -1,10 +1,3 @@
-# kind: run_png
-# exit: 0
-# png: out.png
-# sha256: 47c97c56ff810f808bce062c9e1e373bbcf2455717c62fc46475832f7116cc44
-# png_tol: 8
-# stdout:
-# stderr:
 import { Scene, PerspectiveCamera, Renderer,
          PATH_DENOISE_SPATIAL } from "farmos:scene";
 import { Color } from "farmos:math";

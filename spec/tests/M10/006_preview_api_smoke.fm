@@ -1,7 +1,3 @@
-# kind: run
-# exit: 0
-# stdout:
-# stderr:
 import { Scene, PerspectiveCamera, Renderer } from "farmos:scene";
 import { Color } from "farmos:math";
 
