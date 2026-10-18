@@ -3,7 +3,9 @@
 **Status: FINAL gates; second speed tip pending TommyLaptop CLEAN re-bench.**
 Do not invent Windows timings. Cite M9 undenoised floor only as baseline.
 
-Linux cloud agent (this PR): `ctest -L spec` after this tip. See `SIZE.md`.
+Linux cloud agent (this PR): `ctest -L spec` **354/354 PASS** on tip `91b37b7`
+(M10 6/6). Size script PASS; ELF hello **14512**, glass **59744**, compute
+**153984**, RT **240072**, denoise-linked **47456**. See `SIZE.md`.
 
 ## Floor on `b8a36a0` (TommyLaptop DIRTY_DELTAFORCE — not gospel)
 
