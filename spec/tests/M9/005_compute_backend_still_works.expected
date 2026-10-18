@@ -1,0 +1,11 @@
+# kind: run
+# exit: 0
+## Backend 1 round-trip; soft OK without a compute device.
+# stdout:
+1
+0
+# end
+# stdout_alt:
+1
+1
+# end

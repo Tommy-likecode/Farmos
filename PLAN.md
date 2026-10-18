@@ -103,16 +103,44 @@ M7 / Farmos v1.01 — optional Vulkan path tracing [added 2026-10-13 by user]
 - Order: after M6 / post-M6 residuals; coding milestone for poteto.
 - Spec: `spec/M7-vulkan-path.md` (**FINAL**); poteto implements; eggtooth audits against ACs.
 
-M8 — path tracer engine speedup [added 2026-10-15]
-- Engine-level speedups for M4 CPU + M7 Vulkan path. Artwork composition locked; denoise OUT; 256 spp quality OK.
-- DECIDED 2026-10-15 (PM, OQ-M8-01..05 all option A):
-  - RR off by default; `setPathRoulette` / `getPathRoulette`; optional `FARMOS_PATH_ROULETTE=1` (method wins). Start depth ≥ 3; hard cap `maxBounces`.
-  - Additive `setPathSampling` / `getPathSampling`; `PATH_SAMPLING_M4=0` default; `PATH_SAMPLING_MIS=1`; optional `PATH_SAMPLING_AREA_SOLID=2`. Invalid → trap **119**.
-  - Additive adaptive spp API; default OFF; `renderPath` still adds exactly `samples` when adaptive is off.
-  - Vulkan occupancy: 8×8 workgroup, tile dispatch, one host RTT per `renderPath` (all spp in shader); GPU world-space BVH. M7 fallback/STRICT/FORCE_FAIL/117–118/DCE unchanged.
-  - Compat preserves M4 SHA; speed modes use separate goldens / png_tol.
-  - Wall-clock: ≥2× TommyLaptop Vulkan and ≥1.5× Linux CPU vs M7 baseline on `examples/artwork_silver_still.fm` @ 1920×1080 / 256 spp.
-- Spec: `spec/M8-path-speed.md` (**FINAL**); fixtures: `spec/tests/M8/`; bench: `spec/tests/M8/bench/`.
+M8 — Path tracer engine speedup [added 2026-10-15 by PM/user]
+- Goal: speed M4 CPU + M7 Vulkan path without changing silver-still artwork or forcing lower spp.
+- Status: FINAL.
+- DECIDED 2026-10-15 (PM, all OQ option A):
+  - RR off by default; `setPathRoulette` / `FARMOS_PATH_ROULETTE=1`.
+  - Additive `setPathSampling`; default `PATH_SAMPLING_M4`; MIS behind `PATH_SAMPLING_MIS`.
+  - Additive adaptive/progressive API only; `renderPath` default unchanged.
+  - ≥2× TommyLaptop Vulkan; ≥1.5× Linux CPU on silver still 1920×1080 @ 256 spp vs M7 baseline.
+  - Compat preserves M4 SHA; speed mode may use `# png_tol` / separate goldens.
+  - Also binding: artwork composition locked; denoise OUT; 256 spp OK; trap 119; RR start depth ≥ 3;
+    CPU fallback + DCE unchanged.
+- Out: denoise-as-product; GPU raster; breaking renderPath without migration.
+- AC: see AC-M8-01..16 in `spec/M8-path-speed.md`.
+- Open questions: none.
+- Spec: `spec/M8-path-speed.md` (**FINAL**); fixtures: `spec/tests/M8/`.
+
+
+M9 — Hardware ray tracing [added 2026-10-16 by PM/user]
+- Accelerate M4 path with hardware RT (Vulkan AS / rayQuery in compute); CPU + M7/M8 compute fallback; DCE hello.
+- Status: **FINAL** (PM 2026-10-16: OQ-M9-01..07 all A; PM 2026-10-18: OQ-M9-08 A).
+- DECIDED 2026-10-16 (OQ-M9-01..07 all option A):
+  - OQ-M9-01 A: PATH_BACKEND_VULKAN_RT=2 + isVulkanRayTracingAvailable(); trap 118 valid {0,1,2}.
+  - OQ-M9-02 A: Vulkan AS/RT only (not OptiX).
+  - OQ-M9-03 A: VK_KHR_ray_query inside compute (not full RT pipeline).
+  - OQ-M9-04 A: silver still 1920×1080 @ 256 spp TommyLaptop: median ≤4 s + ≥8× vs post-M8 compute.
+    (**Historical** — **superseded by OQ-M9-08 A**.)
+  - OQ-M9-05 A: soft RT→compute→CPU; STRICT: selected HW RT or trap 117.
+  - OQ-M9-06 A: RT-linked ≤500 KiB; hello ≤20; compute ≤400; CPU glass+mirror ≤300.
+  - OQ-M9-07 A: denoise still OUT.
+  - Also binding: M7 ray-query non-goal reopened for M9; DLSS/frame-gen/Swapper OUT; CPU+compute fallback + DCE.
+- DECIDED 2026-10-18 (OQ-M9-08 A):
+  - Measured floor TommyLaptop Arc CLEAN tip `eaeb0c6`: RT median **4881 ms** / compute ~**29335 ms** / ~**6.01×**. Original ≤4 s / ≥8× unreachable without regress.
+  - **A**: primary ≤ **5000 ms** after warm-up; secondary ≥ **5×** vs post-M8 compute (`eaeb0c6` PASSES).
+  - Body §9 / AC-M9-13..14 binding under OQ-M9-08 A.
+- Out: denoise-as-product; OptiX; full RT pipeline; DLSS/frame-gen; Swapper-style DLL hacks; GPU raster.
+- AC: see AC-M9-01..17 in `spec/M9-hardware-rt.md` (wall-clock ACs binding under OQ-M9-08 A: ≤5000 ms / ≥5×).
+- Open questions: **none** (OQ-M9-01..08 all A).
+- Spec: `spec/M9-hardware-rt.md` (**FINAL**); fixtures: `spec/tests/M9/`.
 
 ## Team
 - Projects Manager: plan, priorities, handoffs, acceptance.

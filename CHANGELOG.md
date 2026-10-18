@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+M9 — hardware ray tracing (`spec/M9-hardware-rt.md` FINAL):
+
+- `PATH_BACKEND_VULKAN_RT = 2` and `Renderer.isVulkanRayTracingAvailable()`. Trap **118** valid set is `{0,1,2}`; fixtures that used `setPathBackend(2)` as invalid now use `3`.
+- Stack: Vulkan BLAS/TLAS + `VK_KHR_ray_query` inside a compute shader. Not OptiX, not a full ray-tracing pipeline / SBT. Denoise / DLSS / frame-gen / Swapper / GPU raster remain out of scope.
+- Soft fallback: HW RT → compute Vulkan → CPU; stored backend stays `2`. `FARMOS_PATH_GPU_STRICT=1` with backend 2 traps **117** (no silent downgrade). `FARMOS_VULKAN_RT_FORCE_FAIL=1` forces HW RT fail for fixtures; `FARMOS_VULKAN_FORCE_FAIL=1` also fails HW RT when backend is 2.
+- M8 RR / MIS / adaptive apply on backend 2 when enabled. CPU compat SHA unchanged.
+- Images: HW RT `# png_tol: 2` vs CPU/M4; harness `# requires_vulkan_rt:` soft-skip without a ray-query device.
+- Size/DCE: hello ≤ 20 KiB with no Vulkan/RT symbols unused; CPU glass+mirror ≤ 300 KiB; compute-only ≤ 400 KiB; **RT-linked ≤ 500 KiB**.
+- Fixtures: `spec/tests/M9/`. Artwork bench notes: `spec/tests/M9/bench/`.
+
 M8 — path tracer engine speedup (`spec/M8-path-speed.md` FINAL):
 
 - `setPathRoulette` / `getPathRoulette` (default off). Optional `FARMOS_PATH_ROULETTE=1` if the method was never called. RR start depth ≥ 3; RNG slot `depth*16+15`; delta glass/mirror skips RR.

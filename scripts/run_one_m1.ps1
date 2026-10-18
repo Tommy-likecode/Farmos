@@ -53,6 +53,7 @@ function Parse-Expected([string]$path) {
   $diagExact = $false
   $epsilon = $null
   $requiresVulkan = $false
+  $requiresVulkanRt = $false
   $pngTol = $null
   $envs = New-Object System.Collections.Generic.List[object]
   $stdoutAlts = New-Object System.Collections.Generic.List[string]
@@ -129,6 +130,7 @@ function Parse-Expected([string]$path) {
     if ($line -cmatch '^# sha256:[ \t]*([0-9a-fA-F]{64})[ \t]*$') { $sha256 = $Matches[1].ToLower(); continue }
     if ($line -cmatch '^# png_tol:[ \t]*(-?\d+)[ \t]*$') { $pngTol = [int]$Matches[1]; continue }
     if ($line -cmatch '^# requires_vulkan:[ \t]*true[ \t]*$') { $requiresVulkan = $true; continue }
+    if ($line -cmatch '^# requires_vulkan_rt:[ \t]*true[ \t]*$') { $requiresVulkanRt = $true; continue }
     if ($line -cmatch '^# env:[ \t]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
       [void]$envs.Add(@{ key=$Matches[1]; val=$Matches[2] })
       continue
@@ -176,7 +178,7 @@ function Parse-Expected([string]$path) {
     pngPath=$pngPath; sha256=$sha256
     flags=$flags; repeat=$repeat; threads=$threads; diagExact=$diagExact
     epsilon=$epsilon
-    requiresVulkan=$requiresVulkan; pngTol=$pngTol; envs=$envs; stdoutAlts=$stdoutAlts
+    requiresVulkan=$requiresVulkan; requiresVulkanRt=$requiresVulkanRt; pngTol=$pngTol; envs=$envs; stdoutAlts=$stdoutAlts
   }
 }
 
@@ -479,8 +481,77 @@ sys.exit(0 if rc==VK_SUCCESS and count.value>0 else 2)
   return $false
 }
 
+function Test-HostVulkanRtDevice {
+  try {
+    $python = Get-Command python3 -ErrorAction SilentlyContinue
+    if ($null -eq $python) { $python = Get-Command python -ErrorAction SilentlyContinue }
+    if ($null -ne $python) {
+      $py = @'
+import ctypes, sys
+lib=None
+for n in ("vulkan-1.dll","libvulkan.so.1"):
+    try:
+        lib=ctypes.CDLL(n); break
+    except OSError:
+        pass
+if not lib:
+    sys.exit(2)
+VK_SUCCESS=0
+class App(ctypes.Structure):
+    _fields_=[("sType",ctypes.c_uint32),("pNext",ctypes.c_void_p),("pApplicationName",ctypes.c_char_p),("applicationVersion",ctypes.c_uint32),("pEngineName",ctypes.c_char_p),("engineVersion",ctypes.c_uint32),("apiVersion",ctypes.c_uint32)]
+class InstCI(ctypes.Structure):
+    _fields_=[("sType",ctypes.c_uint32),("pNext",ctypes.c_void_p),("flags",ctypes.c_uint32),("pApplicationInfo",ctypes.POINTER(App)),("enabledLayerCount",ctypes.c_uint32),("ppEnabledLayerNames",ctypes.c_void_p),("enabledExtensionCount",ctypes.c_uint32),("ppEnabledExtensionNames",ctypes.c_void_p)]
+class Ext(ctypes.Structure):
+    _fields_=[("extensionName",ctypes.c_char*256),("specVersion",ctypes.c_uint32)]
+create=lib.vkCreateInstance; create.restype=ctypes.c_int32
+enumd=lib.vkEnumeratePhysicalDevices; enumd.restype=ctypes.c_int32
+enumext=lib.vkEnumerateDeviceExtensionProperties; enumext.restype=ctypes.c_int32
+destroy=lib.vkDestroyInstance
+app=App(0,None,b"farmos-harness-rt",0,None,0,(1<<22)|(2<<12))
+ci=InstCI(1,None,0,ctypes.pointer(app),0,None,0,None)
+inst=ctypes.c_void_p()
+create.argtypes=[ctypes.POINTER(InstCI),ctypes.c_void_p,ctypes.POINTER(ctypes.c_void_p)]
+if create(ctypes.byref(ci),None,ctypes.byref(inst))!=VK_SUCCESS or not inst.value:
+    sys.exit(2)
+count=ctypes.c_uint32(0)
+enumd.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_uint32),ctypes.c_void_p]
+rc=enumd(inst,ctypes.byref(count),None)
+if rc!=VK_SUCCESS or count.value==0:
+    destroy.argtypes=[ctypes.c_void_p,ctypes.c_void_p]; destroy(inst,None); sys.exit(2)
+devices=(ctypes.c_void_p*count.value)()
+if enumd(inst,ctypes.byref(count),devices)!=VK_SUCCESS:
+    destroy.argtypes=[ctypes.c_void_p,ctypes.c_void_p]; destroy(inst,None); sys.exit(2)
+enumext.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.POINTER(ctypes.c_uint32),ctypes.c_void_p]
+need=(b"VK_KHR_acceleration_structure", b"VK_KHR_ray_query")
+ok=False
+for i in range(count.value):
+    n=ctypes.c_uint32(0)
+    if enumext(devices[i],None,ctypes.byref(n),None)!=VK_SUCCESS or n.value==0:
+        continue
+    exts=(Ext*n.value)()
+    if enumext(devices[i],None,ctypes.byref(n),exts)!=VK_SUCCESS:
+        continue
+    names=set(exts[j].extensionName.split(b"\x00",1)[0] for j in range(n.value))
+    if all(x in names for x in need):
+        ok=True; break
+destroy.argtypes=[ctypes.c_void_p,ctypes.c_void_p]
+destroy(inst,None)
+sys.exit(0 if ok else 2)
+'@
+      $p = Start-Process -FilePath $python.Source -ArgumentList @("-c", $py) -Wait -PassThru -NoNewWindow
+      return ($p.ExitCode -eq 0)
+    }
+  } catch { }
+  return $false
+}
+
 if ($exp.requiresVulkan -and -not (Test-HostVulkanDevice)) {
   Write-Host "SKIP ${Name}: requires_vulkan (no usable Vulkan device)"
+  Exit-Farmc 0
+}
+
+if ($exp.requiresVulkanRt -and -not (Test-HostVulkanRtDevice)) {
+  Write-Host "SKIP ${Name}: requires_vulkan_rt (no usable Vulkan RT device)"
   Exit-Farmc 0
 }
 

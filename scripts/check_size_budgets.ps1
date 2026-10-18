@@ -133,6 +133,7 @@ try {
   $demoSrc = Join-Path $RepoRoot "examples\05_stacking_bounce.fm"
   $cornellSrc = Join-Path $RepoRoot "examples\m4_cornell_800x600.fm"
   $gpuSrc = Join-Path $RepoRoot "examples\06_vulkan_cornell.fm"
+  $rtSrc = Join-Path $RepoRoot "examples\07_vulkan_rt_cornell.fm"
 
   $unusedSrc = Join-Path $td "unused_math.fm"
   Set-Content -Encoding ASCII -LiteralPath $unusedSrc @(
@@ -162,6 +163,7 @@ try {
   $demo = Join-Path $td "demo.exe"
   $scene = Join-Path $td "scene_hello.exe"
   $gpu = Join-Path $td "gpu.exe"
+  $rt = Join-Path $td "rt.exe"
 
   Invoke-FarmcBuild $helloSrc $hello @()
   Invoke-FarmcBuild $unusedSrc $unused @()
@@ -170,6 +172,7 @@ try {
   Invoke-FarmcBuild $demoSrc $demo @()
   Invoke-FarmcBuild $sceneSrc $scene @()
   Invoke-FarmcBuild $gpuSrc $gpu @()
+  Invoke-FarmcBuild $rtSrc $rt @()
 
   $hs = (Get-Item -LiteralPath $hello).Length
   $us = (Get-Item -LiteralPath $unused).Length
@@ -178,6 +181,7 @@ try {
   $ds = (Get-Item -LiteralPath $demo).Length
   $ss = (Get-Item -LiteralPath $scene).Length
   $gps = (Get-Item -LiteralPath $gpu).Length
+  $rps = (Get-Item -LiteralPath $rt).Length
   $delta = $ds - $ss
 
   Write-Host "M6 size / DCE / thread-start budgets"
@@ -186,6 +190,7 @@ try {
   Write-Report "B-02" "cube (examples/02_rotating_cube.fm)" $cs 98304 $true
   Write-Report "B-03" "glass+mirror (examples/04_glass_mirror.fm)" $gs 307200 $true
   Write-Report "B-08" "GPU-linked vulkan cornell (examples/06_vulkan_cornell.fm)" $gps 409600 $true
+  Write-Report "B-09" "RT-linked vulkan cornell (examples/07_vulkan_rt_cornell.fm)" $rps 512000 $true
   Write-Report "B-04" "S_demo - S_scene" $delta 65536 $true
   Write-Host ("      S_demo={0} B  S_scene={1} B" -f $ds, $ss)
   Write-Report "B-06" "unused farmos:math import" $us 20480 $true
@@ -205,7 +210,7 @@ try {
 
   $glog = Get-VerboseLog $glassSrc (Join-Path $td "glass_v.exe")
   function Test-NoVulkan([string]$Label, [string]$Log, [string]$BinPath) {
-    foreach ($m in @("farm_vk.c", "FARM_ENABLE_VULKAN")) {
+    foreach ($m in @("farm_vk.c", "FARM_ENABLE_VULKAN", "farm_vk_rt.c", "FARM_ENABLE_VULKAN_RT")) {
       if ($Log.IndexOf($m, [StringComparison]::Ordinal) -ge 0) {
         Fail-Size "${Label}: verbose link mentions $m"
       }
@@ -225,6 +230,21 @@ try {
   Test-NoVulkan "M7 glass+mirror CPU" $glog (Join-Path $td "glass_v.exe")
   Write-Host "M7   no Vulkan loader symbols on hello / unused-math / scene / cube / CPU glass  OK"
 
+  $gpolog = Get-VerboseLog $gpuSrc (Join-Path $td "gpu_v.exe")
+  $rtlog = Get-VerboseLog $rtSrc (Join-Path $td "rt_v.exe")
+  foreach ($m in @("farm_vk_rt.c", "FARM_ENABLE_VULKAN_RT")) {
+    if ($gpolog.IndexOf($m, [StringComparison]::Ordinal) -ge 0) {
+      Fail-Size "M9 compute-only GPU cornell: verbose link mentions $m"
+    }
+  }
+  if ($rtlog.IndexOf("farm_vk_rt.c", [StringComparison]::Ordinal) -lt 0 -or $rtlog.IndexOf("FARM_ENABLE_VULKAN_RT", [StringComparison]::Ordinal) -lt 0) {
+    Fail-Size "M9 RT-linked demo did not link farm_vk_rt.c"
+  }
+  if ($rtlog.IndexOf("farm_vk.c", [StringComparison]::Ordinal) -lt 0) {
+    Fail-Size "M9 RT-linked demo did not link farm_vk.c (compute fallback)"
+  }
+  Write-Host "M9   compute-only omits farm_vk_rt.c; RT-linked includes RT + compute fallback  OK"
+
   $ver = & $Farmc version
   if (("$ver").IndexOf("1.01", [StringComparison]::Ordinal) -lt 0) {
     Fail-Size "farmc version does not contain 1.01: $ver"
@@ -243,8 +263,14 @@ try {
   if ($hlog.IndexOf("farm_vk.c", [StringComparison]::Ordinal) -ge 0) {
     Fail-Size "hello linked farm_vk.c"
   }
+  if ($hlog.IndexOf("farm_vk_rt.c", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Size "hello linked farm_vk_rt.c"
+  }
   if ($glog.IndexOf("farm_vk.c", [StringComparison]::Ordinal) -ge 0) {
     Fail-Size "CPU glass+mirror linked farm_vk.c"
+  }
+  if ($glog.IndexOf("farm_vk_rt.c", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Size "CPU glass+mirror linked farm_vk_rt.c"
   }
   if ($ulog.IndexOf("farm_math.c", [StringComparison]::Ordinal) -ge 0) {
     Fail-Size "unused math import linked farm_math.c"

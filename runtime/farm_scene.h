@@ -444,6 +444,7 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
 void farm_Renderer_setPathBackend(farm_Renderer* self, int64_t backend);
 int64_t farm_Renderer_getPathBackend(farm_Renderer* self);
 int8_t farm_Renderer_isVulkanPathAvailable(farm_Renderer* self);
+int8_t farm_Renderer_isVulkanRayTracingAvailable(farm_Renderer* self);
 void farm_Renderer_setPathRoulette(farm_Renderer* self, int8_t enabled);
 int8_t farm_Renderer_getPathRoulette(farm_Renderer* self);
 void farm_Renderer_setPathSampling(farm_Renderer* self, int64_t mode);

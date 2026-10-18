@@ -1180,7 +1180,7 @@ void farm_Renderer_setMaxBounces(farm_Renderer* self, int64_t n) {
 }
 
 void farm_Renderer_setPathBackend(farm_Renderer* self, int64_t backend) {
-  if (backend != 0 && backend != 1)
+  if (backend != 0 && backend != 1 && backend != 2)
     farm_trap(118, "invalid path backend");
   self->path_backend = (int32_t)backend;
 }
@@ -1248,11 +1248,23 @@ double farm_Renderer_getPathAdaptiveTarget(farm_Renderer* self) {
 #ifdef FARM_ENABLE_VULKAN
 int farm_vk_probe(void);
 #endif
+#ifdef FARM_ENABLE_VULKAN_RT
+int farm_vk_rt_probe(void);
+#endif
 
 int8_t farm_Renderer_isVulkanPathAvailable(farm_Renderer* self) {
   (void)self;
 #ifdef FARM_ENABLE_VULKAN
   return farm_vk_probe() ? (int8_t)1 : (int8_t)0;
+#else
+  return (int8_t)0;
+#endif
+}
+
+int8_t farm_Renderer_isVulkanRayTracingAvailable(farm_Renderer* self) {
+  (void)self;
+#ifdef FARM_ENABLE_VULKAN_RT
+  return farm_vk_rt_probe() ? (int8_t)1 : (int8_t)0;
 #else
   return (int8_t)0;
 #endif

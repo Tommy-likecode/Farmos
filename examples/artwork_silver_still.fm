@@ -1,6 +1,6 @@
 import { Scene, PerspectiveCamera, PlaneGeometry, BoxGeometry, SphereGeometry,
          CylinderGeometry, MeshStandardMaterial, Mesh,
-         RectAreaLight, Renderer, PATH_BACKEND_VULKAN } from "farmos:scene";
+         RectAreaLight, Renderer, PATH_BACKEND_VULKAN, PATH_BACKEND_VULKAN_RT } from "farmos:scene";
 import { Color, random01 } from "farmos:math";
 
 function main(): int {
@@ -76,7 +76,10 @@ function main(): int {
   renderer.setSize(1920, 1080);
   renderer.setSamples(256);
   renderer.setMaxBounces(6);
-  if (renderer.isVulkanPathAvailable()) {
+  if (renderer.isVulkanRayTracingAvailable()) {
+    renderer.setPathBackend(PATH_BACKEND_VULKAN_RT);
+    println("vulkan_rt");
+  } else if (renderer.isVulkanPathAvailable()) {
     renderer.setPathBackend(PATH_BACKEND_VULKAN);
     println("vulkan");
   } else {
