@@ -28,6 +28,7 @@ B05 = 67108864
 B06 = 20480
 B08 = 409600  # M7 GPU-linked demo (OQ-M7-04 A)
 B09 = 512000  # M9 RT-linked demo (OQ-M9-06 A)
+B10 = 614400  # M10 denoise-linked demo (OQ-M10-07 A)
 
 VULKAN_MARKERS = (b"vulkan-1.dll", b"libvulkan.so.1", b"vkGetInstanceProcAddr")
 
@@ -268,8 +269,26 @@ def main() -> int:
         demo = os.path.join(td, "demo")
         scene = os.path.join(td, "scene_hello")
 
+        denoise_src = os.path.join(td, "denoise_demo.fm")
+        write_src(denoise_src, (
+            'import { Scene, PerspectiveCamera, Renderer, PATH_DENOISE_SPATIAL } from "farmos:scene";\n'
+            'import { Color } from "farmos:math";\n'
+            "function main(): int {\n"
+            "  const scene: Scene = new Scene();\n"
+            "  scene.setBackground(new Color(0x4488ff));\n"
+            "  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);\n"
+            "  camera.position.z = 5;\n"
+            "  const renderer: Renderer = new Renderer(8, 8);\n"
+            "  renderer.setSamples(1);\n"
+            "  renderer.setPathDenoise(PATH_DENOISE_SPATIAL);\n"
+            "  renderer.renderPath(scene, camera);\n"
+            "  return 0;\n"
+            "}\n"
+        ))
+
         gpu = os.path.join(td, "gpu")
         rt = os.path.join(td, "rt")
+        denoise = os.path.join(td, "denoise")
         build(farmc, hello_src, hello)
         build(farmc, unused_math, unused)
         build(farmc, cube_src, cube)
@@ -278,7 +297,8 @@ def main() -> int:
         build(farmc, scene_hello, scene)
         build(farmc, gpu_src, gpu)
         build(farmc, rt_src, rt)
-        for p in (hello, unused, cube, glass, demo, scene, gpu, rt):
+        build(farmc, denoise_src, denoise)
+        for p in (hello, unused, cube, glass, demo, scene, gpu, rt, denoise):
             maybe_strip(p)
 
         hs = os.path.getsize(hello)
@@ -289,6 +309,7 @@ def main() -> int:
         ss = os.path.getsize(scene)
         gps = os.path.getsize(gpu)
         rps = os.path.getsize(rt)
+        dns = os.path.getsize(denoise)
         delta = ds - ss
 
         with open(hello, "rb") as f:
@@ -303,6 +324,7 @@ def main() -> int:
         report("B-03", "glass+mirror (examples/04_glass_mirror.fm)", gs, B03, "B", enforce_pe)
         report("B-08", "GPU-linked vulkan cornell (examples/06_vulkan_cornell.fm)", gps, B08, "B", enforce_pe)
         report("B-09", "RT-linked vulkan cornell (examples/07_vulkan_rt_cornell.fm)", rps, B09, "B", enforce_pe)
+        report("B-10", "denoise-linked path demo", dns, B10, "B", enforce_pe)
         report("B-04", "S_demo - S_scene", delta, B04, "B", enforce_pe)
         print(f"      S_demo={ds} B  S_scene={ss} B")
         report("B-06", "unused farmos:math import", us, B06, "B", enforce_pe)
@@ -364,13 +386,19 @@ def main() -> int:
 
         if "farm_par" in hlog or "FARM_ENABLE_THREADS" in hlog:
             fail("hello pulled parallel runtime")
-        if "farm_math.c" in hlog or "farm_scene.c" in hlog or "farm_ray.c" in hlog or "farm_physics.c" in hlog or "farm_vk.c" in hlog or "farm_vk_rt.c" in hlog:
+        if "farm_math.c" in hlog or "farm_scene.c" in hlog or "farm_ray.c" in hlog or "farm_physics.c" in hlog or "farm_vk.c" in hlog or "farm_vk_rt.c" in hlog or "farm_denoise.c" in hlog:
             fail("hello linked a stdlib unit beyond farm_rt.c")
         if "farm_math.c" in ulog:
             fail("unused math import linked farm_math.c")
         if "farm_vk.c" in glog or "farm_vk_rt.c" in glog:
             fail("CPU glass+mirror linked farm_vk.c / farm_vk_rt.c")
+        if "farm_denoise.c" in glog or "FARM_ENABLE_DENOISE" in glog:
+            fail("CPU glass+mirror linked farm_denoise.c")
+        dlog = verbose(farmc, denoise_src, os.path.join(td, "denoise_v"))
+        if "farm_denoise.c" not in dlog or "FARM_ENABLE_DENOISE" not in dlog:
+            fail("M10 denoise-linked demo did not link farm_denoise.c")
         print("DCE  hello / unused-math link only farm_rt.c  OK")
+        print("M10  glass+mirror omits farm_denoise.c; denoise-linked includes it  OK")
 
         if args.peak_ram:
             if not os.path.isfile(cornell_src):

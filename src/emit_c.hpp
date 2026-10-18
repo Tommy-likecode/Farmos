@@ -6,8 +6,10 @@ std::string emit_c(Program& prog);
 bool program_uses_scene(Program& prog);
 // True when a reachable user function contains a `parallel` statement.
 bool program_uses_parallel(Program& prog);
-// True when a user module calls Renderer.renderPath (gates farm_ray.c).
+// True when a user module calls Renderer.renderPath or progressive preview (gates farm_ray.c).
 bool program_uses_ray(Program& prog);
+// True when denoise API / PATH_DENOISE_SPATIAL is reachable (gates farm_denoise.c).
+bool program_uses_denoise(Program& prog);
 // True when a reachable user module opts into the Vulkan path backend (gates farm_vk.c).
 bool program_uses_vulkan(Program& prog);
 // True when HW RT (backend 2 / isVulkanRayTracingAvailable) is reachable (gates farm_vk_rt.c).

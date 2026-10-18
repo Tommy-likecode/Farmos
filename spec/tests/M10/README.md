@@ -2,9 +2,9 @@
 
 Sources use the M1 TypeScript-style surface, M2 math, M3/M4 scene + path API,
 M7/M8/M9 backends, and M10 denoise + progressive preview controls. See
-`spec/M10-denoise-interactive.md` (**DRAFT** — OQ-M10-01..08 pending PM; body
-assumes recommend A). Do not edit M1–M9 milestone bodies to absorb these rules;
-amendments live in `M10-denoise-interactive.md`.
+`spec/M10-denoise-interactive.md` (**FINAL** — OQ-M10-01..08 all A). Do not edit
+M1–M9 milestone bodies to absorb these rules; amendments live in
+`M10-denoise-interactive.md`.
 
 This file documents **M10-only** notes. It does not replace `spec/tests/README.md`
 or the M4/M7/M8/M9 READMEs. Harness kinds `run`, `runtime_trap`, `run_png` keep
@@ -33,7 +33,7 @@ twins). Denoise-ON fixtures use `# png_tol:` (stills gate recommend `8` vs
 The harness MUST run each M10 program with CWD = `spec/tests/M10`.
 `savePNG("out.png")` writes `spec/tests/M10/out.png`.
 
-## Denoise modes (DRAFT / recommend A)
+## Denoise modes (OQ-M10-02 A / OQ-M10-05 A)
 
 | Id | Constant | Notes |
 |----|----------|-------|
@@ -65,24 +65,22 @@ soft-skip GPU/RT benches and any fixture that truly needs GPU denoise shaders.
 
 ## Stub pack counts
 
-Stub pack: **4** `.fm` fixtures (001–004) + README + `_ref` + bench note
-(**DRAFT** spec; awaiting PM OQ lock, then poteto). Eggtooth size/DCE, silver-still
-denoise wall-clock, and progressive timing are script ACs (see
-`spec/M10-denoise-interactive.md` AC-M10-05, AC-M10-06, AC-M10-09).
+Harness pack: **6** `.fm` fixtures (001–004 stubs + 005 STRICT fail + 006 preview
+API). Eggtooth size/DCE, silver-still denoise wall-clock, and progressive timing
+are script ACs (see `spec/M10-denoise-interactive.md` AC-M10-05, AC-M10-06,
+AC-M10-09).
 
 ## Artwork / interactive benches
 
 - **Stills denoise:** `examples/artwork_silver_still.fm` @ 1920×1080, ≤ **64 spp**,
-  `PATH_DENOISE_SPATIAL`, prefer HW RT. Composition locked. Gate (recommend A):
+  `PATH_DENOISE_SPATIAL`, prefer HW RT. Composition locked. Gate (OQ-M10-03 A):
   median ≤ **1500 ms** after warm-up; visual `# png_tol: 8` vs 256-spp undenoised.
   Baseline undenoised M9 floor **4881 ms**.
 - **Progressive:** first useful ≤ **250 ms**; step ≤ **100 ms**; no OS window
-  (OQ-M10-01 A). Scripts under `spec/tests/M10/bench/` or `scripts/` as poteto prefers.
+  (OQ-M10-01 A). Scripts under `spec/tests/M10/bench/`.
 
-## PLACEHOLDER goldens
+## Goldens
 
-```
-# sha256: 0000000000000000000000000000000000000000000000000000000000000000
-```
-
-Replace with real M4 twin SHAs for 001 when wiring eggtooth.
+001 reuses the M4-001 / M7-001 / M8-001 / M9-001 twin SHA
+`e7655a2c9a205f90786991219a3b558e27b2314377a4f5d4a66891b5b25915dd`.
+004 is a 32×32 background smoke with `# png_tol: 8` vs a solid `0x4488ff` reference.

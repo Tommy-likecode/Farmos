@@ -1,0 +1,11 @@
+# Render outputs from local / CI bench runs (do not commit 1080p PNGs or exes).
+out-*/
+artwork
+artwork_denoise
+preview
+*.png
+*.exe
+median_ms.txt
+log.txt
+still_denoise.fm
+preview.fm

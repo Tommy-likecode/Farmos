@@ -1,0 +1,20 @@
+# kind: runtime_trap
+# exit: 120
+# env: FARMOS_PATH_DENOISE_STRICT=1
+# env: FARMOS_PATH_DENOISE_FORCE_FAIL=1
+# stderr: runtime error: path denoise failed
+import { Scene, PerspectiveCamera, Renderer,
+         PATH_DENOISE_SPATIAL } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x4488ff));
+  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.z = 5;
+  const renderer: Renderer = new Renderer(16, 16);
+  renderer.setSamples(1);
+  renderer.setPathDenoise(PATH_DENOISE_SPATIAL);
+  renderer.renderPath(scene, camera);
+  return 0;
+}

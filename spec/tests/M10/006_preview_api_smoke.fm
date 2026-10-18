@@ -1,0 +1,34 @@
+# kind: run
+# exit: 0
+# stdout:
+# stderr:
+import { Scene, PerspectiveCamera, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x4488ff));
+  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.z = 5;
+  const renderer: Renderer = new Renderer(8, 8);
+  renderer.setSamples(16);
+  renderer.beginPathPreview(scene, camera);
+  println(renderer.getPathPreviewSpp());
+  const more1: bool = renderer.advancePathPreview(4);
+  println(renderer.getPathPreviewSpp());
+  const more2: bool = renderer.advancePathPreview(4);
+  println(renderer.getPathPreviewSpp());
+  renderer.finishPathPreview();
+  println(renderer.getPathPreviewSpp());
+  if (more1) {
+    println(1);
+  } else {
+    println(0);
+  }
+  if (more2) {
+    println(1);
+  } else {
+    println(0);
+  }
+  return 0;
+}

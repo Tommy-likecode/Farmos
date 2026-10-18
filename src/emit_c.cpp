@@ -86,14 +86,68 @@ static bool stmt_uses_scene(StmtPtr s) {
   return false;
 }
 
+static bool is_ray_opt_in_name(const std::string& n) {
+  return n == "renderPath" ||
+         n == "beginPathPreview" ||
+         n == "advancePathPreview" ||
+         n == "finishPathPreview" ||
+         n == "getPathPreviewSpp";
+}
+
 static bool expr_uses_ray(ExprPtr e) {
   if (!e) return false;
   if (e->kind == ExprKind::Call && e->lhs && e->lhs->kind == ExprKind::Field &&
-      e->lhs->name == "renderPath")
+      is_ray_opt_in_name(e->lhs->name))
     return true;
   if (expr_uses_ray(e->lhs) || expr_uses_ray(e->rhs)) return true;
   for (auto& a : e->args) if (expr_uses_ray(a)) return true;
   for (auto& fv : e->fields) if (expr_uses_ray(fv.second)) return true;
+  return false;
+}
+
+static bool is_denoise_opt_in_name(const std::string& n) {
+  return n == "PATH_DENOISE_SPATIAL" ||
+         n == "PATH_DENOISE_OFF" ||
+         n == "setPathDenoise" ||
+         n == "getPathDenoise" ||
+         n == "isPathDenoiseAvailable";
+}
+
+static bool expr_uses_denoise(ExprPtr e) {
+  if (!e) return false;
+  if (e->kind == ExprKind::Ident && is_denoise_opt_in_name(e->name)) return true;
+  if (e->kind == ExprKind::Field && is_denoise_opt_in_name(e->name)) return true;
+  if (e->kind == ExprKind::Call && e->lhs && e->lhs->kind == ExprKind::Field &&
+      is_denoise_opt_in_name(e->lhs->name))
+    return true;
+  if (expr_uses_denoise(e->lhs) || expr_uses_denoise(e->rhs)) return true;
+  for (auto& a : e->args) if (expr_uses_denoise(a)) return true;
+  for (auto& fv : e->fields) if (expr_uses_denoise(fv.second)) return true;
+  return false;
+}
+
+static bool stmt_uses_denoise(StmtPtr s) {
+  if (!s) return false;
+  if (expr_uses_denoise(s->init) || expr_uses_denoise(s->cond) || expr_uses_denoise(s->lhs) ||
+      expr_uses_denoise(s->rhs) || expr_uses_denoise(s->for_cond) || expr_uses_denoise(s->ret))
+    return true;
+  if (stmt_uses_denoise(s->then_b) || stmt_uses_denoise(s->else_b) ||
+      stmt_uses_denoise(s->for_init) || stmt_uses_denoise(s->for_update))
+    return true;
+  for (auto& x : s->stmts) if (stmt_uses_denoise(x)) return true;
+  return false;
+}
+
+bool program_uses_denoise(Program& prog) {
+  for (auto& m : prog.modules) {
+    if (is_stdlib_mod(m.path)) continue;
+    for (auto& f : m.functions) if (stmt_uses_denoise(f.body)) return true;
+    for (auto& c : m.classes)
+      for (auto& md : c.methods) if (stmt_uses_denoise(md.body)) return true;
+    for (auto& s : m.structs)
+      for (auto& md : s.methods) if (stmt_uses_denoise(md.body)) return true;
+    for (auto& op : m.operators) if (stmt_uses_denoise(op.body)) return true;
+  }
   return false;
 }
 
