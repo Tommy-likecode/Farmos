@@ -1,0 +1,24 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# sha256: 0000000000000000000000000000000000000000000000000000000000000000
+# path_mode: compat
+# stdout:
+# stderr:
+import { Scene, PerspectiveCamera, Renderer,
+         PATH_DENOISE_OFF } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x4488ff));
+  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.z = 5;
+  const renderer: Renderer = new Renderer(16, 16);
+  renderer.setSamples(1);
+  renderer.setMaxBounces(4);
+  renderer.setPathDenoise(PATH_DENOISE_OFF);
+  renderer.renderPath(scene, camera);
+  renderer.savePNG("out.png");
+  return 0;
+}

@@ -142,6 +142,23 @@ M9 — Hardware ray tracing [added 2026-10-16 by PM/user]
 - Open questions: **none** (OQ-M9-01..08 all A).
 - Spec: `spec/M9-hardware-rt.md` (**FINAL**); fixtures: `spec/tests/M9/`.
 
+M10 — Denoise / interactive path tracing [added 2026-10-18 by PM/user]
+- User chose denoise-interactive after M9 (52b1aebc). Reopens denoise (was OUT in M9).
+- Status: **FINAL** (PM 2026-10-18: OQ-M10-01..08 all A; user 2026-10-18 all-A).
+- DECIDED 2026-10-18 (OQ-M10-01..08 all option A):
+  - OQ-M10-01 A: stills denoise + progressive interactive API; **no** OS window/swapchain (preview via path + savePNG/readback).
+  - OQ-M10-02 A: Farmos-owned Vulkan/CPU spatial (A-trous/bilateral); **no** OIDN/NVIDIA DLL.
+  - OQ-M10-03 A: silver still 1920×1080 ≤**64 spp** + denoise; median ≤**1500 ms** TommyLaptop HW RT; `# png_tol: 8` vs 256-spp undenoised.
+  - OQ-M10-04 A: first useful ≤**250 ms** (≤8–16 spp); subsequent steps ≤**100 ms**; no window.
+  - OQ-M10-05 A: additive `setPathDenoise` / `getPathDenoise` + `PATH_DENOISE_*`; default **OFF**.
+  - OQ-M10-06 A: DLSS/vendor upscalers **OUT**.
+  - OQ-M10-07 A: denoise-linked ≤**600 KiB**; hello ≤20; RT ≤500; compute ≤400; glass+mirror ≤300.
+  - OQ-M10-08 A: denoise fail soft (leave noisy); `FARMOS_PATH_DENOISE_STRICT=1` → trap **120**-family; M9 RT STRICT unchanged.
+- Out: DLSS/Swapper; OptiX; full game engine; OS window/swapchain; artwork variants; GPU raster.
+- AC: see AC-M10-01..13 in `spec/M10-denoise-interactive.md`.
+- Open questions: **none** (OQ-M10-01..08 all A).
+- Spec: `spec/M10-denoise-interactive.md` (**FINAL**); fixtures: `spec/tests/M10/`.
+
 ## Team
 - Projects Manager: plan, priorities, handoffs, acceptance.
 - poteto: all coding (via Cursor cloud agents), per milestone, reports status/blockers.
