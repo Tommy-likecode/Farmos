@@ -3,8 +3,10 @@
 **Status: FINAL gates; speed tip pending TommyLaptop CLEAN re-bench.** Do not
 invent Windows timings. Cite M9 undenoised floor only as baseline context.
 
-Linux cloud agent (this PR): `ctest -L spec` after the speed tip. `m9_006_rt_png_tol`
-soft-skipped (no Vulkan RT device). Size script must stay PASS. See `SIZE.md`.
+Linux cloud agent (this PR): `ctest -L spec` **354/354 PASS** on tip `b430836`
+(M10 6/6). `m9_006_rt_png_tol` soft-skipped (no Vulkan RT device). Size script
+PASS; ELF hello **14512**, glass **59744** (no `farm_denoise.c`), compute
+**153984**, RT **240040**, denoise-linked **47456** (budget 600 KiB). See `SIZE.md`.
 
 ## Speed tip (one lever pass)
 
