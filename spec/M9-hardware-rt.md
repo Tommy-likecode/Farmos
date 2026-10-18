@@ -1,14 +1,14 @@
 # Farmos M9 — Hardware Ray Tracing
 
-**Status:** FINAL (PM 2026-10-16: OQ-M9-01 .. OQ-M9-07 all option A)  
+**Status:** FINAL (PM 2026-10-16: OQ-M9-01..07 all A; PM 2026-10-18: OQ-M9-08 A)  
 **Milestone:** M9 — hardware ray tracing for the M4 path tracer (Vulkan RT preferred)  
 **Depends on:** `spec/M1-core.md` (FINAL), `spec/M2-math.md` (FINAL), `spec/M3-scene.md` (FINAL), `spec/M3.5-concurrency.md` (FINAL), `spec/M4-ray.md` (FINAL), `spec/M5-physics.md` (FINAL), `spec/M6-hardening.md` (FINAL), `spec/M7-vulkan-path.md` (FINAL), `spec/M8-path-speed.md` (FINAL)  
 **Normative keywords:** MUST / SHOULD / MAY per RFC 2119.  
-**Date:** 2026-10-16
+**Date:** 2026-10-16 (FINAL OQ-M9-01..07); **2026-10-18 FINAL** (OQ-M9-08 A wall-clock AC relax)
 
 This document specifies Farmos M9: an **optional hardware ray-tracing** backend that accelerates the existing M4 path tracer (and M7/M8 compute Vulkan path) using Vulkan acceleration structures / ray queries. It does **not** specify compiler, runtime, or stdlib implementation code. It does **not** edit M1–M8 milestone markdown bodies; normative amendments relative to those milestones live in §19 of this file.
 
-Open questions: none. PM accepted option A for OQ-M9-01 .. OQ-M9-07 on 2026-10-16. Also binding: M7 ray-query / HW RT non-goal reopened as in-scope for M9; Vulkan AS/RT only (not OptiX); `VK_KHR_ray_query` inside compute; soft fallback RT→compute→CPU with STRICT trap 117; DLSS/frame-gen/Swapper OUT; denoise OUT; CPU + compute fallback + DCE required. Those decisions are recorded in §18. The body below is that decision, not a draft.
+Open questions: **none.** OQ-M9-01 .. OQ-M9-08 are all **accepted A** (PM 2026-10-16 for 01..07; PM 2026-10-18 for OQ-M9-08). Binding: denoise OUT (OQ-M9-07); size budgets (OQ-M9-06); STRICT behavior (OQ-M9-05); API / stack / pipeline (OQ-M9-01..03); wall-clock ≤ **5000 ms** primary / ≥ **5×** secondary (OQ-M9-08 A; OQ-M9-04 ≤4 s / ≥8× **superseded**); M7 ray-query / HW RT non-goal reopened as in-scope for M9; Vulkan AS/RT only (not OptiX); `VK_KHR_ray_query` inside compute; soft fallback RT→compute→CPU with STRICT trap 117; DLSS/frame-gen/Swapper OUT; CPU + compute fallback + DCE required. Those decisions are recorded in §18. Body wall-clock numbers in §9 / AC-M9-13..14 are **binding under OQ-M9-08 A**.
 
 Related: `/workspace/farmos/PLAN.md` (M9 section), `spec/M4-ray.md`, `spec/M7-vulkan-path.md`, `spec/M8-path-speed.md`, `spec/tests/M9/README.md`.
 
@@ -350,7 +350,7 @@ Unchanged: clamp to [0,1], then `floor(c * 255.0 + 0.5)`. No gamma, no tonemap. 
 
 ---
 
-## 9. Benchmarks (silver still) (OQ-M9-04 A)
+## 9. Benchmarks (silver still) (OQ-M9-08 A binding; OQ-M9-04 A superseded)
 
 ### 9.1 Normative bench program
 
@@ -365,16 +365,20 @@ Unchanged: clamp to [0,1], then `floor(c * 255.0 + 0.5)`. No gamma, no tonemap. 
 - Also record cold first-call (includes AS build) in notes — not the primary gate.
 - Record: host id, backend, RR/MIS/adaptive flags, spp, resolution, elapsed ms, whether HW RT or downgrade ran.
 
-### 9.3 Targets (OQ-M9-04 A — binding)
+### 9.3 Targets (**binding OQ-M9-08 A**)
 
 | Gate | Target |
 |------|--------|
-| **Primary** | Silver still 1920×1080 @ 256 spp on TommyLaptop with HW RT: median ≤ **4 s** after 1 warm-up |
-| **Secondary** | Same setup: ≥ **8×** wall-clock vs post-M8 compute baseline when that baseline is measurable on the same host |
+| **Primary** | Silver still 1920×1080 @ 256 spp on TommyLaptop with HW RT: median ≤ **5000 ms** (5 s) after 1 warm-up |
+| **Secondary** | Same setup: ≥ **5×** wall-clock vs post-M8 compute baseline when that baseline is measurable on the same host |
 
-Both SHOULD be reported. AC-M9 primary wall-clock gate is the **≤ 4 s** median; secondary 8× is also an AC when baseline data exists (if compute baseline cannot be measured in the same session, document why and still enforce ≤ 4 s).
+**Binding under OQ-M9-08 A** (PM 2026-10-18). Prior **OQ-M9-04 A** (≤ **4 s** / ≥ **8×**) is **superseded**.
 
-Context: user reports ~32 s at 1080p@256spp on current compute path — 4 s is an order-of-magnitude step toward interactive/seconds without lowering spp.
+**Measured floor (PM/user 2026-10-18):** TommyLaptop Arc CLEAN tip `eaeb0c6`: RT median **4881 ms** / compute ~**29335 ms** / ~**6.01×**. Under OQ-M9-08 A, that result **PASSES**. Original ≤4000 ms / ≥8× gates were not reachable with current levers without regress.
+
+Both SHOULD be reported. AC-M9 primary wall-clock gate is the **≤ 5000 ms** median; secondary ≥5× is also an AC when baseline data exists (if compute baseline cannot be measured in the same session, document why and still enforce ≤ 5000 ms).
+
+Context: post-M8 compute ~29–32 s class at 1080p@256spp; ≤5 s / ≥5× keeps an order-of-magnitude step toward interactive/seconds without lowering spp, aligned to the measured Arc floor.
 
 ### 9.4 Quality during bench
 
@@ -433,8 +437,8 @@ Existing M4 traps (105, 107, 108, 111, 112, 113) unchanged. Exit **109** still u
 | AC-M9-10 | Hello ≤ 20 KiB; no Vulkan/RT symbols when unused; CPU glass+mirror ≤ 300 KiB; compute-linked ≤ 400 KiB; RT-linked ≤ **500 KiB**. |
 | AC-M9-11 | Denoise not required; no denoise AC (OQ-M9-07 A binding). |
 | AC-M9-12 | Bench harness for `examples/artwork_silver_still.fm` @ 1920×1080 / 256 spp on TommyLaptop HW RT. |
-| AC-M9-13 | Primary wall-clock: median ≤ **4 s** after 1 warm-up (OQ-M9-04 A binding). |
-| AC-M9-14 | Secondary: ≥ **8×** vs post-M8 compute baseline when measurable (OQ-M9-04 A binding). |
+| AC-M9-13 | Primary wall-clock: median ≤ **5000 ms** after 1 warm-up (**binding OQ-M9-08 A**). Prior OQ-M9-04 A ≤4 s **superseded**. |
+| AC-M9-14 | Secondary: ≥ **5×** vs post-M8 compute baseline when measurable (**binding OQ-M9-08 A**). Prior OQ-M9-04 A ≥8× **superseded**. |
 | AC-M9-15 | `# requires_vulkan_rt:` soft-skip on hosts without HW RT; Linux CI green without RT device. |
 | AC-M9-16 | Fixtures in §16 pass under their kinds; M4/M7/M8 regression under CPU/compute. |
 | AC-M9-17 | No OptiX (OQ-M9-02 A); no DLSS/frame-gen/Swapper; no GPU raster. |
@@ -503,23 +507,24 @@ Eggtooth / bench rows (no required `.fm` in stub pack): size/DCE (AC-M9-10), sil
 
 ## 17. Open questions
 
-**None.** PM decided OQ-M9-01 .. OQ-M9-07, all option A, on 2026-10-16. Also binding: M7 ray-query / HW RT non-goal reopened as in-scope for M9; Vulkan AS/RT only (not OptiX); `VK_KHR_ray_query` inside compute; soft fallback RT→compute→CPU with STRICT trap 117 (no silent downgrade under STRICT); DLSS/frame-gen/Swapper OUT; denoise OUT; CPU + compute fallback + DCE required; artwork composition locked; 256 spp quality OK. See §18.
+**None.** OQ-M9-01 .. OQ-M9-08 are all **accepted A** (see §18, including OQ-M9-08 A). Binding reminders: M7 ray-query / HW RT non-goal reopened as in-scope for M9; Vulkan AS/RT only (not OptiX); `VK_KHR_ray_query` inside compute; soft fallback RT→compute→CPU with STRICT trap 117 (no silent downgrade under STRICT); wall-clock ≤ **5000 ms** / ≥ **5×** (OQ-M9-08 A; OQ-M9-04 superseded); DLSS/frame-gen/Swapper OUT; denoise OUT; size budgets; CPU + compute fallback + DCE required; artwork composition locked; 256 spp quality OK.
 
 ---
 
 ## 18. Resolved decisions
 
-PM 2026-10-16 accepted option A for every OQ below. Binding product intent and implementation locks follow.
+PM 2026-10-16 accepted option A for OQ-M9-01..07; PM 2026-10-18 accepted option A for OQ-M9-08. Binding product intent and implementation locks follow.
 
 | ID | Decision |
 |----|----------|
 | OQ-M9-01 | `PATH_BACKEND_VULKAN_RT=2` + `isVulkanRayTracingAvailable()`; amend trap **118** valid set to `{0,1,2}`. |
 | OQ-M9-02 | Vulkan AS/RT only (**not** OptiX). |
 | OQ-M9-03 | `VK_KHR_ray_query` inside compute (not full ray-tracing pipeline). |
-| OQ-M9-04 | Silver still 1920×1080 @ 256 spp TommyLaptop HW RT: median ≤ **4 s** after warm-up (**primary**) + ≥ **8×** vs post-M8 compute when measurable (**secondary**). |
+| OQ-M9-04 | Silver still 1920×1080 @ 256 spp TommyLaptop HW RT: median ≤ **4 s** after warm-up (**primary**) + ≥ **8×** vs post-M8 compute when measurable (**secondary**). **Historical** — **superseded by OQ-M9-08 A** (measured floor `eaeb0c6` 4881 ms / ~6.01×; ≤4 s / ≥8× unreachable without regress). |
 | OQ-M9-05 | Soft fallback RT→compute Vulkan→CPU; STRICT: selected HW RT must succeed or trap **117** (no silent downgrade under STRICT). |
 | OQ-M9-06 | RT-linked ≤ **500 KiB** stripped; hello ≤ 20; compute ≤ 400; CPU glass+mirror ≤ 300. |
 | OQ-M9-07 | Denoise still **OUT**. |
+| OQ-M9-08 | **Accepted A** (PM 2026-10-18): primary AC silver still 1920×1080 @ 256 spp TommyLaptop HW RT median ≤ **5000 ms** after warm-up; secondary ≥ **5×** vs post-M8 compute when measurable. Measured floor `eaeb0c6` (4881 ms / 6.01×) **PASSES**. Supersedes OQ-M9-04 A (≤4 s / ≥8×). Denoise / size / STRICT / API / stack unchanged. |
 | RD-M9-01 | M7 §1.2 ray-query / HW RT non-goal **reopened** as in-scope for M9 backend 2; M7 compute backend 1 remains. |
 | RD-M9-02 | DLSS / frame-gen / Swapper-style DLL hacks **OUT**. |
 | RD-M9-03 | CPU + M7/M8 compute Vulkan fallback + DCE (hello ≤ 20 KiB unused) **required**. |
@@ -529,6 +534,7 @@ PM 2026-10-16 accepted option A for every OQ below. Binding product intent and i
 | RD-M9-07 | Harness `# requires_vulkan_rt:` soft-skip on hosts without HW RT. |
 | RD-M9-08 | Invalid-backend trap fixtures use `3` (not `2`); `2` is valid. |
 | RD-M9-09 | OQ-M9-01..07 accepted option A (PM 2026-10-16). |
+| RD-M9-10 | **Accepted:** OQ-M9-08 A (PM 2026-10-18). Binding wall-clock ≤ **5000 ms** / ≥ **5×**. Body §9 / AC-M9-13..14 binding under A. Denoise / size / STRICT / API / stack unchanged. |
 
 ---
 
@@ -546,7 +552,7 @@ M4-ray.md, M7-vulkan-path.md, and M8-path-speed.md are not edited.
 | 6 | Harness `# requires_vulkan_rt:` soft-skip. |
 | 7 | HW RT image `# png_tol: 2` vs CPU/M4 golden. |
 | 8 | AS BLAS/TLAS build/rebuild policy (§5). |
-| 9 | Wall-clock: ≤ 4 s median + ≥ 8× vs post-M8 compute (OQ-M9-04 A binding). |
+| 9 | Wall-clock: binding ≤ **5000 ms** median + ≥ **5×** vs post-M8 compute (**OQ-M9-08 A**); prior OQ-M9-04 A ≤4 s / ≥8× **superseded** (`eaeb0c6` floor 4881 ms / ~6.01× PASSES). |
 | 10 | RT-linked size ≤ 500 KiB (OQ-M9-06 A). |
 | 11 | M8 RR / MIS / adaptive MUST apply on backend 2 when enabled. |
 | 12 | Fixtures under `spec/tests/M9/`; invalid-backend trap uses `3` not `2`. |
@@ -575,7 +581,7 @@ renderer.renderPath(scene, camera); // → exit 117
 
 ## Appendix D — Artwork bench note
 
-Use `examples/artwork_silver_still.fm` @ 1920×1080 / 256 spp with `setPathBackend(PATH_BACKEND_VULKAN_RT)`. Do not alter composition. Record post-M8 compute baseline (~32 s class) for the 8× secondary gate.
+Use `examples/artwork_silver_still.fm` @ 1920×1080 / 256 spp with `setPathBackend(PATH_BACKEND_VULKAN_RT)`. Do not alter composition. Record post-M8 compute baseline (~29–32 s class) for the **5×** secondary gate (**binding OQ-M9-08 A**; was 8× under superseded OQ-M9-04 A). Primary gate ≤ **5 s** (5000 ms) after warm-up.
 
 ---
 
@@ -583,3 +589,5 @@ Use `examples/artwork_silver_still.fm` @ 1920×1080 / 256 spp with `setPathBacke
 
 - 2026-10-16: DRAFT. Hardware RT for M4 path (prefer Vulkan AS + rayQuery); CPU + M7/M8 compute fallback; reopen M7 ray-query non-goal; OQ-M9-01..07 recommend A; denoise OUT; silver-still ≤4 s / ≥8×; RT-linked ≤500 KiB; fixtures under `spec/tests/M9/`.
 - 2026-10-16: FINAL. PM accepted OQ-M9-01 .. OQ-M9-07, all option A. Binding: PATH_BACKEND_VULKAN_RT=2; Vulkan AS/RT + ray_query in compute; soft RT→compute→CPU / STRICT 117; ≤4 s / ≥8× silver still; RT-linked ≤500 KiB; denoise OUT; DLSS/Swapper OUT. Open questions cleared.
+- 2026-10-18: DRAFT amendment (OQ-M9-08). Measured TommyLaptop Arc CLEAN tip `eaeb0c6`: RT median 4881 ms / compute ~29335 ms / ~6.01× — original ≤4 s / ≥8× unreachable without regress. Open OQ-M9-08: recommend A ≤5000 ms / ≥5× (would PASS eaeb0c6); B keep 4 s / 8×; C other. Body §9 / AC-M9-13..14 provisional under A. OQ-M9-01..07 / denoise / size / STRICT unchanged. Status not FINAL until OQ-M9-08 locked.
+- 2026-10-18: FINAL again. PM accepted OQ-M9-08 option A. Binding wall-clock: primary ≤ **5000 ms** after warm-up; secondary ≥ **5×** vs post-M8 compute. OQ-M9-04 (≤4 s / ≥8×) superseded. Measured floor `eaeb0c6` (4881 ms / 6.01×) PASSES. OQ-M9-01..08 all A. Denoise / size / STRICT / API / stack unchanged. Open questions none.

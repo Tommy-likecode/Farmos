@@ -13,17 +13,16 @@ Secondary baseline: post-M8 compute Vulkan (`PATH_BACKEND_VULKAN`) on the same h
 - Also record cold first-call (includes AS build) in notes — not the primary gate.
 - Record: host id, backend, RR/MIS/adaptive flags, spp, resolution, elapsed ms, whether HW RT or downgrade ran.
 
-## Targets (OQ-M9-04 A)
+## Targets (binding OQ-M9-08 A; OQ-M9-04 A superseded)
 
 | Gate | Target |
 |------|--------|
-| **Primary** | Silver still 1920×1080 @ 256 spp on TommyLaptop with HW RT: median ≤ **4 s** after 1 warm-up |
-| **Secondary** | Same setup: ≥ **8×** wall-clock vs post-M8 compute baseline when measurable |
+| **Primary** | Silver still 1920×1080 @ 256 spp on TommyLaptop with HW RT: median ≤ **5000 ms** after 1 warm-up |
+| **Secondary** | Same setup: ≥ **5×** wall-clock vs post-M8 compute baseline when measurable |
 
-AC-M9-12 is the harness. Clean floor at `d91887b` is RT **4953 ms** (see
-`NOTES.md`). This tip is **one** host persist lever; shader unchanged.
-AC-M9-13/14 still FAIL / pending poteto re-bench. Do not invent Windows
-numbers from Linux CI.
+AC-M9-12 is the harness. Claim floor at `eaeb0c6` is RT **4881 ms** / compute
+**29335 ms** / **6.010×** (see `NOTES.md`). AC-M9-13/14 **PASS** under
+OQ-M9-08 A. Do not invent Windows numbers from Linux CI.
 
 ## Scripts
 

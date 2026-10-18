@@ -8,7 +8,7 @@ Spec: `spec/M9-hardware-rt.md` (FINAL). Fixtures: `spec/tests/M9/` (ctest `m9_*`
 - Vulkan AS + `VK_KHR_ray_query` inside compute (not OptiX, not SBT RT pipeline). Soft fallback HW RT → compute → CPU; STRICT trap 117. `FARMOS_VULKAN_RT_FORCE_FAIL=1`.
 - M8 RR/MIS/adaptive apply on backend 2 when enabled. CPU compat SHA unchanged. HW RT images: `# png_tol: 2`.
 - Size: hello ≤ 20 KiB unused; compute-only ≤ 400 KiB; **RT-linked ≤ 500 KiB**.
-- Linux CI: `# requires_vulkan_rt: true` soft-skips without a ray-query device. AC-M9-12..14 (≤4 s / ≥8×) are TommyLaptop gates.
+- Linux CI: `# requires_vulkan_rt: true` soft-skips without a ray-query device. AC-M9-12..14 (≤5000 ms / ≥5×, OQ-M9-08 A; OQ-M9-04 superseded) are TommyLaptop gates.
 
 Linux: `bash scripts/run_suite_linux.sh build/farmc spec/tests/M9`
 

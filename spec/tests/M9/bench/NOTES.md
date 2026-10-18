@@ -2,6 +2,8 @@
 
 **Status: tip `eaeb0c6` AS/SSBO persist CLEAN — AC-M9-13/14 PASS under OQ-M9-08 A (≤5000 ms / ≥5×). RT median 4881 ms / compute 29335 ms / 6.010×. Claim tip for eggtooth. Do not invent new Windows numbers. Dropped: `1003468` BLAS compact (REGRESS 6067 > 4881).**
 
+**Docs sync:** tip now carries OQ-M9-08 A FINAL (`spec/M9-hardware-rt.md` / `PLAN.md`). Docs only; medians unchanged: RT 4881 / compute 29335 / 6.01×. No re-bench.
+
 This Linux CI / cloud-agent host does not provide a hardware ray-tracing device
 (`VK_KHR_ray_query` + acceleration structures). Windows numbers below are
 TommyLaptop / poteto measurements only.
