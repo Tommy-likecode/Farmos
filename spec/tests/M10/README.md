@@ -72,7 +72,7 @@ AC-M10-09).
 
 ## Artwork / interactive benches
 
-- **Stills denoise:** `examples/artwork_silver_still.fm` @ 1920×1080, **16 spp**
+- **Stills denoise:** `examples/artwork_silver_still.fm` @ 1920×1080, **8 spp**
   (≤ **64**), `PATH_DENOISE_SPATIAL`, prefer HW RT. Composition locked. Gate
   (OQ-M10-03 A): median ≤ **1500 ms** after warm-up; visual `# png_tol: 8` vs
   256-spp undenoised.

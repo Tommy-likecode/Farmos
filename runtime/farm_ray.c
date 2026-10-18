@@ -1269,7 +1269,7 @@ void farm_Renderer_beginPathPreview(farm_Renderer* self, farm_Scene* scene, farm
   self->preview_spp = 0;
   self->preview_scene = scene;
   self->preview_camera = camera;
-  self->preview_div = (self->width >= 640 && self->height >= 360) ? 4 : 1;
+  self->preview_div = (self->width >= 640 && self->height >= 360) ? 16 : 1;
   if (camera) farm_preview_snapshot_camera(self, camera);
   /* Warm AS / SSBO persist so first advance is reuse. Preview spp stays 0. */
   if (scene && camera) {

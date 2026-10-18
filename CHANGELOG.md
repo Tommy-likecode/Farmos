@@ -7,7 +7,7 @@ M10 — denoise / interactive path tracing (`spec/M10-denoise-interactive.md` FI
 - Additive `PATH_DENOISE_OFF` / `PATH_DENOISE_SPATIAL`, `setPathDenoise` / `getPathDenoise` / `isPathDenoiseAvailable`. Default **OFF** (M4/M9 goldens unchanged). Invalid mode traps **120** at `setPathDenoise`.
 - Farmos-owned spatial denoise (A-trous / bilateral class). Vulkan compute A-trous when HW RT + denoise are linked; cheap CPU plus-kernel fallback. No OIDN, NVIDIA denoise DLL, OptiX, DLSS, or Swapper.
 - Soft denoise fail leaves the noisy path image. `FARMOS_PATH_DENOISE_STRICT=1` + fail → trap **120** (`runtime error: path denoise failed`). `FARMOS_PATH_DENOISE_FORCE_FAIL=1` test hook. M9 STRICT 117 / backends `{0,1,2}` unchanged.
-- Progressive preview: `beginPathPreview` / `advancePathPreview` / `finishPathPreview` / `getPathPreviewSpp`. No OS window or swapchain; pixels via `savePNG` / framebuffer.
+- Progressive preview: `beginPathPreview` / `advancePathPreview` / `finishPathPreview` / `getPathPreviewSpp`. No OS window or swapchain; pixels via `savePNG` / framebuffer. Preview dispatches at 1/16 res with a cheap resolve; stills keep 1080p.
 - Size/DCE: denoise-linked ≤ **600 KiB**; hello / glass+mirror / compute / RT budgets unchanged. `farm_denoise.c` is linked only when denoise API is used.
 - Fixtures: `spec/tests/M10/`. Artwork denoise bench: `spec/tests/M10/bench/`. Artwork composition remains locked.
 

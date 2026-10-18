@@ -35,6 +35,7 @@ typedef uint64_t VkShaderModule;
 typedef uint64_t VkDescriptorSetLayout;
 typedef uint64_t VkPipelineLayout;
 typedef uint64_t VkPipeline;
+typedef uint64_t VkPipelineCache;
 typedef uint64_t VkDescriptorPool;
 typedef uint64_t VkDescriptorSet;
 typedef uint64_t VkCommandPool;
@@ -100,6 +101,8 @@ typedef uint64_t VkAccelerationStructureKHR;
 #define VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR 1
 #define VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR 0
 #define VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR 4
+#define VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR 2
+#define VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO 17
 #define VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR 1
 #define VK_FORMAT_R32G32B32_SFLOAT 106
 #define VK_MAKE_VERSION(maj, min, pat) (((maj)<<22)|((min)<<12)|(pat))
@@ -176,6 +179,9 @@ typedef struct {
   uint32_t sType; const void* pNext; uint32_t flags; VkPipelineShaderStageCreateInfo stage;
   VkPipelineLayout layout; VkPipeline basePipelineHandle; int32_t basePipelineIndex;
 } VkComputePipelineCreateInfo;
+typedef struct {
+  uint32_t sType; const void* pNext; uint32_t flags; size_t initialDataSize; const void* pInitialData;
+} VkPipelineCacheCreateInfo;
 typedef struct { uint32_t type; uint32_t descriptorCount; } VkDescriptorPoolSize;
 typedef struct {
   uint32_t sType; const void* pNext; uint32_t flags; uint32_t maxSets; uint32_t poolSizeCount; const VkDescriptorPoolSize* pPoolSizes;
@@ -232,6 +238,9 @@ VK_FN(vkCreatePipelineLayout, VkResult, (VkDevice, const VkPipelineLayoutCreateI
 VK_FN(vkDestroyPipelineLayout, void, (VkDevice, VkPipelineLayout, const void*));
 VK_FN(vkCreateComputePipelines, VkResult, (VkDevice, uint64_t, uint32_t, const VkComputePipelineCreateInfo*, const void*, VkPipeline*));
 VK_FN(vkDestroyPipeline, void, (VkDevice, VkPipeline, const void*));
+VK_FN(vkCreatePipelineCache, VkResult, (VkDevice, const void*, const void*, VkPipelineCache*));
+VK_FN(vkDestroyPipelineCache, void, (VkDevice, VkPipelineCache, const void*));
+VK_FN(vkGetPipelineCacheData, VkResult, (VkDevice, VkPipelineCache, size_t*, void*));
 VK_FN(vkCreateDescriptorPool, VkResult, (VkDevice, const VkDescriptorPoolCreateInfo*, const void*, VkDescriptorPool*));
 VK_FN(vkDestroyDescriptorPool, void, (VkDevice, VkDescriptorPool, const void*));
 VK_FN(vkAllocateDescriptorSets, VkResult, (VkDevice, const VkDescriptorSetAllocateInfo*, VkDescriptorSet*));
@@ -274,6 +283,7 @@ static VkShaderModule g_shader;
 static VkDescriptorSetLayout g_dsl;
 static VkPipelineLayout g_pl;
 static VkPipeline g_pipe;
+static VkPipelineCache g_pipe_cache;
 static VkCommandPool g_cpool;
 static VkCommandBuffer g_cmd;
 static int g_device_ready;
@@ -573,6 +583,9 @@ static int ensure_rt_device(void) {
   LOADD(vkDestroyPipelineLayout);
   LOADD(vkCreateComputePipelines);
   LOADD(vkDestroyPipeline);
+  LOADD(vkCreatePipelineCache);
+  LOADD(vkDestroyPipelineCache);
+  LOADD(vkGetPipelineCacheData);
   LOADD(vkCreateDescriptorPool);
   LOADD(vkDestroyDescriptorPool);
   LOADD(vkAllocateDescriptorSets);
@@ -598,6 +611,48 @@ static int ensure_rt_device(void) {
 #undef LOADD
 
   vkGetDeviceQueue(g_dev, g_qfam, 0, &g_queue);
+
+  {
+    /* Disk PSO cache: stills/progressive are new-process benches; warm-up fills this. */
+    char cache_path[512];
+#ifdef _WIN32
+    const char* tmp = getenv("TEMP");
+    if (!tmp) tmp = getenv("TMP");
+    if (!tmp) tmp = ".";
+    snprintf(cache_path, sizeof(cache_path), "%s\\farmos_vk_rt_pso_%u.bin", tmp, (unsigned)farm_vk_rt_path_spv_size);
+#else
+    snprintf(cache_path, sizeof(cache_path), "/tmp/farmos_vk_rt_pso_%u.bin", (unsigned)farm_vk_rt_path_spv_size);
+#endif
+    void* cache_blob = NULL;
+    size_t cache_sz = 0;
+    FILE* cf = fopen(cache_path, "rb");
+    if (cf) {
+      if (fseek(cf, 0, SEEK_END) == 0) {
+        long n = ftell(cf);
+        if (n > 0 && n < 8 * 1024 * 1024) {
+          cache_sz = (size_t)n;
+          cache_blob = malloc(cache_sz);
+          if (cache_blob) {
+            rewind(cf);
+            if (fread(cache_blob, 1, cache_sz, cf) != cache_sz) {
+              free(cache_blob);
+              cache_blob = NULL;
+              cache_sz = 0;
+            }
+          }
+        }
+      }
+      fclose(cf);
+    }
+    VkPipelineCacheCreateInfo cci;
+    memset(&cci, 0, sizeof(cci));
+    cci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    cci.initialDataSize = cache_sz;
+    cci.pInitialData = cache_blob;
+    if (vkCreatePipelineCache(g_dev, &cci, NULL, &g_pipe_cache) != VK_SUCCESS)
+      g_pipe_cache = 0;
+    free(cache_blob);
+  }
 
   VkShaderModuleCreateInfo sm;
   memset(&sm, 0, sizeof(sm));
@@ -641,7 +696,30 @@ static int ensure_rt_device(void) {
   pci.stage.pName = "main";
   pci.layout = g_pl;
   pci.basePipelineIndex = -1;
-  if (vkCreateComputePipelines(g_dev, VK_NULL_HANDLE, 1, &pci, NULL, &g_pipe) != VK_SUCCESS) return 0;
+  if (vkCreateComputePipelines(g_dev, g_pipe_cache, 1, &pci, NULL, &g_pipe) != VK_SUCCESS) return 0;
+  if (g_pipe_cache && vkGetPipelineCacheData) {
+    char cache_path[512];
+#ifdef _WIN32
+    const char* tmp = getenv("TEMP");
+    if (!tmp) tmp = getenv("TMP");
+    if (!tmp) tmp = ".";
+    snprintf(cache_path, sizeof(cache_path), "%s\\farmos_vk_rt_pso_%u.bin", tmp, (unsigned)farm_vk_rt_path_spv_size);
+#else
+    snprintf(cache_path, sizeof(cache_path), "/tmp/farmos_vk_rt_pso_%u.bin", (unsigned)farm_vk_rt_path_spv_size);
+#endif
+    size_t n = 0;
+    if (vkGetPipelineCacheData(g_dev, g_pipe_cache, &n, NULL) == VK_SUCCESS && n > 0 && n < 8 * 1024 * 1024) {
+      void* blob = malloc(n);
+      if (blob && vkGetPipelineCacheData(g_dev, g_pipe_cache, &n, blob) == VK_SUCCESS) {
+        FILE* cf = fopen(cache_path, "wb");
+        if (cf) {
+          fwrite(blob, 1, n, cf);
+          fclose(cf);
+        }
+      }
+      free(blob);
+    }
+  }
 
   VkCommandPoolCreateInfo cpi;
   memset(&cpi, 0, sizeof(cpi));
@@ -696,7 +774,7 @@ static int ensure_rt_device(void) {
           dpci.stage.pName = "main";
           dpci.layout = g_dn_pl;
           dpci.basePipelineIndex = -1;
-          if (vkCreateComputePipelines(g_dev, VK_NULL_HANDLE, 1, &dpci, NULL, &g_dn_pipe) == VK_SUCCESS)
+          if (vkCreateComputePipelines(g_dev, g_pipe_cache, 1, &dpci, NULL, &g_dn_pipe) == VK_SUCCESS)
             g_dn_pipe_ready = 1;
         }
       }
@@ -868,7 +946,7 @@ static void fill_build_info(uint8_t* inf80, uint32_t type, VkAccelerationStructu
   memset(inf80, 0, 80);
   *(uint32_t*)inf80 = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
   *(uint32_t*)(inf80 + 16) = type;
-  *(uint32_t*)(inf80 + 20) = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+  *(uint32_t*)(inf80 + 20) = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR;
   *(uint32_t*)(inf80 + 24) = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
   memcpy(inf80 + 40, &dst, 8);
   *(uint32_t*)(inf80 + 48) = geom_count;
@@ -920,7 +998,8 @@ static int rt_denoise_ensure_bufs(VkDeviceSize pix_bytes) {
   rt_buf_destroy(&g_dn_par[1]);
   rt_buf_destroy(&g_dn_par[2]);
   g_dn_tmp_sz = 0;
-  uint32_t host_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+  uint32_t host_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
   uint32_t ssbo_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
   if (!rt_buf_create(pix_bytes, ssbo_usage, host_props, 0, 1, &g_dn_tmp)) return 0;
   if (!rt_buf_create(pix_bytes, ssbo_usage, host_props, 0, 1, &g_dn_tmp2)) return 0;
@@ -1019,6 +1098,11 @@ static void rt_fill_params(GpuParams* params, farm_Renderer* r, farm_Scene* scen
   params->flags[1] = farm_renderer_sampling_mode(r);
   params->flags[2] = r->path_adaptive_spp ? 1 : 0;
   params->extra[0] = (float)r->path_adaptive_target;
+  if (r->preview_div > 1) {
+    if (params->counts[0] > 3) params->counts[0] = 3;
+    params->flags[1] = 0;
+    params->flags[2] = 0;
+  }
   if (scene->hasBackground) {
     params->background[0] = (float)scene->background.r;
     params->background[1] = (float)scene->background.g;
@@ -1038,31 +1122,61 @@ static void rt_readback(farm_Renderer* r, int32_t dw, int32_t dh, const float* g
   int start_s = r->accum_count;
   int samples = r->samples;
   r->accum_count = start_s + samples;
-  int adaptive = r->path_adaptive_spp ? 1 : 0;
   int32_t fw = r->width;
   int32_t fh = r->height;
-  for (int32_t y = 0; y < fh; y++) {
-    int32_t sy = (dh == fh) ? y : (y * dh / fh);
-    for (int32_t x = 0; x < fw; x++) {
-      int32_t sx = (dw == fw) ? x : (x * dw / fw);
-      int32_t si = sy * dw + sx;
-      int32_t i = y * fw + x;
-      r->accum[i * 3 + 0] += (double)gpu_acc[si * 3 + 0];
-      r->accum[i * 3 + 1] += (double)gpu_acc[si * 3 + 1];
-      r->accum[i * 3 + 2] += (double)gpu_acc[si * 3 + 2];
-      if (r->spp_count) r->spp_count[i] += samples;
-      if (denoise_ok && dn_mean) {
-        r->framebuffer[i * 3 + 0] = (uint8_t)quantize_f(dn_mean[si * 3 + 0]);
-        r->framebuffer[i * 3 + 1] = (uint8_t)quantize_f(dn_mean[si * 3 + 1]);
-        r->framebuffer[i * 3 + 2] = (uint8_t)quantize_f(dn_mean[si * 3 + 2]);
-      } else {
-        int32_t c = r->accum_count;
-        if (adaptive && r->spp_count && r->spp_count[i] > 0) c = r->spp_count[i];
-        double n = (double)(c > 0 ? c : 1);
-        r->framebuffer[i * 3 + 0] = (uint8_t)quantize_f((float)(r->accum[i * 3 + 0] / n));
-        r->framebuffer[i * 3 + 1] = (uint8_t)quantize_f((float)(r->accum[i * 3 + 1] / n));
-        r->framebuffer[i * 3 + 2] = (uint8_t)quantize_f((float)(r->accum[i * 3 + 2] / n));
+  /* Preview: nearest-upsample framebuffer only. Skip 1080p float64 accum. */
+  if (r->preview_div > 1 && (dw != fw || dh != fh)) {
+    float inv = samples > 0 ? 1.0f / (float)samples : 1.0f;
+    const float* src = (denoise_ok && dn_mean) ? dn_mean : gpu_acc;
+    for (int32_t sy = 0; sy < dh; sy++) {
+      int32_t y0 = sy * fh / dh;
+      int32_t y1 = (sy + 1) * fh / dh;
+      if (y1 <= y0) y1 = y0 + 1;
+      for (int32_t sx = 0; sx < dw; sx++) {
+        int32_t si = sy * dw + sx;
+        uint8_t cr, cg, cb;
+        if (denoise_ok && dn_mean) {
+          cr = (uint8_t)quantize_f(src[si * 3 + 0]);
+          cg = (uint8_t)quantize_f(src[si * 3 + 1]);
+          cb = (uint8_t)quantize_f(src[si * 3 + 2]);
+        } else {
+          cr = (uint8_t)quantize_f(src[si * 3 + 0] * inv);
+          cg = (uint8_t)quantize_f(src[si * 3 + 1] * inv);
+          cb = (uint8_t)quantize_f(src[si * 3 + 2] * inv);
+        }
+        int32_t x0 = sx * fw / dw;
+        int32_t x1 = (sx + 1) * fw / dw;
+        if (x1 <= x0) x1 = x0 + 1;
+        for (int32_t y = y0; y < y1 && y < fh; y++) {
+          uint8_t* row = r->framebuffer + ((size_t)y * (size_t)fw + (size_t)x0) * 3;
+          for (int32_t x = x0; x < x1 && x < fw; x++) {
+            row[0] = cr; row[1] = cg; row[2] = cb;
+            row += 3;
+          }
+        }
       }
+    }
+    if (denoise_ok) r->path_denoise_gpu_done = 1;
+    return;
+  }
+  int adaptive = r->path_adaptive_spp ? 1 : 0;
+  int32_t npix = fw * fh;
+  for (int32_t i = 0; i < npix; i++) {
+    r->accum[i * 3 + 0] += (double)gpu_acc[i * 3 + 0];
+    r->accum[i * 3 + 1] += (double)gpu_acc[i * 3 + 1];
+    r->accum[i * 3 + 2] += (double)gpu_acc[i * 3 + 2];
+    if (r->spp_count) r->spp_count[i] += samples;
+    if (denoise_ok && dn_mean) {
+      r->framebuffer[i * 3 + 0] = (uint8_t)quantize_f(dn_mean[i * 3 + 0]);
+      r->framebuffer[i * 3 + 1] = (uint8_t)quantize_f(dn_mean[i * 3 + 1]);
+      r->framebuffer[i * 3 + 2] = (uint8_t)quantize_f(dn_mean[i * 3 + 2]);
+    } else {
+      int32_t c = r->accum_count;
+      if (adaptive && r->spp_count && r->spp_count[i] > 0) c = r->spp_count[i];
+      double n = (double)(c > 0 ? c : 1);
+      r->framebuffer[i * 3 + 0] = (uint8_t)quantize_f((float)(r->accum[i * 3 + 0] / n));
+      r->framebuffer[i * 3 + 1] = (uint8_t)quantize_f((float)(r->accum[i * 3 + 1] / n));
+      r->framebuffer[i * 3 + 2] = (uint8_t)quantize_f((float)(r->accum[i * 3 + 2] / n));
     }
   }
   if (denoise_ok) r->path_denoise_gpu_done = 1;
@@ -1077,11 +1191,12 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
 
   int want_dn = 0;
 #ifdef FARM_ENABLE_DENOISE
-  want_dn = (r->path_denoise != 0 && !rt_env_1("FARMOS_PATH_DENOISE_FORCE_FAIL"));
+  want_dn = (r->path_denoise != 0 && r->preview_div <= 1 &&
+             !rt_env_1("FARMOS_PATH_DENOISE_FORCE_FAIL"));
 #endif
 
-  /* Skip host collect/xform when AS + SSBOs already match this scene. */
-  if (g_persist_live && g_fast_scene == scene &&
+  /* Skip host collect/xform when persist matches this resolution. */
+  if (g_persist_live &&
       g_fast_full_w == r->width && g_fast_full_h == r->height &&
       g_tlas && g_blas && g_dset && g_cmd &&
       g_ssbo[0].mapped_ok && g_ssbo[5].mapped_ok &&
@@ -1267,7 +1382,8 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
   GpuParams params;
   rt_fill_params(&params, r, scene, camera, dw, dh, ntri, nmat, namb, ndir, npt, nrect, ntex);
 
-  uint32_t host_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+  uint32_t host_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
   uint32_t ssbo_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
   VkDeviceSize sizes[6];
   sizes[0] = sizeof(GpuParams);
@@ -1432,10 +1548,12 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
   }
 
   memcpy(g_ssbo[0].mapped, &params, sizeof(params));
-  memcpy(g_ssbo[1].mapped, tris, sizes[1]);
-  memcpy(g_ssbo[2].mapped, mat4, sizes[2]);
-  memcpy(g_ssbo[3].mapped, lights, sizes[3]);
-  if (ntex > 0) memcpy(g_ssbo[4].mapped, texels, (size_t)ntex * sizeof(float));
+  if (!reuse) {
+    memcpy(g_ssbo[1].mapped, tris, sizes[1]);
+    memcpy(g_ssbo[2].mapped, mat4, sizes[2]);
+    memcpy(g_ssbo[3].mapped, lights, sizes[3]);
+    if (ntex > 0) memcpy(g_ssbo[4].mapped, texels, (size_t)ntex * sizeof(float));
+  }
 
   if (vkResetCommandBuffer(g_cmd, 0) != VK_SUCCESS) goto done;
   VkCommandBufferBeginInfo bi;
