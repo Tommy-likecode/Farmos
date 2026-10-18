@@ -1143,6 +1143,8 @@ farm_Renderer* farm_Renderer_new() {
   r->path_adaptive_target = 1e-4;
   r->spp_count = NULL;
   r->path_denoise = 0;
+  r->path_denoise_gpu_done = 0;
+  r->preview_div = 1;
   r->preview_spp = 0;
   r->preview_active = 0;
   r->preview_in_advance = 0;

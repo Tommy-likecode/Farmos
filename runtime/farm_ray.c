@@ -1269,7 +1269,19 @@ void farm_Renderer_beginPathPreview(farm_Renderer* self, farm_Scene* scene, farm
   self->preview_spp = 0;
   self->preview_scene = scene;
   self->preview_camera = camera;
+  self->preview_div = (self->width >= 640 && self->height >= 360) ? 4 : 1;
   if (camera) farm_preview_snapshot_camera(self, camera);
+  /* Warm AS / SSBO persist so first advance is reuse. Preview spp stays 0. */
+  if (scene && camera) {
+    int32_t saved = self->samples;
+    self->samples = 1;
+    self->preview_in_advance = 1;
+    farm_Renderer_renderPath(self, scene, camera);
+    self->preview_in_advance = 0;
+    self->samples = saved;
+    farm_Renderer_resetAccumulation(self);
+    self->preview_spp = 0;
+  }
 }
 
 int8_t farm_Renderer_advancePathPreview(farm_Renderer* self, int64_t sppStep) {
@@ -1296,6 +1308,7 @@ int8_t farm_Renderer_advancePathPreview(farm_Renderer* self, int64_t sppStep) {
 void farm_Renderer_finishPathPreview(farm_Renderer* self) {
   self->preview_active = 0;
   self->preview_in_advance = 0;
+  self->preview_div = 1;
   self->preview_scene = NULL;
   self->preview_camera = NULL;
 }
@@ -1312,11 +1325,13 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
   if (self->preview_active && !self->preview_in_advance) {
     /* Default renderPath is a one-shot full frame, not a silent continue. */
     self->preview_active = 0;
+    self->preview_div = 1;
     self->preview_scene = NULL;
     self->preview_camera = NULL;
     self->preview_spp = 0;
     farm_Renderer_resetAccumulation(self);
   }
+  self->path_denoise_gpu_done = 0;
 
   farm_Scene_updateMatrixWorld(scene, true);
   farm_PerspectiveCamera_updateMatrixWorld(camera, true);

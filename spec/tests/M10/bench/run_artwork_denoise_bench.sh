@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Time a 64-spp + PATH_DENOISE_SPATIAL still derived from artwork_silver_still.fm.
+# Time a 16-spp + PATH_DENOISE_SPATIAL still derived from artwork_silver_still.fm.
 # Does not edit examples/artwork_silver_still.fm (composition locked).
 # Usage: run_artwork_denoise_bench.sh <farmc> [out-dir]
 set -euo pipefail
@@ -25,15 +25,15 @@ text = text.replace(
     "RectAreaLight, Renderer, PATH_BACKEND_VULKAN, PATH_BACKEND_VULKAN_RT } from \"farmos:scene\";",
     "RectAreaLight, Renderer, PATH_BACKEND_VULKAN, PATH_BACKEND_VULKAN_RT, PATH_DENOISE_SPATIAL } from \"farmos:scene\";",
 )
-text = text.replace("renderer.setSamples(256);", "renderer.setSamples(64);\n  renderer.setPathDenoise(PATH_DENOISE_SPATIAL);")
-text = text.replace("println(256);", "println(64);")
+text = text.replace("renderer.setSamples(256);", "renderer.setSamples(16);\n  renderer.setPathDenoise(PATH_DENOISE_SPATIAL);")
+text = text.replace("println(256);", "println(16);")
 open(dst, "w", encoding="utf-8").write(text)
 PY
 
 echo "host=$(uname -n)  $(uname -srm)"
 echo "farmc=$FARMC"
 echo "threads=$FARMOS_THREADS"
-echo "spp=64 denoise=PATH_DENOISE_SPATIAL"
+echo "spp=16 denoise=PATH_DENOISE_SPATIAL"
 echo "building..."
 "$FARMC" build "$OUT/still_denoise.fm" -o "$OUT/artwork_denoise"
 echo "warmup..."
@@ -58,4 +58,5 @@ echo "median_ms=$median  runs=${times[*]}  warmup_ms=$warmup_ms"
 echo "png=$OUT/artwork_silver_still.png"
 echo "$median" > "$OUT/median_ms.txt"
 echo "NOTE: AC-M10-05 (≤1500 ms @ ≤64 spp + denoise) is a TommyLaptop HW RT gate; Linux results are not that AC."
+echo "This tip benches 16 spp (≤64) + GPU A-trous when HW RT is linked."
 echo "M9 undenoised 256-spp floor to beat: 4881 ms (eaeb0c6)."

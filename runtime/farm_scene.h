@@ -307,6 +307,8 @@ struct farm_Renderer {
   double path_adaptive_target;
   int32_t* spp_count;    // per-pixel counts when adaptive has run
   int32_t path_denoise;  // 0=OFF, 1=SPATIAL (M10)
+  int8_t path_denoise_gpu_done;
+  int32_t preview_div;   // 1 = full res; 4 = quarter-res preview dispatch
   int32_t preview_spp;
   int8_t preview_active;
   int8_t preview_in_advance;

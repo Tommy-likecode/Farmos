@@ -2,6 +2,9 @@
    Dynamically loads the Vulkan loader. Not a load-time import. OptiX is not used. */
 #include "farm_vk_rt.h"
 #include "farm_vk_rt_path_spv.h"
+#ifdef FARM_ENABLE_DENOISE
+#include "farm_vk_denoise_spv.h"
+#endif
 #include "farm_rt.h"
 #include <string.h>
 #include <stdlib.h>
@@ -274,6 +277,15 @@ static VkPipeline g_pipe;
 static VkCommandPool g_cpool;
 static VkCommandBuffer g_cmd;
 static int g_device_ready;
+#ifdef FARM_ENABLE_DENOISE
+static VkShaderModule g_dn_shader;
+static VkDescriptorSetLayout g_dn_dsl;
+static VkPipelineLayout g_dn_pl;
+static VkPipeline g_dn_pipe;
+static VkDescriptorPool g_dn_pool;
+static VkDescriptorSet g_dn_dset[3];
+static int g_dn_pipe_ready;
+#endif
 
 static const char* k_req_ext[] = {
   "VK_KHR_acceleration_structure",
@@ -445,6 +457,13 @@ static VkDeviceSize g_ssbo_sz[6];
 static uint64_t g_as_fp;
 static int32_t g_as_tri_cached;
 static int g_persist_live;
+static farm_Scene* g_fast_scene;
+static int32_t g_fast_full_w, g_fast_full_h;
+static int32_t g_fast_ntri, g_fast_nmat, g_fast_namb, g_fast_ndir, g_fast_npt, g_fast_nrect, g_fast_ntex;
+#ifdef FARM_ENABLE_DENOISE
+static RtBuf g_dn_tmp, g_dn_tmp2, g_dn_par[3];
+static VkDeviceSize g_dn_tmp_sz;
+#endif
 
 static void rt_buf_destroy(RtBuf* b) {
   if (!g_dev) return;
@@ -640,6 +659,51 @@ static int ensure_rt_device(void) {
     if (vkAllocateCommandBuffers(g_dev, &cai, &g_cmd) != VK_SUCCESS) return 0;
   }
 
+#ifdef FARM_ENABLE_DENOISE
+  {
+    VkShaderModuleCreateInfo dsm;
+    memset(&dsm, 0, sizeof(dsm));
+    dsm.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    dsm.codeSize = farm_vk_denoise_spv_size;
+    dsm.pCode = farm_vk_denoise_spv;
+    if (vkCreateShaderModule(g_dev, &dsm, NULL, &g_dn_shader) == VK_SUCCESS) {
+      VkDescriptorSetLayoutBinding db[3];
+      memset(db, 0, sizeof(db));
+      for (int i = 0; i < 3; i++) {
+        db[i].binding = (uint32_t)i;
+        db[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        db[i].descriptorCount = 1;
+        db[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+      }
+      VkDescriptorSetLayoutCreateInfo ddl;
+      memset(&ddl, 0, sizeof(ddl));
+      ddl.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+      ddl.bindingCount = 3;
+      ddl.pBindings = db;
+      if (vkCreateDescriptorSetLayout(g_dev, &ddl, NULL, &g_dn_dsl) == VK_SUCCESS) {
+        VkPipelineLayoutCreateInfo dplc;
+        memset(&dplc, 0, sizeof(dplc));
+        dplc.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        dplc.setLayoutCount = 1;
+        dplc.pSetLayouts = &g_dn_dsl;
+        if (vkCreatePipelineLayout(g_dev, &dplc, NULL, &g_dn_pl) == VK_SUCCESS) {
+          VkComputePipelineCreateInfo dpci;
+          memset(&dpci, 0, sizeof(dpci));
+          dpci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+          dpci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+          dpci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+          dpci.stage.module = g_dn_shader;
+          dpci.stage.pName = "main";
+          dpci.layout = g_dn_pl;
+          dpci.basePipelineIndex = -1;
+          if (vkCreateComputePipelines(g_dev, VK_NULL_HANDLE, 1, &dpci, NULL, &g_dn_pipe) == VK_SUCCESS)
+            g_dn_pipe_ready = 1;
+        }
+      }
+    }
+  }
+#endif
+
   g_device_ready = 1;
   return 1;
 }
@@ -757,9 +821,20 @@ static void rt_persist_reset(void) {
   rt_buf_destroy(&g_scratch);
   for (int i = 0; i < 6; i++) rt_buf_destroy(&g_ssbo[i]);
   memset(g_ssbo_sz, 0, sizeof(g_ssbo_sz));
+#ifdef FARM_ENABLE_DENOISE
+  if (g_dn_pool) { vkDestroyDescriptorPool(g_dev, g_dn_pool, NULL); g_dn_pool = 0; memset(g_dn_dset, 0, sizeof(g_dn_dset)); }
+  rt_buf_destroy(&g_dn_tmp);
+  rt_buf_destroy(&g_dn_tmp2);
+  rt_buf_destroy(&g_dn_par[0]);
+  rt_buf_destroy(&g_dn_par[1]);
+  rt_buf_destroy(&g_dn_par[2]);
+  g_dn_tmp_sz = 0;
+#endif
   g_as_fp = 0;
   g_as_tri_cached = 0;
   g_persist_live = 0;
+  g_fast_scene = NULL;
+  g_fast_full_w = g_fast_full_h = 0;
 }
 
 static int fill_tri_geom(uint8_t* geom96, VkDeviceAddress vtx_addr, uint32_t nverts) {
@@ -801,8 +876,265 @@ static void fill_build_info(uint8_t* inf80, uint32_t type, VkAccelerationStructu
   memcpy(inf80 + 72, &scratch, 8);
 }
 
+typedef struct {
+  int32_t size[4];
+  int32_t counts[4];
+  int32_t counts2[4];
+  int32_t flags[4];
+  float background[4];
+  float cam_pos[4];
+  float cam_x[4];
+  float cam_y[4];
+  float cam_z[4];
+  float extra[4];
+} GpuParams;
+
+static void rt_preview_dims(const farm_Renderer* r, int32_t* dw, int32_t* dh) {
+  int div = r->preview_div > 1 ? r->preview_div : 1;
+  *dw = r->width / div;
+  *dh = r->height / div;
+  if (*dw < 1) *dw = 1;
+  if (*dh < 1) *dh = 1;
+}
+
+#ifdef FARM_ENABLE_DENOISE
+static int rt_env_1(const char* name) {
+  const char* e = getenv(name);
+  return e && e[0] == '1' && e[1] == '\0';
+}
+
+static int rt_denoise_ensure_bufs(VkDeviceSize pix_bytes) {
+  if (!g_dn_pipe_ready) return 0;
+  if (pix_bytes < 16) pix_bytes = 16;
+  if (g_dn_tmp_sz >= pix_bytes && g_dn_tmp.mapped_ok && g_dn_tmp2.mapped_ok &&
+      g_dn_par[0].mapped_ok && g_dn_dset[0])
+    return 1;
+  if (g_dn_pool) {
+    vkDestroyDescriptorPool(g_dev, g_dn_pool, NULL);
+    g_dn_pool = 0;
+    memset(g_dn_dset, 0, sizeof(g_dn_dset));
+  }
+  rt_buf_destroy(&g_dn_tmp);
+  rt_buf_destroy(&g_dn_tmp2);
+  rt_buf_destroy(&g_dn_par[0]);
+  rt_buf_destroy(&g_dn_par[1]);
+  rt_buf_destroy(&g_dn_par[2]);
+  g_dn_tmp_sz = 0;
+  uint32_t host_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+  uint32_t ssbo_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+  if (!rt_buf_create(pix_bytes, ssbo_usage, host_props, 0, 1, &g_dn_tmp)) return 0;
+  if (!rt_buf_create(pix_bytes, ssbo_usage, host_props, 0, 1, &g_dn_tmp2)) return 0;
+  for (int i = 0; i < 3; i++) {
+    if (!rt_buf_create(16, ssbo_usage, host_props, 0, 1, &g_dn_par[i])) return 0;
+  }
+  VkDescriptorPoolSize psz;
+  psz.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  psz.descriptorCount = 9;
+  VkDescriptorPoolCreateInfo dpi;
+  memset(&dpi, 0, sizeof(dpi));
+  dpi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  dpi.maxSets = 3;
+  dpi.poolSizeCount = 1;
+  dpi.pPoolSizes = &psz;
+  if (vkCreateDescriptorPool(g_dev, &dpi, NULL, &g_dn_pool) != VK_SUCCESS) return 0;
+  VkDescriptorSetLayout layouts[3] = { g_dn_dsl, g_dn_dsl, g_dn_dsl };
+  VkDescriptorSetAllocateInfo dai;
+  memset(&dai, 0, sizeof(dai));
+  dai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  dai.descriptorPool = g_dn_pool;
+  dai.descriptorSetCount = 3;
+  dai.pSetLayouts = layouts;
+  if (vkAllocateDescriptorSets(g_dev, &dai, g_dn_dset) != VK_SUCCESS) return 0;
+  g_dn_tmp_sz = pix_bytes;
+  return 1;
+}
+
+static void rt_denoise_bind_iter(int iter, VkBuffer src, VkBuffer dst, VkBuffer par) {
+  VkDescriptorBufferInfo bin[3];
+  VkWriteDescriptorSet wr[3];
+  memset(wr, 0, sizeof(wr));
+  bin[0].buffer = src; bin[0].offset = 0; bin[0].range = VK_WHOLE_SIZE;
+  bin[1].buffer = dst; bin[1].offset = 0; bin[1].range = VK_WHOLE_SIZE;
+  bin[2].buffer = par; bin[2].offset = 0; bin[2].range = VK_WHOLE_SIZE;
+  for (int i = 0; i < 3; i++) {
+    wr[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    wr[i].dstSet = g_dn_dset[iter];
+    wr[i].dstBinding = (uint32_t)i;
+    wr[i].descriptorCount = 1;
+    wr[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    wr[i].pBufferInfo = &bin[i];
+  }
+  vkUpdateDescriptorSets(g_dev, 3, wr, 0, NULL);
+}
+
+/* 3-iter A-trous. ssbo[5] stays sample sums; denoised means land in g_dn_tmp. */
+static int rt_denoise_prepare(int32_t dw, int32_t dh, int32_t spp) {
+  if (!g_dn_pipe_ready || !g_ssbo[5].buf) return 0;
+  VkDeviceSize pix = sizeof(float) * 3 * (size_t)dw * (size_t)dh;
+  if (!rt_denoise_ensure_bufs(pix)) return 0;
+  int32_t p0[4] = { dw, dh, 1, spp };
+  int32_t p1[4] = { dw, dh, 2, 0 };
+  int32_t p2[4] = { dw, dh, 4, 0 };
+  memcpy(g_dn_par[0].mapped, p0, sizeof(p0));
+  memcpy(g_dn_par[1].mapped, p1, sizeof(p1));
+  memcpy(g_dn_par[2].mapped, p2, sizeof(p2));
+  rt_denoise_bind_iter(0, g_ssbo[5].buf, g_dn_tmp.buf, g_dn_par[0].buf);
+  rt_denoise_bind_iter(1, g_dn_tmp.buf, g_dn_tmp2.buf, g_dn_par[1].buf);
+  rt_denoise_bind_iter(2, g_dn_tmp2.buf, g_dn_tmp.buf, g_dn_par[2].buf);
+  return 1;
+}
+
+static void rt_denoise_record(int32_t dw, int32_t dh) {
+  uint32_t gx = ((uint32_t)dw + 15u) / 16u;
+  uint32_t gy = ((uint32_t)dh + 15u) / 16u;
+  if (gx < 1) gx = 1;
+  if (gy < 1) gy = 1;
+  VkMemoryBarrier mb;
+  memset(&mb, 0, sizeof(mb));
+  mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+  mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+  mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+  vkCmdBindPipeline(g_cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_dn_pipe);
+  for (int iter = 0; iter < 3; iter++) {
+    vkCmdPipelineBarrier(g_cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+    vkCmdBindDescriptorSets(g_cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_dn_pl, 0, 1, &g_dn_dset[iter], 0, NULL);
+    vkCmdDispatch(g_cmd, gx, gy, 1);
+  }
+}
+#endif
+
+static void rt_fill_params(GpuParams* params, farm_Renderer* r, farm_Scene* scene,
+                           farm_PerspectiveCamera* camera, int32_t dw, int32_t dh,
+                           int32_t ntri, int32_t nmat, int32_t namb, int32_t ndir,
+                           int32_t npt, int32_t nrect, int32_t ntex) {
+  memset(params, 0, sizeof(*params));
+  params->size[0] = dw; params->size[1] = dh;
+  params->size[2] = r->samples; params->size[3] = r->accum_count;
+  params->counts[0] = r->max_bounces; params->counts[1] = ntri;
+  params->counts[2] = nmat; params->counts[3] = namb;
+  params->counts2[0] = ndir; params->counts2[1] = npt;
+  params->counts2[2] = nrect; params->counts2[3] = ntex;
+  params->flags[0] = farm_renderer_roulette_on(r);
+  params->flags[1] = farm_renderer_sampling_mode(r);
+  params->flags[2] = r->path_adaptive_spp ? 1 : 0;
+  params->extra[0] = (float)r->path_adaptive_target;
+  if (scene->hasBackground) {
+    params->background[0] = (float)scene->background.r;
+    params->background[1] = (float)scene->background.g;
+    params->background[2] = (float)scene->background.b;
+  }
+  params->background[3] = (float)camera->f_fov;
+  const double* e = camera->f_matrixWorld.elements;
+  params->cam_pos[0] = (float)e[12]; params->cam_pos[1] = (float)e[13];
+  params->cam_pos[2] = (float)e[14]; params->cam_pos[3] = (float)camera->f_aspect;
+  params->cam_x[0] = (float)e[0]; params->cam_x[1] = (float)e[1]; params->cam_x[2] = (float)e[2];
+  params->cam_y[0] = (float)e[4]; params->cam_y[1] = (float)e[5]; params->cam_y[2] = (float)e[6];
+  params->cam_z[0] = (float)e[8]; params->cam_z[1] = (float)e[9]; params->cam_z[2] = (float)e[10];
+}
+
+static void rt_readback(farm_Renderer* r, int32_t dw, int32_t dh, const float* gpu_acc,
+                        const float* dn_mean, int denoise_ok) {
+  int start_s = r->accum_count;
+  int samples = r->samples;
+  r->accum_count = start_s + samples;
+  int adaptive = r->path_adaptive_spp ? 1 : 0;
+  int32_t fw = r->width;
+  int32_t fh = r->height;
+  for (int32_t y = 0; y < fh; y++) {
+    int32_t sy = (dh == fh) ? y : (y * dh / fh);
+    for (int32_t x = 0; x < fw; x++) {
+      int32_t sx = (dw == fw) ? x : (x * dw / fw);
+      int32_t si = sy * dw + sx;
+      int32_t i = y * fw + x;
+      r->accum[i * 3 + 0] += (double)gpu_acc[si * 3 + 0];
+      r->accum[i * 3 + 1] += (double)gpu_acc[si * 3 + 1];
+      r->accum[i * 3 + 2] += (double)gpu_acc[si * 3 + 2];
+      if (r->spp_count) r->spp_count[i] += samples;
+      if (denoise_ok && dn_mean) {
+        r->framebuffer[i * 3 + 0] = (uint8_t)quantize_f(dn_mean[si * 3 + 0]);
+        r->framebuffer[i * 3 + 1] = (uint8_t)quantize_f(dn_mean[si * 3 + 1]);
+        r->framebuffer[i * 3 + 2] = (uint8_t)quantize_f(dn_mean[si * 3 + 2]);
+      } else {
+        int32_t c = r->accum_count;
+        if (adaptive && r->spp_count && r->spp_count[i] > 0) c = r->spp_count[i];
+        double n = (double)(c > 0 ? c : 1);
+        r->framebuffer[i * 3 + 0] = (uint8_t)quantize_f((float)(r->accum[i * 3 + 0] / n));
+        r->framebuffer[i * 3 + 1] = (uint8_t)quantize_f((float)(r->accum[i * 3 + 1] / n));
+        r->framebuffer[i * 3 + 2] = (uint8_t)quantize_f((float)(r->accum[i * 3 + 2] / n));
+      }
+    }
+  }
+  if (denoise_ok) r->path_denoise_gpu_done = 1;
+}
+
 int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera) {
   if (!ensure_rt_device()) return 0;
+  r->path_denoise_gpu_done = 0;
+
+  int32_t dw = r->width, dh = r->height;
+  rt_preview_dims(r, &dw, &dh);
+
+  int want_dn = 0;
+#ifdef FARM_ENABLE_DENOISE
+  want_dn = (r->path_denoise != 0 && !rt_env_1("FARMOS_PATH_DENOISE_FORCE_FAIL"));
+#endif
+
+  /* Skip host collect/xform when AS + SSBOs already match this scene. */
+  if (g_persist_live && g_fast_scene == scene &&
+      g_fast_full_w == r->width && g_fast_full_h == r->height &&
+      g_tlas && g_blas && g_dset && g_cmd &&
+      g_ssbo[0].mapped_ok && g_ssbo[5].mapped_ok &&
+      g_ssbo_sz[5] >= sizeof(float) * 3 * (size_t)dw * (size_t)dh) {
+    GpuParams params;
+    rt_fill_params(&params, r, scene, camera, dw, dh,
+                   g_fast_ntri, g_fast_nmat, g_fast_namb, g_fast_ndir,
+                   g_fast_npt, g_fast_nrect, g_fast_ntex);
+    memcpy(g_ssbo[0].mapped, &params, sizeof(params));
+    int dn_ok = 0;
+#ifdef FARM_ENABLE_DENOISE
+    if (want_dn) dn_ok = rt_denoise_prepare(dw, dh, r->samples);
+#endif
+    if (vkResetCommandBuffer(g_cmd, 0) != VK_SUCCESS) return 0;
+    VkCommandBufferBeginInfo bi;
+    memset(&bi, 0, sizeof(bi));
+    bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(g_cmd, &bi) != VK_SUCCESS) return 0;
+    vkCmdBindPipeline(g_cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_pipe);
+    vkCmdBindDescriptorSets(g_cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_pl, 0, 1, &g_dset, 0, NULL);
+    uint32_t gx = ((uint32_t)dw + 7u) / 8u;
+    uint32_t gy = ((uint32_t)dh + 7u) / 8u;
+    if (gx < 1) gx = 1;
+    if (gy < 1) gy = 1;
+    vkCmdDispatch(g_cmd, gx, gy, 1);
+#ifdef FARM_ENABLE_DENOISE
+    if (dn_ok) rt_denoise_record(dw, dh);
+#endif
+    {
+      VkMemoryBarrier mb;
+      memset(&mb, 0, sizeof(mb));
+      mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+      mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+      mb.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+      vkCmdPipelineBarrier(g_cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                           0, 1, &mb, 0, NULL, 0, NULL);
+    }
+    if (vkEndCommandBuffer(g_cmd) != VK_SUCCESS) return 0;
+    VkSubmitInfo si;
+    memset(&si, 0, sizeof(si));
+    si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &g_cmd;
+    if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS ||
+        vkQueueWaitIdle(g_queue) != VK_SUCCESS) return 0;
+    const float* dn = NULL;
+#ifdef FARM_ENABLE_DENOISE
+    if (dn_ok) dn = (const float*)g_dn_tmp.mapped;
+#endif
+    rt_readback(r, dw, dh, (const float*)g_ssbo[5].mapped, dn, dn_ok);
+    return 1;
+  }
 
   InstAcc* inst = NULL; int32_t ninst = 0, cap_i = 0, mesh_i = 0;
   AmbAcc* amb = NULL; int32_t namb = 0, cap_a = 0;
@@ -932,44 +1264,9 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
     lights[lo++] = (float)rects[i].height; lights[lo++] = 0; lights[lo++] = 0; lights[lo++] = 0;
   }
 
-  typedef struct {
-    int32_t size[4];
-    int32_t counts[4];
-    int32_t counts2[4];
-    int32_t flags[4];
-    float background[4];
-    float cam_pos[4];
-    float cam_x[4];
-    float cam_y[4];
-    float cam_z[4];
-    float extra[4];
-  } GpuParams;
   GpuParams params;
-  memset(&params, 0, sizeof(params));
-  params.size[0] = r->width; params.size[1] = r->height;
-  params.size[2] = r->samples; params.size[3] = r->accum_count;
-  params.counts[0] = r->max_bounces; params.counts[1] = ntri;
-  params.counts[2] = nmat; params.counts[3] = namb;
-  params.counts2[0] = ndir; params.counts2[1] = npt;
-  params.counts2[2] = nrect; params.counts2[3] = ntex;
-  params.flags[0] = farm_renderer_roulette_on(r);
-  params.flags[1] = farm_renderer_sampling_mode(r);
-  params.flags[2] = r->path_adaptive_spp ? 1 : 0;
-  params.extra[0] = (float)r->path_adaptive_target;
-  if (scene->hasBackground) {
-    params.background[0] = (float)scene->background.r;
-    params.background[1] = (float)scene->background.g;
-    params.background[2] = (float)scene->background.b;
-  }
-  params.background[3] = (float)camera->f_fov;
-  const double* e = camera->f_matrixWorld.elements;
-  params.cam_pos[0] = (float)e[12]; params.cam_pos[1] = (float)e[13];
-  params.cam_pos[2] = (float)e[14]; params.cam_pos[3] = (float)camera->f_aspect;
-  params.cam_x[0] = (float)e[0]; params.cam_x[1] = (float)e[1]; params.cam_x[2] = (float)e[2];
-  params.cam_y[0] = (float)e[4]; params.cam_y[1] = (float)e[5]; params.cam_y[2] = (float)e[6];
-  params.cam_z[0] = (float)e[8]; params.cam_z[1] = (float)e[9]; params.cam_z[2] = (float)e[10];
+  rt_fill_params(&params, r, scene, camera, dw, dh, ntri, nmat, namb, ndir, npt, nrect, ntex);
 
-  int32_t npix = r->width * r->height;
   uint32_t host_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
   uint32_t ssbo_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
   VkDeviceSize sizes[6];
@@ -978,7 +1275,7 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
   sizes[2] = sizeof(float) * 16 * (size_t)nmat;
   sizes[3] = sizeof(float) * 4 * (size_t)nlight_vec4;
   sizes[4] = sizeof(float) * (size_t)(ntex > 0 ? ntex : 4);
-  sizes[5] = sizeof(float) * 3 * (size_t)npix;
+  sizes[5] = sizeof(float) * 3 * (size_t)dw * (size_t)dh;
 
   /* Lever: persist BLAS/TLAS + SSBOs. Shader / packing / 8×8 dispatch unchanged. */
   uint64_t as_fp = 1469598103934665603ull;
@@ -1174,13 +1471,21 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
     }
   }
 
+  int dn_ok = 0;
+#ifdef FARM_ENABLE_DENOISE
+  if (want_dn) dn_ok = rt_denoise_prepare(dw, dh, r->samples);
+#endif
+
   vkCmdBindPipeline(g_cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_pipe);
   vkCmdBindDescriptorSets(g_cmd, VK_PIPELINE_BIND_POINT_COMPUTE, g_pl, 0, 1, &g_dset, 0, NULL);
-  uint32_t gx = ((uint32_t)r->width + 7u) / 8u;
-  uint32_t gy = ((uint32_t)r->height + 7u) / 8u;
+  uint32_t gx = ((uint32_t)dw + 7u) / 8u;
+  uint32_t gy = ((uint32_t)dh + 7u) / 8u;
   if (gx < 1) gx = 1;
   if (gy < 1) gy = 1;
   vkCmdDispatch(g_cmd, gx, gy, 1);
+#ifdef FARM_ENABLE_DENOISE
+  if (dn_ok) rt_denoise_record(dw, dh);
+#endif
   {
     VkMemoryBarrier mb;
     memset(&mb, 0, sizeof(mb));
@@ -1199,26 +1504,21 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
   if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS ||
       vkQueueWaitIdle(g_queue) != VK_SUCCESS) goto done;
 
-  float* gpu_acc = (float*)g_ssbo[5].mapped;
-  int start_s = r->accum_count;
-  int samples = r->samples;
-  r->accum_count = start_s + samples;
-  int adaptive = r->path_adaptive_spp ? 1 : 0;
-  for (int32_t i = 0; i < npix; i++) {
-    r->accum[i * 3 + 0] += (double)gpu_acc[i * 3 + 0];
-    r->accum[i * 3 + 1] += (double)gpu_acc[i * 3 + 1];
-    r->accum[i * 3 + 2] += (double)gpu_acc[i * 3 + 2];
-    if (r->spp_count) r->spp_count[i] += samples;
-    int32_t c = r->accum_count;
-    if (adaptive && r->spp_count && r->spp_count[i] > 0) c = r->spp_count[i];
-    double n = (double)(c > 0 ? c : 1);
-    float mx = (float)(r->accum[i * 3 + 0] / n);
-    float my = (float)(r->accum[i * 3 + 1] / n);
-    float mz = (float)(r->accum[i * 3 + 2] / n);
-    r->framebuffer[i * 3 + 0] = (uint8_t)quantize_f(mx);
-    r->framebuffer[i * 3 + 1] = (uint8_t)quantize_f(my);
-    r->framebuffer[i * 3 + 2] = (uint8_t)quantize_f(mz);
-  }
+  const float* dn = NULL;
+#ifdef FARM_ENABLE_DENOISE
+  if (dn_ok) dn = (const float*)g_dn_tmp.mapped;
+#endif
+  rt_readback(r, dw, dh, (const float*)g_ssbo[5].mapped, dn, dn_ok);
+  g_fast_scene = scene;
+  g_fast_full_w = r->width;
+  g_fast_full_h = r->height;
+  g_fast_ntri = ntri;
+  g_fast_nmat = nmat;
+  g_fast_namb = namb;
+  g_fast_ndir = ndir;
+  g_fast_npt = npt;
+  g_fast_nrect = nrect;
+  g_fast_ntex = ntex;
   success = 1;
 
 done:

@@ -1,0 +1,52 @@
+#version 450
+/* Farmos-owned spatial A-trous (one iteration). Bindings: src, dst, params(w,h,step,spp).
+   If spp > 0, src is treated as sample sums and converted to means before filtering. */
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Src { float src[]; };
+layout(std430, binding = 1) writeonly buffer Dst { float dst[]; };
+layout(std430, binding = 2) readonly buffer Params { ivec4 P; };
+
+const float K5[5] = float[](1.0 / 16.0, 4.0 / 16.0, 6.0 / 16.0, 4.0 / 16.0, 1.0 / 16.0);
+const float SIGMA = 0.35;
+const float INV_TWO_S2 = 1.0 / (2.0 * SIGMA * SIGMA);
+
+vec3 load_rgb(int x, int y, int w, int h, int spp) {
+  x = clamp(x, 0, w - 1);
+  y = clamp(y, 0, h - 1);
+  int i = (y * w + x) * 3;
+  vec3 c = vec3(src[i], src[i + 1], src[i + 2]);
+  if (spp > 0) c /= float(spp);
+  return c;
+}
+
+void main() {
+  int w = P.x;
+  int h = P.y;
+  int step = P.z;
+  int spp = P.w;
+  int x = int(gl_GlobalInvocationID.x);
+  int y = int(gl_GlobalInvocationID.y);
+  if (x >= w || y >= h) return;
+
+  vec3 c0 = load_rgb(x, y, w, h, spp);
+  float l0 = dot(c0, vec3(0.2126, 0.7152, 0.0722));
+  vec3 acc = vec3(0.0);
+  float wsum = 0.0;
+  for (int jy = -2; jy <= 2; jy++) {
+    for (int jx = -2; jx <= 2; jx++) {
+      vec3 c = load_rgb(x + jx * step, y + jy * step, w, h, spp);
+      float kw = K5[jx + 2] * K5[jy + 2];
+      float dl = dot(c, vec3(0.2126, 0.7152, 0.0722)) - l0;
+      float cw = exp(-dl * dl * INV_TWO_S2);
+      float wt = kw * cw;
+      acc += wt * c;
+      wsum += wt;
+    }
+  }
+  vec3 o = (wsum > 0.0) ? (acc / wsum) : c0;
+  int di = (y * w + x) * 3;
+  dst[di] = o.r;
+  dst[di + 1] = o.g;
+  dst[di + 2] = o.b;
+}
