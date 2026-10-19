@@ -68,7 +68,12 @@ import { Vector3, Matrix4, Color } from "farmos:math";
 
 `farmos:math` MUST export exactly the types listed in §1.1 (and their constructors as type names usable with `new` / struct literals). No other names are required in M2.
 
-An additional helper MAY be exported: `random01(): float`, returning a value in `[0, 1)` from an entropy-backed generator (`QueryPerformanceCounter` on Windows; `clock_gettime` / `gettimeofday` on Linux). Unused imports MUST DCE it (hello size/symbols unchanged; AC-M2-01 / B-06 spirit).
+Additional helpers MAY be exported:
+
+- `random01(): float`, returning a value in `[0, 1)` from an entropy-backed generator (`QueryPerformanceCounter` on Windows; `clock_gettime` / `gettimeofday` on Linux).
+- `getFrameIndex(): int`, returning the decimal value of environment variable `FARMOS_FRAME`. Unset, empty, or non-numeric (the entire string MUST parse as a base-10 integer) → `0`. Used by orbit / sequence demos so a script can set the camera per process without rebuilding.
+
+Unused imports MUST DCE both helpers (hello size/symbols unchanged; AC-M2-01 / B-06 spirit).
 
 ### 2.3 Linking / DCE
 

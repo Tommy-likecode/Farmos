@@ -1,0 +1,6 @@
+import { getFrameIndex } from "farmos:math";
+
+function main(): int {
+  println(getFrameIndex());
+  return 0;
+}

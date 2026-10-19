@@ -12,6 +12,7 @@ Normative names (`spec/M6-hardening.md` §9). Each MUST build with `farmc` and s
 | `06_vulkan_cornell.fm` | M7 Cornell with Vulkan opt-in | ≤ 400 KiB GPU-linked |
 | `07_vulkan_rt_cornell.fm` | M9 Cornell with HW RT opt-in | ≤ 500 KiB RT-linked |
 | `artwork_silver_still.fm` | 1920×1080 path-traced still (silver sphere + random matte shapes) | not a size gate |
+| `artwork_silver_orbit.fm` | Same scene, **fixed** matte placements, 72-frame camera orbit | not a size gate |
 
 Bodies are production demos derived from `spec/tests/M3|M4|M5|M7` fixtures. Smoke: `scripts/run_examples.ps1` / `scripts/run_examples.sh` (01..05). `examples/m4_cornell_800x600.fm` is the B-05 peak-RAM driver (not part of the 01..05 smoke set). `06_vulkan_cornell.fm` is the M7 GPU-linked size sample; it falls back to CPU when no device is present. `07_vulkan_rt_cornell.fm` is the M9 RT-linked size sample (HW RT → compute → CPU).
 
@@ -23,3 +24,11 @@ farmc build examples\artwork_silver_still.fm -o artwork_silver_still.exe
 ```
 
 Writes `artwork_silver_still.png` in the process CWD. Prefers HW RT (`isVulkanRayTracingAvailable()`), else compute Vulkan, else CPU. Matte object positions change each run via `random01()`.
+
+`artwork_silver_orbit.fm` is the same composition with **hardcoded** matte positions (no `random01()`) and a camera orbit around lookAt `(0, 0.52, 0)`. Frame index is `getFrameIndex()` / env `FARMOS_FRAME` (default 0). 8 spp + `PATH_DENOISE_SPATIAL`. Writes `frame_XXXX.png` in the process CWD. On TommyLaptop with farmc Release:
+
+```
+powershell -File scripts\render_artwork_silver_orbit.ps1 -Farmc build\Release\farmc.exe
+```
+
+That builds once, loops frames 0..71, then `ffmpeg` → `out\artwork_silver_orbit.mp4` (H.264 yuv420p, 24 fps). Linux twin: `scripts/render_artwork_silver_orbit.sh`.

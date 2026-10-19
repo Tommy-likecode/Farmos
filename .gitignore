@@ -23,6 +23,12 @@ test_type
 
 /[0-9][0-9][0-9]_*
 
+# Generated silver-orbit sequence / encode (scripts/render_artwork_silver_orbit.*)
+/out/artwork_silver_orbit/
+/out/artwork_silver_orbit.mp4
+/out/artwork_silver_orbit.exe
+/out/artwork_silver_orbit.bin
+
 # Accidental farmc -o outputs (ELF/PE, no extension) and scratch sources
 # dropped in the repo root. Root-only (`/…`); `/test*` would ignore tests/.
 /test_*

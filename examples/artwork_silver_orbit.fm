@@ -1,0 +1,122 @@
+// Reproducible 72-frame camera orbit of the silver still (same meshes / materials / lights).
+// Matte placements are FIXED midpoints of the still's random01() ranges — shipped v1 still
+// coords were not recoverable from comments / git history / PNG notes.
+//
+// Camera: lookAt (0, 0.52, 0); still pose (4.55, 2.25, 5.35) at frame 0; full orbit
+//   angle = 2π * getFrameIndex() / 72. getFrameIndex() reads env FARMOS_FRAME (default 0).
+// Render: 1920×1080, 8 spp, 6 bounces, PATH_DENOISE_SPATIAL, prefer PATH_BACKEND_VULKAN_RT.
+// Writes frame_XXXX.png in the process CWD (scripts/render_artwork_silver_orbit.ps1).
+import { Scene, PerspectiveCamera, PlaneGeometry, BoxGeometry, SphereGeometry,
+         CylinderGeometry, MeshStandardMaterial, Mesh,
+         RectAreaLight, Renderer, PATH_BACKEND_VULKAN, PATH_BACKEND_VULKAN_RT,
+         PATH_DENOISE_SPATIAL } from "farmos:scene";
+import { Color, Vector3, Quaternion, getFrameIndex } from "farmos:math";
+
+function pad4(n: int): string {
+  let s: string = str(n);
+  while (len(s) < 4) {
+    s = "0" + s;
+  }
+  return s;
+}
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0.42, 0.45, 0.50));
+
+  const frame: int = getFrameIndex();
+  const camera: PerspectiveCamera = new PerspectiveCamera(34, 1920.0 / 1080.0, 0.1, 100);
+  let offset: Vector3 = new Vector3(4.55, 0.0, 5.35);
+  let q: Quaternion = new Quaternion();
+  q.setFromAxisAngle(new Vector3(0.0, 1.0, 0.0), 6.283185307179586 * float(frame) / 72.0);
+  offset.applyQuaternion(q);
+  camera.position.set(offset.x, 2.25, offset.z);
+  camera.lookAt(0, 0.52, 0);
+
+  const floorMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.93, 0.93, 0.94));
+  floorMat.setRoughness(1);
+  floorMat.setMetalness(0);
+  const floor: Mesh = new Mesh(new PlaneGeometry(16, 16), floorMat);
+  floor.quaternion.x = -0.7071067811865476;
+  floor.quaternion.y = 0;
+  floor.quaternion.z = 0;
+  floor.quaternion.w = 0.7071067811865476;
+  scene.add(floor);
+
+  const wallMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.62, 0.66, 0.72));
+  wallMat.setRoughness(1);
+  const wall: Mesh = new Mesh(new PlaneGeometry(16, 8), wallMat);
+  wall.position.set(0, 3.2, -4.2);
+  scene.add(wall);
+
+  const silverMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.92, 0.93, 0.95));
+  silverMat.setMetalness(1);
+  silverMat.setRoughness(0.04);
+  const silver: Mesh = new Mesh(new SphereGeometry(0.52, 32, 16), silverMat);
+  silver.position.set(0, 0.52, 0);
+  scene.add(silver);
+
+  const boxX: float = -1.275;
+  const boxZ: float = 1.225;
+  const boxMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.78, 0.18, 0.16));
+  boxMat.setRoughness(1);
+  boxMat.setMetalness(0);
+  const box: Mesh = new Mesh(new BoxGeometry(0.55, 0.72, 0.48), boxMat);
+  box.position.set(boxX, 0.36, boxZ);
+  scene.add(box);
+
+  const cylX: float = 1.4;
+  const cylZ: float = 0.275;
+  const cylMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.12, 0.48, 0.42));
+  cylMat.setRoughness(1);
+  cylMat.setMetalness(0);
+  const cyl: Mesh = new Mesh(new CylinderGeometry(0.28, 0.95, 32), cylMat);
+  cyl.position.set(cylX, 0.475, cylZ);
+  scene.add(cyl);
+
+  const ballX: float = -0.8;
+  const ballZ: float = -0.975;
+  const ballMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.18, 0.32, 0.72));
+  ballMat.setRoughness(1);
+  ballMat.setMetalness(0);
+  const ball: Mesh = new Mesh(new SphereGeometry(0.40, 32, 16), ballMat);
+  ball.position.set(ballX, 0.40, ballZ);
+  scene.add(ball);
+
+  // Large overhead softbox: radiance (not power), so intensity is lower than the
+  // old 2.8×1.6 key. No DirectionalLight — that was the hard-edged shadow source.
+  const key: RectAreaLight = new RectAreaLight(0xffffff, 6.5, 8.0, 6.5);
+  key.position.set(0.15, 5.8, 0.4);
+  key.lookAt(0, 0.2, 0);
+  scene.add(key);
+  const fill: RectAreaLight = new RectAreaLight(0xffe6cc, 3.2, 3.5, 2.6);
+  fill.position.set(-2.8, 3.1, 2.0);
+  fill.lookAt(0, 0.5, 0);
+  scene.add(fill);
+
+  const renderer: Renderer = new Renderer();
+  renderer.setSize(1920, 1080);
+  renderer.setSamples(8);
+  renderer.setMaxBounces(6);
+  renderer.setPathDenoise(PATH_DENOISE_SPATIAL);
+  if (renderer.isVulkanRayTracingAvailable()) {
+    renderer.setPathBackend(PATH_BACKEND_VULKAN_RT);
+    println("vulkan_rt");
+  } else if (renderer.isVulkanPathAvailable()) {
+    renderer.setPathBackend(PATH_BACKEND_VULKAN);
+    println("vulkan");
+  } else {
+    println("cpu");
+  }
+  println(8);
+  println(frame);
+  println(boxX);
+  println(boxZ);
+  println(cylX);
+  println(cylZ);
+  println(ballX);
+  println(ballZ);
+  renderer.renderPath(scene, camera);
+  renderer.savePNG("frame_" + pad4(frame) + ".png");
+  return 0;
+}

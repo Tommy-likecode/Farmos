@@ -92,3 +92,7 @@ int32_t farm_Color_getHex(farm_Color c);
 
 /* Entropy-backed uniform float in [0, 1). --gc-sections drops it when unused. */
 double farm_random01(void);
+
+/* Frame index for orbit / sequence demos. Reads FARMOS_FRAME (decimal).
+   Unset, empty, or non-numeric → 0. Unused imports DCE (--gc-sections). */
+int64_t farm_getFrameIndex(void);

@@ -443,3 +443,13 @@ double farm_random01(void) {
   uint64_t r = s * 0x2545F4914F6CDD1DULL;
   return (double)(r >> 11) * (1.0 / 9007199254740992.0);
 }
+
+int64_t farm_getFrameIndex(void) {
+  const char* e = getenv("FARMOS_FRAME");
+  char* end = NULL;
+  long long v;
+  if (!e || !e[0]) return 0;
+  v = strtoll(e, &end, 10);
+  if (end == e || (end && *end != '\0')) return 0;
+  return (int64_t)v;
+}

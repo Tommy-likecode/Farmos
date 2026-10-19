@@ -2293,6 +2293,19 @@ static Module create_farmos_math_module() {
     f.body = std::move(block);
     m.functions.push_back(std::move(f));
   }
+
+  {
+    FunctionDecl f;
+    f.name = "getFrameIndex";
+    f.exported = true;
+    f.c_sym = "farm_getFrameIndex";
+    f.ret = Type::ty_int();
+    f.loc = SourceLoc{1, 1};
+    auto block = std::make_unique<Stmt>();
+    block->kind = StmtKind::Block;
+    f.body = std::move(block);
+    m.functions.push_back(std::move(f));
+  }
   
   return m;
 }
@@ -3170,7 +3183,8 @@ static int cmd_build(std::vector<std::string> args) {
   bool link_vulkan = program_uses_vulkan(loader.prog);
   bool link_vulkan_rt = program_uses_vulkan_rt(loader.prog);
   if (link_vulkan_rt) link_vulkan = true; /* compute fallback for backend 2 */
-  bool link_math = program_uses_random01(loader.prog);
+  bool link_math = program_uses_random01(loader.prog) ||
+                   program_uses_getFrameIndex(loader.prog);
   bool link_denoise = program_uses_denoise(loader.prog);
   int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray, link_physics, link_vulkan, link_vulkan_rt, link_math, link_denoise);
   if (rc == 0) {

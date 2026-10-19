@@ -11,6 +11,8 @@ Spec: `spec/M10-denoise-interactive.md` (FINAL). Fixtures: `spec/tests/M10/` (ct
 
 Linux: `bash scripts/run_suite_linux.sh build/farmc spec/tests/M10`
 
+Orbit demo (additive; still composition unchanged): `examples/artwork_silver_orbit.fm` + `scripts/render_artwork_silver_orbit.ps1`. Fixed matte placements; `getFrameIndex()` / `FARMOS_FRAME` drives a 72-frame camera orbit. TommyLaptop: `powershell -File scripts\render_artwork_silver_orbit.ps1 -Farmc build\Release\farmc.exe` → `out\artwork_silver_orbit.mp4`.
+
 ---
 
 ## M9 — hardware ray tracing

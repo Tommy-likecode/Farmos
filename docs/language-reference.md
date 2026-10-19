@@ -84,7 +84,7 @@ Runtime traps (process exit): 101 integer `/0`, 102 bounds, 103 non-finite `int(
 
 `Vector2/3/4`, `Matrix3/4`, `Quaternion`, `Color`, `Euler`, `Ray`, `Box3`, `Sphere`, `RayHit`. Math types are **structs (values)**. See the [porting guide](porting-guide.md) for the M2 §3.7 copy gotcha (`let p = mesh.position` copies).
 
-`random01(): float` returns a value in `[0, 1)` seeded from `QueryPerformanceCounter` (Windows) or `clock_gettime` / `gettimeofday` (Linux). Unused imports DCE it (hello size unchanged).
+`random01(): float` returns a value in `[0, 1)` seeded from `QueryPerformanceCounter` (Windows) or `clock_gettime` / `gettimeofday` (Linux). `getFrameIndex(): int` returns the decimal value of `FARMOS_FRAME` (unset / empty / non-numeric → `0`) so a script can drive a camera orbit per process. Unused imports DCE both (hello size unchanged).
 
 Overloadable operators: `+ - * / % == !=` and unary `-`. **Not** overloadable: `!`, `=`, comparisons, `&&` `||`, `[]`, `()`, compound assigns → **E0605**.
 

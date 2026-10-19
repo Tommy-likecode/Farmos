@@ -20,4 +20,6 @@ bool program_uses_physics(Program& prog);
 bool program_uses_math(Program& prog);
 // True when a user module calls farmos:math random01() (gates farm_math.c without scene).
 bool program_uses_random01(Program& prog);
+// True when a user module calls farmos:math getFrameIndex() (gates farm_math.c without scene).
+bool program_uses_getFrameIndex(Program& prog);
 }

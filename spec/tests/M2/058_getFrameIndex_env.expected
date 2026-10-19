@@ -1,0 +1,6 @@
+# kind: run
+# exit: 0
+# env: FARMOS_FRAME=17
+# stdout:
+17
+# end

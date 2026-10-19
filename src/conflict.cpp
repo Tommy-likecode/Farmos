@@ -1596,6 +1596,7 @@ void seed_scene_summaries(Analyzer& A) {
   {
     Summary r01; r01.seeded = true;
     A.sums["farm_random01"] = r01;
+    A.sums["farm_getFrameIndex"] = r01;
   }
   disp("farm_MeshBasicMaterial", "farm_MeshBasicMaterial_dispose");
   disp("farm_MeshStandardMaterial", "farm_MeshStandardMaterial_dispose");
