@@ -2,6 +2,9 @@
 #include "farm_scene.h"
 #include "farm_math.h"
 #include "farm_rt.h"
+#ifdef FARM_ENABLE_DENOISE
+#include "farm_denoise.h"
+#endif
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1227,11 +1230,108 @@ static int farm_env_is_1(const char* name) {
   return e && e[0] == '1' && e[1] == '\0';
 }
 
+static void farm_renderer_maybe_denoise(farm_Renderer* self) {
+#ifdef FARM_ENABLE_DENOISE
+  farm_renderer_apply_path_denoise(self);
+#else
+  if (self->path_denoise != 0 && farm_env_is_1("FARMOS_PATH_DENOISE_STRICT"))
+    farm_trap(120, "path denoise failed");
+#endif
+}
+
+static void farm_preview_snapshot_camera(farm_Renderer* self, farm_PerspectiveCamera* camera) {
+  self->preview_cam_px = camera->f_position.f_x;
+  self->preview_cam_py = camera->f_position.f_y;
+  self->preview_cam_pz = camera->f_position.f_z;
+  self->preview_cam_qx = camera->f_quaternion.f_x;
+  self->preview_cam_qy = camera->f_quaternion.f_y;
+  self->preview_cam_qz = camera->f_quaternion.f_z;
+  self->preview_cam_qw = camera->f_quaternion.w;
+}
+
+static int farm_preview_camera_dirty(const farm_Renderer* self) {
+  const farm_PerspectiveCamera* c = self->preview_camera;
+  if (!c) return 1;
+  return c->f_position.f_x != self->preview_cam_px ||
+         c->f_position.f_y != self->preview_cam_py ||
+         c->f_position.f_z != self->preview_cam_pz ||
+         c->f_quaternion.f_x != self->preview_cam_qx ||
+         c->f_quaternion.f_y != self->preview_cam_qy ||
+         c->f_quaternion.f_z != self->preview_cam_qz ||
+         c->f_quaternion.w != self->preview_cam_qw;
+}
+
+void farm_Renderer_beginPathPreview(farm_Renderer* self, farm_Scene* scene, farm_PerspectiveCamera* camera) {
+  if (self->disposed) farm_trap(105, "use after dispose");
+  farm_Renderer_resetAccumulation(self);
+  self->preview_active = 1;
+  self->preview_in_advance = 0;
+  self->preview_spp = 0;
+  self->preview_scene = scene;
+  self->preview_camera = camera;
+  self->preview_div = (self->width >= 640 && self->height >= 360) ? 16 : 1;
+  if (camera) farm_preview_snapshot_camera(self, camera);
+  /* Warm AS / SSBO persist so first advance is reuse. Preview spp stays 0. */
+  if (scene && camera) {
+    int32_t saved = self->samples;
+    self->samples = 1;
+    self->preview_in_advance = 1;
+    farm_Renderer_renderPath(self, scene, camera);
+    self->preview_in_advance = 0;
+    self->samples = saved;
+    farm_Renderer_resetAccumulation(self);
+    self->preview_spp = 0;
+  }
+}
+
+int8_t farm_Renderer_advancePathPreview(farm_Renderer* self, int64_t sppStep) {
+  if (self->disposed) farm_trap(105, "use after dispose");
+  if (!self->preview_active || !self->preview_scene || !self->preview_camera)
+    return (int8_t)0;
+  if (farm_preview_camera_dirty(self)) {
+    farm_Renderer_resetAccumulation(self);
+    self->preview_spp = 0;
+    farm_preview_snapshot_camera(self, self->preview_camera);
+  }
+  if (sppStep < 1) sppStep = 1;
+  if (sppStep > 1000000) sppStep = 1000000;
+  int32_t saved = self->samples;
+  self->samples = (int32_t)sppStep;
+  self->preview_in_advance = 1;
+  farm_Renderer_renderPath(self, self->preview_scene, self->preview_camera);
+  self->preview_in_advance = 0;
+  self->samples = saved;
+  self->preview_spp += (int32_t)sppStep;
+  return self->preview_spp < saved ? (int8_t)1 : (int8_t)0;
+}
+
+void farm_Renderer_finishPathPreview(farm_Renderer* self) {
+  self->preview_active = 0;
+  self->preview_in_advance = 0;
+  self->preview_div = 1;
+  self->preview_scene = NULL;
+  self->preview_camera = NULL;
+}
+
+int64_t farm_Renderer_getPathPreviewSpp(farm_Renderer* self) {
+  return self->preview_spp;
+}
+
 void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_PerspectiveCamera* camera) {
   if (self->disposed) farm_trap(105, "use after dispose");
   if (self->width <= 0 || self->height <= 0) farm_trap(107, "invalid renderer size");
   if (self->samples < 1) farm_trap(112, "invalid sample count");
   if (self->max_bounces < 0) farm_trap(113, "invalid bounce count");
+  if (self->preview_active && !self->preview_in_advance) {
+    /* Default renderPath is a one-shot full frame, not a silent continue. */
+    self->preview_active = 0;
+    self->preview_div = 1;
+    self->preview_scene = NULL;
+    self->preview_camera = NULL;
+    self->preview_spp = 0;
+    farm_Renderer_resetAccumulation(self);
+  }
+  self->path_denoise_gpu_done = 0;
 
   farm_Scene_updateMatrixWorld(scene, true);
   farm_PerspectiveCamera_updateMatrixWorld(camera, true);
@@ -1251,18 +1351,27 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
 #else
     (void)force_rt;
 #endif
-    if (rt_ok) return;
+    if (rt_ok) {
+      farm_renderer_maybe_denoise(self);
+      return;
+    }
     if (farm_env_is_1("FARMOS_PATH_GPU_STRICT"))
       farm_trap(117, "vulkan path failed");
     int gpu_ok = 0;
     if (!farm_env_is_1("FARMOS_VULKAN_FORCE_FAIL"))
       gpu_ok = farm_vk_render_path(self, scene, camera);
-    if (gpu_ok) return;
+    if (gpu_ok) {
+      farm_renderer_maybe_denoise(self);
+      return;
+    }
   } else if (self->path_backend == 1) {
     int gpu_ok = 0;
     if (!farm_env_is_1("FARMOS_VULKAN_FORCE_FAIL"))
       gpu_ok = farm_vk_render_path(self, scene, camera);
-    if (gpu_ok) return;
+    if (gpu_ok) {
+      farm_renderer_maybe_denoise(self);
+      return;
+    }
     if (farm_env_is_1("FARMOS_PATH_GPU_STRICT"))
       farm_trap(117, "vulkan path failed");
   }
@@ -1341,4 +1450,5 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
     self->framebuffer[i * 3 + 1] = (uint8_t)quantize(self->accum[i * 3 + 1] / n);
     self->framebuffer[i * 3 + 2] = (uint8_t)quantize(self->accum[i * 3 + 2] / n);
   }
+  farm_renderer_maybe_denoise(self);
 }

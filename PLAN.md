@@ -142,6 +142,27 @@ M9 — Hardware ray tracing [added 2026-10-16 by PM/user]
 - Open questions: **none** (OQ-M9-01..08 all A).
 - Spec: `spec/M9-hardware-rt.md` (**FINAL**); fixtures: `spec/tests/M9/`.
 
+M10 — Denoise / interactive path tracing [added 2026-10-18 by PM/user]
+- User chose denoise-interactive after M9 (52b1aebc). Reopens denoise (was OUT in M9).
+- Status: **FINAL** (PM 2026-10-18: OQ-M10-01..08 A; PM 2026-10-19: OQ-M10-09 A).
+- DECIDED 2026-10-18 (OQ-M10-01..08 all option A) — still binding except OQ-M10-03 wall-clock / stills-gate spp **superseded** by OQ-M10-09 A:
+  - OQ-M10-01 A: stills denoise + progressive interactive API; **no** OS window/swapchain (preview via path + savePNG/readback).
+  - OQ-M10-02 A: Farmos-owned Vulkan/CPU spatial (A-trous/bilateral); **no** OIDN/NVIDIA DLL.
+  - OQ-M10-03 A: silver still 1920×1080 ≤**64 spp** + denoise; median ≤**1500 ms** TommyLaptop HW RT; `# png_tol: 8` vs 256-spp undenoised. (**Historical** — wall-clock / stills-gate spp **superseded** by OQ-M10-09 A; `# png_tol: 8` remains.)
+  - OQ-M10-04 A: first useful ≤**250 ms** (≤8–16 spp); subsequent steps ≤**100 ms**; no window — **unchanged** by OQ-M10-09.
+  - OQ-M10-05 A: additive `setPathDenoise` / `getPathDenoise` + `PATH_DENOISE_*`; default **OFF**.
+  - OQ-M10-06 A: DLSS/vendor upscalers **OUT**.
+  - OQ-M10-07 A: denoise-linked ≤**600 KiB**; hello ≤20; RT ≤500; compute ≤400; glass+mirror ≤300.
+  - OQ-M10-08 A: denoise fail soft (leave noisy); `FARMOS_PATH_DENOISE_STRICT=1` → trap **120**-family; M9 RT STRICT unchanged.
+- DECIDED 2026-10-19 (OQ-M10-09 option A; user chose relax-stills-ac):
+  - Primary stills gate: ≤**8 spp** + `PATH_DENOISE_SPATIAL`; median ≤**5500 ms** TommyLaptop HW RT; `# png_tol: 8` vs 256-spp undenoised.
+  - Optional secondary vs M9 4881 / denoise-OFF ~4044; tip `e15ee34` median 5046 PASSES under A.
+  - **Supersedes** OQ-M10-03 A wall-clock / stills-gate spp; progressive / API / stack / size / STRICT unchanged.
+- Out: DLSS/Swapper; OptiX; full game engine; OS window/swapchain; artwork variants; GPU raster.
+- AC: see AC-M10-01..13 in `spec/M10-denoise-interactive.md` (AC-M10-05 binding under OQ-M10-09 A).
+- Open questions: **none**.
+- Spec: `spec/M10-denoise-interactive.md` (**FINAL**); fixtures: `spec/tests/M10/`.
+
 ## Team
 - Projects Manager: plan, priorities, handoffs, acceptance.
 - poteto: all coding (via Cursor cloud agents), per milestone, reports status/blockers.

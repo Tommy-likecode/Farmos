@@ -155,6 +155,22 @@ try {
     "  return 0;",
     "}"
   )
+  $denoiseSrc = Join-Path $td "denoise_demo.fm"
+  Set-Content -Encoding ASCII -LiteralPath $denoiseSrc @(
+    'import { Scene, PerspectiveCamera, Renderer, PATH_DENOISE_SPATIAL } from "farmos:scene";',
+    'import { Color } from "farmos:math";',
+    "function main(): int {",
+    "  const scene: Scene = new Scene();",
+    "  scene.setBackground(new Color(0x4488ff));",
+    "  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);",
+    "  camera.position.z = 5;",
+    "  const renderer: Renderer = new Renderer(8, 8);",
+    "  renderer.setSamples(1);",
+    "  renderer.setPathDenoise(PATH_DENOISE_SPATIAL);",
+    "  renderer.renderPath(scene, camera);",
+    "  return 0;",
+    "}"
+  )
 
   $hello = Join-Path $td "hello.exe"
   $unused = Join-Path $td "unused_math.exe"
@@ -164,6 +180,7 @@ try {
   $scene = Join-Path $td "scene_hello.exe"
   $gpu = Join-Path $td "gpu.exe"
   $rt = Join-Path $td "rt.exe"
+  $denoise = Join-Path $td "denoise.exe"
 
   Invoke-FarmcBuild $helloSrc $hello @()
   Invoke-FarmcBuild $unusedSrc $unused @()
@@ -173,6 +190,7 @@ try {
   Invoke-FarmcBuild $sceneSrc $scene @()
   Invoke-FarmcBuild $gpuSrc $gpu @()
   Invoke-FarmcBuild $rtSrc $rt @()
+  Invoke-FarmcBuild $denoiseSrc $denoise @()
 
   $hs = (Get-Item -LiteralPath $hello).Length
   $us = (Get-Item -LiteralPath $unused).Length
@@ -182,6 +200,7 @@ try {
   $ss = (Get-Item -LiteralPath $scene).Length
   $gps = (Get-Item -LiteralPath $gpu).Length
   $rps = (Get-Item -LiteralPath $rt).Length
+  $dns = (Get-Item -LiteralPath $denoise).Length
   $delta = $ds - $ss
 
   Write-Host "M6 size / DCE / thread-start budgets"
@@ -191,6 +210,7 @@ try {
   Write-Report "B-03" "glass+mirror (examples/04_glass_mirror.fm)" $gs 307200 $true
   Write-Report "B-08" "GPU-linked vulkan cornell (examples/06_vulkan_cornell.fm)" $gps 409600 $true
   Write-Report "B-09" "RT-linked vulkan cornell (examples/07_vulkan_rt_cornell.fm)" $rps 512000 $true
+  Write-Report "B-10" "denoise-linked path demo" $dns 614400 $true
   Write-Report "B-04" "S_demo - S_scene" $delta 65536 $true
   Write-Host ("      S_demo={0} B  S_scene={1} B" -f $ds, $ss)
   Write-Report "B-06" "unused farmos:math import" $us 20480 $true
@@ -272,10 +292,21 @@ try {
   if ($glog.IndexOf("farm_vk_rt.c", [StringComparison]::Ordinal) -ge 0) {
     Fail-Size "CPU glass+mirror linked farm_vk_rt.c"
   }
+  if ($glog.IndexOf("farm_denoise.c", [StringComparison]::Ordinal) -ge 0 -or $glog.IndexOf("FARM_ENABLE_DENOISE", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Size "CPU glass+mirror linked farm_denoise.c"
+  }
+  if ($hlog.IndexOf("farm_denoise.c", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Size "hello linked farm_denoise.c"
+  }
   if ($ulog.IndexOf("farm_math.c", [StringComparison]::Ordinal) -ge 0) {
     Fail-Size "unused math import linked farm_math.c"
   }
+  $dlog = Get-VerboseLog $denoiseSrc (Join-Path $td "denoise_v.exe")
+  if ($dlog.IndexOf("farm_denoise.c", [StringComparison]::Ordinal) -lt 0 -or $dlog.IndexOf("FARM_ENABLE_DENOISE", [StringComparison]::Ordinal) -lt 0) {
+    Fail-Size "M10 denoise-linked demo did not link farm_denoise.c"
+  }
   Write-Host "DCE  hello / unused-math link only farm_rt.c  OK"
+  Write-Host "M10  glass+mirror omits farm_denoise.c; denoise-linked includes it  OK"
 
   if ($CheckPeakRam) {
     if (-not (Test-Path -LiteralPath $cornellSrc)) { Fail-Size "missing $cornellSrc" }

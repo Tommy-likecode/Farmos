@@ -1,5 +1,18 @@
 # Farmos
 
+## M10 — denoise / interactive
+
+Spec: `spec/M10-denoise-interactive.md` (FINAL). Fixtures: `spec/tests/M10/` (ctest `m10_*`).
+
+- `setPathDenoise` / `getPathDenoise` / `PATH_DENOISE_OFF=0` / `PATH_DENOISE_SPATIAL=1`. Default OFF. Invalid mode: trap **120**.
+- Farmos-owned spatial denoise (A-trous). GPU compute filter on the RT path; cheap CPU fallback. No OIDN / NVIDIA DLL / OptiX / DLSS. Soft fail leaves noisy; `FARMOS_PATH_DENOISE_STRICT=1` traps 120.
+- Progressive preview API (no window). Quarter-res dispatch + AS warm on begin. First useful / step wall-clock ACs are TommyLaptop HW RT gates.
+- Size: denoise-linked ≤ 600 KiB; prior hello/RT/compute/glass budgets unchanged.
+
+Linux: `bash scripts/run_suite_linux.sh build/farmc spec/tests/M10`
+
+---
+
 ## M9 — hardware ray tracing
 
 Spec: `spec/M9-hardware-rt.md` (FINAL). Fixtures: `spec/tests/M9/` (ctest `m9_*`).

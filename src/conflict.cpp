@@ -1562,6 +1562,25 @@ void seed_scene_summaries(Analyzer& A) {
   Summary gat; gat.seeded = true;
   add_eff(gat, true, false, A.with_field(rth, "pathAdaptiveTarget"));
   A.sums["farm_Renderer_getPathAdaptiveTarget"] = gat;
+  Summary pd; pd.seeded = true;
+  add_eff(pd, false, true, A.with_field(rth, "pathDenoise"), CVal::unk());
+  A.sums["farm_Renderer_setPathDenoise"] = pd;
+  Summary gpd; gpd.seeded = true;
+  add_eff(gpd, true, false, A.with_field(rth, "pathDenoise"));
+  A.sums["farm_Renderer_getPathDenoise"] = gpd;
+  Summary avd; avd.seeded = true;
+  A.sums["farm_Renderer_isPathDenoiseAvailable"] = avd;
+  A.sums["farm_Renderer_beginPathPreview"] = rend;
+  Summary adv; adv.seeded = true;
+  add_eff(adv, true, false, cam);
+  add_eff(adv, false, true, A.with_field(rth, "#frame"), CVal::unk());
+  A.sums["farm_Renderer_advancePathPreview"] = adv;
+  Summary fin; fin.seeded = true;
+  add_eff(fin, false, true, A.with_field(rth, "#frame"), CVal::unk());
+  A.sums["farm_Renderer_finishPathPreview"] = fin;
+  Summary gpspp; gpspp.seeded = true;
+  add_eff(gpspp, true, false, A.with_field(rth, "pathPreviewSpp"));
+  A.sums["farm_Renderer_getPathPreviewSpp"] = gpspp;
 
   auto disp = [&](const std::string& cls, const std::string& key) {
     Summary d; d.seeded = true;

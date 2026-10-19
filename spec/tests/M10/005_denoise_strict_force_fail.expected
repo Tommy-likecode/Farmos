@@ -1,0 +1,7 @@
+# kind: runtime_trap
+# exit: 120
+# env: FARMOS_PATH_DENOISE_STRICT=1
+# env: FARMOS_PATH_DENOISE_FORCE_FAIL=1
+# stderr:
+runtime error: path denoise failed
+# end

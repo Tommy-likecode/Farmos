@@ -1142,6 +1142,17 @@ farm_Renderer* farm_Renderer_new() {
   r->path_adaptive_spp = 0;
   r->path_adaptive_target = 1e-4;
   r->spp_count = NULL;
+  r->path_denoise = 0;
+  r->path_denoise_gpu_done = 0;
+  r->preview_div = 1;
+  r->preview_spp = 0;
+  r->preview_active = 0;
+  r->preview_in_advance = 0;
+  r->preview_scene = NULL;
+  r->preview_camera = NULL;
+  r->preview_cam_px = r->preview_cam_py = r->preview_cam_pz = 0.0;
+  r->preview_cam_qx = r->preview_cam_qy = r->preview_cam_qz = 0.0;
+  r->preview_cam_qw = 1.0;
   r->disposed = false;
   return r;
 }
@@ -1243,6 +1254,22 @@ void farm_Renderer_setPathAdaptiveTarget(farm_Renderer* self, double varianceOrN
 
 double farm_Renderer_getPathAdaptiveTarget(farm_Renderer* self) {
   return self->path_adaptive_target;
+}
+
+void farm_Renderer_setPathDenoise(farm_Renderer* self, int64_t mode) {
+  if (mode != 0 && mode != 1)
+    farm_trap(120, "invalid path denoise mode");
+  self->path_denoise = (int32_t)mode;
+}
+
+int64_t farm_Renderer_getPathDenoise(farm_Renderer* self) {
+  return self->path_denoise;
+}
+
+int8_t farm_Renderer_isPathDenoiseAvailable(farm_Renderer* self) {
+  (void)self;
+  if (farm_env_exact_1("FARMOS_PATH_DENOISE_FORCE_FAIL")) return (int8_t)0;
+  return (int8_t)1;
 }
 
 #ifdef FARM_ENABLE_VULKAN

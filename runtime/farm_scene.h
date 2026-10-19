@@ -306,6 +306,16 @@ struct farm_Renderer {
   int8_t path_adaptive_spp;
   double path_adaptive_target;
   int32_t* spp_count;    // per-pixel counts when adaptive has run
+  int32_t path_denoise;  // 0=OFF, 1=SPATIAL (M10)
+  int8_t path_denoise_gpu_done;
+  int32_t preview_div;   // 1 = full res; 4 = quarter-res preview dispatch
+  int32_t preview_spp;
+  int8_t preview_active;
+  int8_t preview_in_advance;
+  farm_Scene* preview_scene;
+  farm_PerspectiveCamera* preview_camera;
+  double preview_cam_px, preview_cam_py, preview_cam_pz;
+  double preview_cam_qx, preview_cam_qy, preview_cam_qz, preview_cam_qw;
   bool disposed;
 };
 
@@ -453,6 +463,13 @@ void farm_Renderer_setPathAdaptiveSpp(farm_Renderer* self, int8_t enabled);
 int8_t farm_Renderer_getPathAdaptiveSpp(farm_Renderer* self);
 void farm_Renderer_setPathAdaptiveTarget(farm_Renderer* self, double varianceOrNoiseHint);
 double farm_Renderer_getPathAdaptiveTarget(farm_Renderer* self);
+void farm_Renderer_setPathDenoise(farm_Renderer* self, int64_t mode);
+int64_t farm_Renderer_getPathDenoise(farm_Renderer* self);
+int8_t farm_Renderer_isPathDenoiseAvailable(farm_Renderer* self);
+void farm_Renderer_beginPathPreview(farm_Renderer* self, farm_Scene* scene, farm_PerspectiveCamera* camera);
+int8_t farm_Renderer_advancePathPreview(farm_Renderer* self, int64_t sppStep);
+void farm_Renderer_finishPathPreview(farm_Renderer* self);
+int64_t farm_Renderer_getPathPreviewSpp(farm_Renderer* self);
 int farm_renderer_roulette_on(const farm_Renderer* self);
 int32_t farm_renderer_sampling_mode(const farm_Renderer* self);
 void farm_Renderer_savePNG(farm_Renderer* self, FarmString path);

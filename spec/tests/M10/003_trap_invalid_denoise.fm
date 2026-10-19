@@ -1,0 +1,7 @@
+import { Renderer } from "farmos:scene";
+
+function main(): int {
+  const renderer: Renderer = new Renderer(8, 8);
+  renderer.setPathDenoise(99);
+  return 0;
+}

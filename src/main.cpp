@@ -251,6 +251,8 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
   add_scene_const("PATH_SAMPLING_M4", 0);
   add_scene_const("PATH_SAMPLING_MIS", 1);
   add_scene_const("PATH_SAMPLING_AREA_SOLID", 2);
+  add_scene_const("PATH_DENOISE_OFF", 0);
+  add_scene_const("PATH_DENOISE_SPATIAL", 1);
   
   // No imports needed - will wire math types manually in bind_imports
   
@@ -1199,6 +1201,80 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
       MethodDecl md;
       md.name = "getPathAdaptiveTarget";
       md.ret = Type::ty_float();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "setPathDenoise";
+      md.params.push_back(Param{"mode", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "getPathDenoise";
+      md.ret = Type::ty_int();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "isPathDenoiseAvailable";
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "beginPathPreview";
+      md.params.push_back(Param{"scene", Type::ty_class("Scene"), SourceLoc{1,1}});
+      md.params.push_back(Param{"camera", Type::ty_class("PerspectiveCamera"), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "advancePathPreview";
+      md.params.push_back(Param{"sppStep", Type::ty_int(), SourceLoc{1,1}});
+      md.ret = Type::ty_bool();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "finishPathPreview";
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
+      md.name = "getPathPreviewSpp";
+      md.ret = Type::ty_int();
       md.loc = SourceLoc{1, 1};
       auto block = std::make_unique<Stmt>();
       block->kind = StmtKind::Block;
@@ -2864,7 +2940,8 @@ static int run_cmd(const std::string& cmd_utf8) {
 static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const fs::path& rt_h_dir,
                             const fs::path& out_exe, bool verbose, bool link_scene,
                             bool link_parallel, bool link_ray, bool link_physics,
-                            bool link_vulkan, bool link_vulkan_rt, bool link_math) {
+                            bool link_vulkan, bool link_vulkan_rt, bool link_math,
+                            bool link_denoise) {
   std::string cc = find_c_compiler();
   if (cc.empty()) {
     std::cerr << "farmc: no C compiler found (set FARM_CC)\n";
@@ -2887,10 +2964,11 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   fs::path rt_phys_c = rt_h_dir / "farm_physics.c";
   fs::path rt_vk_c = rt_h_dir / "farm_vk.c";
   fs::path rt_vk_rt_c = rt_h_dir / "farm_vk_rt.c";
+  fs::path rt_denoise_c = rt_h_dir / "farm_denoise.c";
   const char* fp_contract = (link_scene || link_physics) ? "-ffp-contract=off " : "";
   /* Ray-only: keep BVH walks out of strict-aliasing / Windows LTO surprises.
      Non-ray programs keep master's flags (hello C/link line unchanged). */
-  const char* ray_fp = (link_ray || link_vulkan || link_vulkan_rt) ? "-fno-strict-aliasing " : "";
+  const char* ray_fp = (link_ray || link_vulkan || link_vulkan_rt || link_denoise) ? "-fno-strict-aliasing " : "";
 #if defined(_WIN32)
   const char* lto = (link_ray || link_vulkan || link_vulkan_rt) ? "" : "-flto ";
 #else
@@ -2900,6 +2978,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   std::string vk_def;
   if (link_vulkan) vk_def += "-DFARM_ENABLE_VULKAN ";
   if (link_vulkan_rt) vk_def += "-DFARM_ENABLE_VULKAN_RT ";
+  if (link_denoise) vk_def += "-DFARM_ENABLE_DENOISE ";
 
   auto append_extra_rt = [&](std::ostringstream& o) {
     // Link farm_math.c / farm_scene.c only when a scene type is actually used.
@@ -2919,6 +2998,8 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
       o << "\"" << path_to_utf8(rt_vk_c) << "\" ";
     if (link_vulkan_rt && fs::exists(rt_vk_rt_c))
       o << "\"" << path_to_utf8(rt_vk_rt_c) << "\" ";
+    if (link_denoise && fs::exists(rt_denoise_c))
+      o << "\"" << path_to_utf8(rt_denoise_c) << "\" ";
     if (link_parallel && fs::exists(rt_par_c))
       o << "\"" << path_to_utf8(rt_par_c) << "\" ";
   };
@@ -3090,7 +3171,8 @@ static int cmd_build(std::vector<std::string> args) {
   bool link_vulkan_rt = program_uses_vulkan_rt(loader.prog);
   if (link_vulkan_rt) link_vulkan = true; /* compute fallback for backend 2 */
   bool link_math = program_uses_random01(loader.prog);
-  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray, link_physics, link_vulkan, link_vulkan_rt, link_math);
+  bool link_denoise = program_uses_denoise(loader.prog);
+  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray, link_physics, link_vulkan, link_vulkan_rt, link_math, link_denoise);
   if (rc == 0) {
     std::error_code ec;
     fs::rename(link_out, out_req, ec);
