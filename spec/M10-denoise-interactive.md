@@ -1,14 +1,14 @@
 # Farmos M10 — Denoise / Interactive Path Tracing
 
-**Status:** FINAL (PM 2026-10-18: OQ-M10-01..08 all A; user 2026-10-18 all-A)  
+**Status:** **FINAL** (PM 2026-10-19: OQ-M10-09 A; prior OQ-M10-01..08 A locked 2026-10-18)  
 **Milestone:** M10 — denoise for stills + progressive interactive preview for the M4 path tracer  
 **Depends on:** `spec/M1-core.md` (FINAL), `spec/M2-math.md` (FINAL), `spec/M3-scene.md` (FINAL), `spec/M3.5-concurrency.md` (FINAL), `spec/M4-ray.md` (FINAL), `spec/M5-physics.md` (FINAL), `spec/M6-hardening.md` (FINAL), `spec/M7-vulkan-path.md` (FINAL), `spec/M8-path-speed.md` (FINAL), `spec/M9-hardware-rt.md` (FINAL)  
 **Normative keywords:** MUST / SHOULD / MAY per RFC 2119.  
-**Date:** 2026-10-18 (FINAL)
+**Date:** 2026-10-18 (FINAL OQ-M10-01..08); **2026-10-19 FINAL** (OQ-M10-09 A stills wall-clock relax)
 
 This document specifies Farmos M10: **additive denoise** and a **progressive interactive preview** path for the existing M4 path tracer (and M7/M8 compute + M9 HW RT backends). It does **not** specify compiler, runtime, or stdlib implementation code. It does **not** edit M1–M9 milestone markdown bodies; normative amendments relative to those milestones live in §19 of this file.
 
-Open questions: **none.** OQ-M10-01 .. OQ-M10-08 are all **accepted A** (PM lock 2026-10-18; user 2026-10-18 all-A). Binding under A: stills denoise + progressive preview with **no** OS window/swapchain; Farmos-owned spatial denoise (no OIDN/NVIDIA DLL); silver still ≤**64 spp** + denoise ≤**1500 ms** / `# png_tol: 8` vs 256-spp undenoised; first useful ≤**250 ms** / step ≤**100 ms**; additive `setPathDenoise` default OFF; DLSS/vendor upscalers OUT; denoise-linked ≤**600 KiB**; soft denoise fail / `FARMOS_PATH_DENOISE_STRICT=1` → trap **120**-family; M9 RT STRICT unchanged. Those decisions are recorded in §18. Body gates in §8–§10 / AC-M10-05..09 are **binding under A**.
+Open questions: **none**. OQ-M10-01 .. OQ-M10-08 **accepted A** (PM lock 2026-10-18; user 2026-10-18 all-A). OQ-M10-09 **accepted A** (PM lock 2026-10-19; user 2026-10-19 relax-stills-ac). Binding: stills denoise + progressive preview with **no** OS window/swapchain; Farmos-owned spatial denoise (no OIDN/NVIDIA DLL); first useful ≤**250 ms** / step ≤**100 ms** (**OQ-M10-04 A unchanged**); additive `setPathDenoise` default OFF; DLSS/vendor upscalers OUT; denoise-linked ≤**600 KiB**; soft denoise fail / `FARMOS_PATH_DENOISE_STRICT=1` → trap **120**-family; M9 RT STRICT unchanged. Stills gate under **OQ-M10-09 A**: silver still ≤**8 spp** + `PATH_DENOISE_SPATIAL`; median ≤**5500 ms** TommyLaptop HW RT; `# png_tol: 8` vs 256-spp undenoised. **OQ-M10-03 A** wall-clock (and stills-gate spp) is **superseded**; `# png_tol: 8` quality remains. Body §8 / AC-M10-05 are **binding** under A. Progressive / API / stack / size / STRICT gates remain binding under OQ-01..08 A.
 
 Related: `/workspace/farmos/PLAN.md` (M10 section), `spec/M4-ray.md`, `spec/M7-vulkan-path.md`, `spec/M8-path-speed.md`, `spec/M9-hardware-rt.md`, `spec/tests/M10/README.md`.
 
@@ -282,7 +282,7 @@ PLACEHOLDER SHA until poteto regenerates:
 
 ---
 
-## 8. Stills quality / speed gate (OQ-M10-03 A — binding)
+## 8. Stills quality / speed gate (OQ-M10-09 A binding; OQ-M10-03 A wall-clock superseded)
 
 ### 8.1 Normative scene
 
@@ -290,20 +290,23 @@ PLACEHOLDER SHA until poteto regenerates:
 - Resolution: **1920×1080**.
 - Backend: prefer `PATH_BACKEND_VULKAN_RT` on TommyLaptop; soft-skip GPU bench on hosts without RT.
 
-### 8.2 Gate (binding under A)
+### 8.2 Gate (**binding under OQ-M10-09 A**)
 
 | Field | Value |
 |-------|--------|
-| spp | ≤ **64** with `PATH_DENOISE_SPATIAL` ON |
-| Primary wall-clock | median ≤ **1500 ms** after 1 warm-up on TommyLaptop HW RT |
-| Visual | `# png_tol: 8` vs **256-spp undenoised** reference / locked composition |
-| Baseline to beat | M9 undenoised 256 spp floor **4881 ms** (`eaeb0c6` / OQ-M9-08 class) — speed comes from **spp↓ + denoise**, not from changing artwork |
+| spp | ≤ **8** with `PATH_DENOISE_SPATIAL` ON (documented tip spp for PR #16 `e15ee34`; original OQ-M10-03 A allowed ≤64 — **superseded** for stills-gate spp) |
+| Primary wall-clock | median ≤ **5500 ms** after 1 warm-up on TommyLaptop HW RT |
+| Visual | `# png_tol: 8` vs **256-spp undenoised** reference / locked composition (**unchanged** from OQ-M10-03 A quality) |
+| Secondary (optional) | SHOULD report vs M9 undenoised 256-spp floor **4881 ms** and/or same-spp denoise-OFF control (~**4044 ms** on tip) — **not** required for primary PASS |
+| Measured floor | PR #16 tip `e15ee34` CLEAN: 8 spp + denoise HW RT median **5046 ms** (FAIL vs historical OQ-M10-03 A ≤1500; BEAT prior floor **9118**; denoise-OFF control ~**4044**). Under **OQ-M10-09 A**, that result **PASSES**. Progressive on same tip: first ~**4.7 ms** / step ~**5.1 ms** — **OQ-M10-04 A unchanged**. |
 
-### 8.3 Rejected options (record only)
+**Binding:** §8.2 / AC-M10-05 are binding under PM lock OQ-M10-09 A (2026-10-19). **OQ-M10-03 A is superseded for wall-clock** (and for the binding spp number of the stills gate). `# png_tol: 8` vs 256-spp undenoised **remains**. Progressive / API / stack / size / STRICT remain binding under OQ-M10-01..08 A.
+
+### 8.3 Historical OQ-M10-03 A (wall-clock / stills-gate spp **superseded** by OQ-M10-09 A)
 
 | Option | spp | Wall-clock | Visual | Status |
 |--------|-----|------------|--------|--------|
-| **A (accepted)** | ≤ 64 | ≤ 1500 ms | `# png_tol: 8` vs 256-spp undenoised | **ACCEPTED** |
+| **A (accepted 2026-10-18)** | ≤ 64 | ≤ 1500 ms | `# png_tol: 8` vs 256-spp undenoised | **ACCEPTED** for quality (`# png_tol: 8` remains); **wall-clock and stills-gate spp superseded** by OQ-M10-09 A |
 | B | ≤ 32 | ≤ 1000 ms | tighter / PM | Rejected |
 | C | PM numbers | PM | PM | Rejected |
 
@@ -372,7 +375,7 @@ Existing M4 traps unchanged. Exit **109** still unused.
 | AC-M10-02 | `setPathDenoise` / `getPathDenoise` round-trip; default OFF; `PATH_DENOISE_SPATIAL=1` accepted. |
 | AC-M10-03 | `setPathDenoise(<invalid>)` → trap **120** at `setPathDenoise`. |
 | AC-M10-04 | Stills denoise smoke: small scene, denoise ON, exit 0; GPU soft-skip OK. |
-| AC-M10-05 | Stills gate (OQ-M10-03 A): silver still 1920×1080 ≤64 spp + denoise; median ≤ **1500 ms** TommyLaptop HW RT; visual `# png_tol: 8` vs 256-spp undenoised reference. |
+| AC-M10-05 | Stills gate (**binding OQ-M10-09 A**; OQ-M10-03 A wall-clock / stills-gate spp **superseded**): silver still 1920×1080 ≤**8 spp** + denoise; median ≤ **5500 ms** TommyLaptop HW RT; visual `# png_tol: 8` vs 256-spp undenoised reference. Progressive ACs unchanged (AC-M10-06 / OQ-M10-04 A). |
 | AC-M10-06 | Progressive API exists; first useful ≤ **250 ms**; step ≤ **100 ms** (OQ-M10-04 A); no window required. |
 | AC-M10-07 | M9 STRICT/fallback unchanged when denoise ON or OFF; denoise fail does not alter RT STRICT. |
 | AC-M10-08 | Soft denoise unavailable → noisy image; `FARMOS_PATH_DENOISE_STRICT=1` → trap (stderr denoise failed). |
@@ -382,7 +385,7 @@ Existing M4 traps unchanged. Exit **109** still unused.
 | AC-M10-12 | Fixtures in §16 pass under their kinds; M4–M9 regression under denoise OFF. |
 | AC-M10-13 | Linux CI green: soft-skip GPU/RT/denoise-GPU fixtures; CPU denoise OFF / API fixtures required. |
 
-AC-M10-05, AC-M10-06, AC-M10-09 are eggtooth / script / bench checks.
+AC-M10-05, AC-M10-06, AC-M10-09 are eggtooth / script / bench checks. AC-M10-05 wall-clock is **binding under OQ-M10-09 A**; AC-M10-06 (progressive) remains **binding OQ-M10-04 A**.
 
 ---
 
@@ -432,11 +435,11 @@ Eggtooth / bench rows (no required `.fm` in stub pack): size/DCE (AC-M10-09), si
 
 ---
 
-## 17. Open questions — CLOSED
+## 17. Open questions
 
 Status: **FINAL**. Open questions: **none.**
 
-PM lock **2026-10-18** (user 2026-10-18 all-A): **OQ-M10-01 .. OQ-M10-08** all **accepted option A**. Rejected options remain below for audit trail only.
+PM lock **2026-10-18** (user 2026-10-18 all-A): **OQ-M10-01 .. OQ-M10-08** all **accepted option A**. PM lock **2026-10-19** (user 2026-10-19 relax-stills-ac): **OQ-M10-09** **accepted option A**. Rejected options remain below for audit trail only. Progressive / API / stack / size / STRICT / DLSS / default OFF / no window **unchanged** under OQ-M10-09 A.
 
 ### OQ-M10-01 — Scope split — **ACCEPTED A**
 
@@ -454,19 +457,19 @@ PM lock **2026-10-18** (user 2026-10-18 all-A): **OQ-M10-01 .. OQ-M10-08** all *
 | B | Allow Open Image Denoise as optional dependency | Rejected |
 | C | Other (PM-defined) | Rejected |
 
-### OQ-M10-03 — Stills quality/speed gate — **ACCEPTED A**
+### OQ-M10-03 — Stills quality/speed gate — **ACCEPTED A** (wall-clock / stills-gate spp **superseded** by OQ-M10-09 A)
 
 | Option | Meaning | Status |
 |--------|---------|--------|
-| **A** | Silver still 1920×1080: ≤ **64 spp** + denoise ON; median ≤ **1500 ms** TommyLaptop HW RT after warm-up; visual `# png_tol: 8` vs 256-spp undenoised reference / locked composition | **ACCEPTED** |
+| **A** | Silver still 1920×1080: ≤ **64 spp** + denoise ON; median ≤ **1500 ms** TommyLaptop HW RT after warm-up; visual `# png_tol: 8` vs 256-spp undenoised reference / locked composition | **ACCEPTED** (2026-10-18). **Wall-clock** (and binding spp of the stills gate) **superseded** by OQ-M10-09 A. `# png_tol: 8` quality remains. |
 | B | ≤ 32 spp / ≤ 1000 ms | Rejected |
 | C | PM numbers | Rejected |
 
-### OQ-M10-04 — Interactive gate — **ACCEPTED A**
+### OQ-M10-04 — Interactive gate — **ACCEPTED A** (**unchanged** by OQ-M10-09)
 
 | Option | Meaning | Status |
 |--------|---------|--------|
-| **A** | Progressive preview: first useful frame ≤ **250 ms** (≤8–16 spp class) on TommyLaptop HW RT; subsequent steps ≤ **100 ms** median; no window (OQ-01 A) | **ACCEPTED** |
+| **A** | Progressive preview: first useful frame ≤ **250 ms** (≤8–16 spp class) on TommyLaptop HW RT; subsequent steps ≤ **100 ms** median; no window (OQ-01 A) | **ACCEPTED** — tip `e15ee34` first ~4.7 / step ~5.1 ms **PASSES**; keep binding |
 | B | Requires present window ≤ 60 ms | Rejected |
 | C | Other | Rejected |
 
@@ -500,25 +503,38 @@ PM lock **2026-10-18** (user 2026-10-18 all-A): **OQ-M10-01 .. OQ-M10-08** all *
 | **A** | Denoise failure MUST NOT change M9 STRICT RT semantics; if denoise unavailable, soft-skip denoise (leave noisy) unless `FARMOS_PATH_DENOISE_STRICT=1` → trap (120-family) | **ACCEPTED** |
 | B | Denoise fail = hard fail always | Rejected |
 
+### OQ-M10-09 — Stills wall-clock AC relax — **ACCEPTED A**
+
+**Context (binding inputs):** PR #16 tip `e15ee34` CLEAN — progressive PASS (first ~4.7 ms / step ~5.1 ms). Stills **8 spp** + `PATH_DENOISE_SPATIAL` HW RT median **5046 ms** FAIL vs OQ-M10-03 A ≤**1500 ms**; BEAT prior floor **9118**; denoise-OFF control ~**4044**. PE PASS; Linux 354/354. User chose **relax-stills-ac** (2026-10-19). Pattern: M9 OQ-M9-08 (4881 → ≤5000).
+
+| Option | Meaning | Status |
+|--------|---------|--------|
+| **A** | Primary stills gate: silver still 1920×1080 @ ≤ **8 spp** + `PATH_DENOISE_SPATIAL` ON; median ≤ **5500 ms** TommyLaptop HW RT after warm-up; visual `# png_tol: 8` vs 256-spp undenoised (**unchanged**). Secondary optional: report vs M9 floor **4881 ms** and/or denoise-OFF control (~**4044** at same tip) — not required for primary PASS. Measured `e15ee34` **5046 ms** **PASSES**. **OQ-M10-03 A superseded for wall-clock** (and for binding stills-gate spp); progressive / API / stack / size / STRICT / DLSS / default OFF / no window **unchanged**. | **ACCEPTED** (PM 2026-10-19; user 2026-10-19) |
+| B | Keep OQ-M10-03 A wall-clock ≤ **1500 ms** (≤64 spp) | Rejected |
+| C | PM numbers (other spp / ms) | Rejected |
+
+**Rationale for A:** Tip documents **8 spp** (not 64). Median **5046 ms** needs headroom analogous to M9 (4881 → 5000); ≤**5500 ms** (~9% over 5046) lets `e15ee34` PASS without pretending ≤1500 is reachable at this spp/stack. ≤6000 ms would also PASS but is looser than needed. Binding both **spp and wall-clock** keeps the gate measurable.
+
 ---
 
-## 18. Accepted decisions (FINAL — binding)
+## 18. Accepted decisions (OQ-01..09 FINAL binding)
 
-PM lock 2026-10-18 (user 2026-10-18 all-A). All rows below are **binding**:
+PM lock 2026-10-18 (user 2026-10-18 all-A) for OQ-M10-01..08. PM lock 2026-10-19 (user 2026-10-19) for OQ-M10-09 **A**. All rows below are **binding**. OQ-M10-03 A wall-clock / stills-gate spp are **superseded** by OQ-M10-09 A; `# png_tol: 8` remains:
 
 | ID | Decision |
 |----|----------|
 | OQ-M10-01 | **A** — stills denoise + progressive API; no OS window/swapchain |
 | OQ-M10-02 | **A** — Farmos-owned spatial (A-trous/bilateral); no OIDN/NVIDIA DLL |
-| OQ-M10-03 | **A** — ≤64 spp + denoise; ≤1500 ms; `# png_tol: 8` vs 256-spp undenoised |
-| OQ-M10-04 | **A** — first useful ≤250 ms (≤8–16 spp); step ≤100 ms; no window |
+| OQ-M10-03 | **A** — historical ≤64 spp + denoise ≤1500 ms; `# png_tol: 8` vs 256-spp undenoised. **Wall-clock / stills-gate spp superseded by OQ-M10-09 A**; `# png_tol: 8` remains |
+| OQ-M10-04 | **A** — first useful ≤250 ms (≤8–16 spp); step ≤100 ms; no window — **unchanged** by OQ-M10-09 |
 | OQ-M10-05 | **A** — additive `setPathDenoise` / `getPathDenoise` + `PATH_DENOISE_*`; default OFF |
 | OQ-M10-06 | **A** — DLSS/vendor upscalers OUT |
 | OQ-M10-07 | **A** — denoise-linked ≤600 KiB; hello ≤20; RT ≤500; compute ≤400; glass+mirror ≤300 |
 | OQ-M10-08 | **A** — denoise soft-fail (leave noisy); `FARMOS_PATH_DENOISE_STRICT=1` → trap 120-family; M9 RT STRICT unchanged |
+| OQ-M10-09 | **A** — ≤**8 spp** + denoise ≤**5500 ms**; `# png_tol: 8`; optional secondary vs 4881 / ~4044; **supersedes** OQ-M10-03 A wall-clock / stills-gate spp |
 | RD-M10-01 | M9 denoise non-goal (OQ-M9-07 A) **reopened** as in-scope for M10 |
 | RD-M10-02 | Artwork composition locked; undenoised M9 256-spp AC still stands |
-| RD-M10-03 | Cite M9 floor **4881 ms** as baseline stills denoise must beat via spp↓+denoise |
+| RD-M10-03 | Cite M9 floor **4881 ms** as baseline stills denoise must beat via spp↓+denoise (optional secondary under OQ-M10-09 A; primary is ≤5500 ms) |
 | RD-M10-04 | Trap **120** for invalid denoise mode; denoise-fail under STRICT uses exit 120 + distinct stderr |
 
 ---
@@ -534,12 +550,13 @@ M4–M9 milestone markdown bodies are not edited.
 | 3 | Additive progressive preview API (§4); `renderPath` default unchanged |
 | 4 | Trap **120** invalid denoise mode; denoise-fail stderr under DENOISE_STRICT |
 | 5 | Env `FARMOS_PATH_DENOISE_STRICT`, `FARMOS_PATH_DENOISE_FORCE_FAIL` |
-| 6 | Stills wall-clock / visual gate §8 (binding OQ-M10-03 A) |
+| 6 | Stills wall-clock / visual gate §8 (**binding OQ-M10-09 A**; OQ-M10-03 A wall-clock / stills-gate spp superseded; `# png_tol: 8` remains) |
 | 7 | Interactive timing gate §9 (binding OQ-M10-04 A) |
 | 8 | Denoise-linked size ≤ 600 KiB (binding OQ-M10-07 A) |
 | 9 | Fixtures under `spec/tests/M10/` |
 | 10 | DLSS / Swapper / OptiX / GPU raster / artwork variants remain out (OQ-M10-06 A) |
 | 11 | M9 backends / STRICT RT / undenoised 256-spp ACs unchanged |
+| 12 | **FINAL** OQ-M10-09 A: relax stills primary wall-clock to ≤**5500 ms** at ≤**8 spp** + denoise; progressive OQ-M10-04 A unchanged |
 
 ---
 
@@ -559,7 +576,7 @@ Small resolution; `setPathDenoise(PATH_DENOISE_SPATIAL)`; `renderPath`; `savePNG
 
 ## Appendix D — Artwork stills denoise bench note
 
-Use `examples/artwork_silver_still.fm` @ 1920×1080 with ≤ **64 spp**, `PATH_DENOISE_SPATIAL`, prefer `PATH_BACKEND_VULKAN_RT`. Do not alter composition. Compare visually to 256-spp undenoised reference. Primary gate ≤ **1500 ms** after warm-up (OQ-M10-03 A). Cite M9 floor **4881 ms** as the undenoised baseline being beaten via spp↓+denoise.
+Use `examples/artwork_silver_still.fm` @ 1920×1080 with ≤ **8 spp** (documented tip; **binding OQ-M10-09 A**), `PATH_DENOISE_SPATIAL`, prefer `PATH_BACKEND_VULKAN_RT`. Do not alter composition. Compare visually to 256-spp undenoised reference (`# png_tol: 8`). Primary wall-clock gate ≤ **5500 ms** after warm-up (**binding OQ-M10-09 A**; prior OQ-M10-03 A ≤1500 wall-clock / stills-gate spp **superseded**). Optional secondary: cite M9 floor **4881 ms** and/or denoise-OFF control. Progressive timing remains OQ-M10-04 A (≤250 / ≤100).
 
 ---
 
@@ -567,3 +584,5 @@ Use `examples/artwork_silver_still.fm` @ 1920×1080 with ≤ **64 spp**, `PATH_D
 
 - 2026-10-18: DRAFT. Denoise-interactive after M9 (`52b1aebc`). Reopens denoise (was OUT in M9 OQ-M9-07 A). Product split: stills denoise + progressive preview; no window under recommend A. OQ-M10-01..08 recommend A. Stills ≤64 spp + denoise ≤1500 ms; interactive first ≤250 ms / step ≤100 ms. Farmos-owned spatial; DLSS OUT; denoise-linked ≤600 KiB; trap 120. Fixtures under `spec/tests/M10/`. Status DRAFT until PM locks OQs.
 - 2026-10-18: **FINAL**. PM lock OQ-M10-01..08 all option A (user 2026-10-18 all-A). Open questions closed. Binding gates: ≤64 spp + denoise ≤1500 ms; first useful ≤250 ms / step ≤100 ms; no window; Farmos-owned spatial; default OFF; DLSS OUT; denoise-linked ≤600 KiB; soft denoise fail / STRICT trap 120-family; M9 RT STRICT unchanged.
+- 2026-10-19: **DRAFT amendment** (OQ-M10-09). Measured PR #16 tip `e15ee34` CLEAN: stills 8 spp + denoise HW RT median **5046 ms** FAIL vs OQ-M10-03 A ≤1500; BEAT prior floor 9118; denoise-OFF ~4044; progressive PASS first ~4.7 / step ~5.1 ms. User chose relax-stills-ac. Open OQ-M10-09: recommend **A** ≤**8 spp** + denoise ≤**5500 ms** / `# png_tol: 8` (would PASS e15ee34); B keep ≤1500; C PM numbers. Body §8 / AC-M10-05 provisional under A. OQ-M10-03 A wall-clock pending supersession. Progressive / API / stack / size / STRICT / DLSS / default OFF / no window **unchanged**. Status **not FINAL** until OQ-M10-09 locked.
+- 2026-10-19: **FINAL**. PM lock OQ-M10-09 option A (user 2026-10-19). Binding stills: ≤**8 spp** + `PATH_DENOISE_SPATIAL`; median ≤**5500 ms** TommyLaptop HW RT; `# png_tol: 8` vs 256-spp undenoised. OQ-M10-03 A wall-clock / stills-gate spp **superseded**; `# png_tol: 8` remains. Progressive OQ-M10-04 A unchanged (≤250 / ≤100). Open questions: none. OQ-M10-01..08 A decisions otherwise unchanged.
