@@ -4,7 +4,7 @@
 //
 // Camera: lookAt (0, 0.52, 0); still pose (4.55, 2.25, 5.35) at frame 0; full orbit
 //   angle = 2π * getFrameIndex() / 72. getFrameIndex() reads env FARMOS_FRAME (default 0).
-// Render: 1920×1080, 8 spp, 6 bounces, PATH_DENOISE_SPATIAL, prefer PATH_BACKEND_VULKAN_RT.
+// Render: 1920×1080, 64 spp, 6 bounces, PATH_DENOISE_SPATIAL, prefer PATH_BACKEND_VULKAN_RT.
 // Writes frame_XXXX.png in the process CWD (scripts/render_artwork_silver_orbit.ps1).
 import { Scene, PerspectiveCamera, PlaneGeometry, BoxGeometry, SphereGeometry,
          CylinderGeometry, MeshStandardMaterial, Mesh,
@@ -96,7 +96,7 @@ function main(): int {
 
   const renderer: Renderer = new Renderer();
   renderer.setSize(1920, 1080);
-  renderer.setSamples(8);
+  renderer.setSamples(64);
   renderer.setMaxBounces(6);
   renderer.setPathDenoise(PATH_DENOISE_SPATIAL);
   if (renderer.isVulkanRayTracingAvailable()) {
@@ -108,7 +108,7 @@ function main(): int {
   } else {
     println("cpu");
   }
-  println(8);
+  println(64);
   println(frame);
   println(boxX);
   println(boxZ);

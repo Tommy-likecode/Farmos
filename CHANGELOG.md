@@ -4,7 +4,7 @@
 
 Artwork orbit demo (additive; composition of `artwork_silver_still.fm` unchanged):
 
-- `examples/artwork_silver_orbit.fm` — same meshes / materials / lights as the silver still; matte placements are **fixed** midpoints of the still `random01()` ranges (shipped v1 coords were not recoverable). Camera orbits lookAt `(0, 0.52, 0)` at the still radius/height; frame 0 is the still pose `(4.55, 2.25, 5.35)`. 1920×1080, 8 spp, 6 bounces, `PATH_DENOISE_SPATIAL`, prefer `PATH_BACKEND_VULKAN_RT`.
+- `examples/artwork_silver_orbit.fm` — same meshes / materials / lights as the silver still; matte placements are **fixed** midpoints of the still `random01()` ranges (shipped v1 coords were not recoverable). Camera orbits lookAt `(0, 0.52, 0)` at the still radius/height; frame 0 is the still pose `(4.55, 2.25, 5.35)`. 1920×1080, 64 spp, 6 bounces, `PATH_DENOISE_SPATIAL`, prefer `PATH_BACKEND_VULKAN_RT`.
 - `getFrameIndex(): int` on `farmos:math` reads `FARMOS_FRAME` (default 0). Unused imports DCE. Scripts: `scripts/render_artwork_silver_orbit.ps1` (TommyLaptop) and `.sh` loop 72 frames → `out/artwork_silver_orbit/frame_%04d.png` → `ffmpeg` H.264 yuv420p 24 fps `out/artwork_silver_orbit.mp4`.
 
 M10 — denoise / interactive path tracing (`spec/M10-denoise-interactive.md` FINAL):

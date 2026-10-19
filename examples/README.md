@@ -25,7 +25,7 @@ farmc build examples\artwork_silver_still.fm -o artwork_silver_still.exe
 
 Writes `artwork_silver_still.png` in the process CWD. Prefers HW RT (`isVulkanRayTracingAvailable()`), else compute Vulkan, else CPU. Matte object positions change each run via `random01()`.
 
-`artwork_silver_orbit.fm` is the same composition with **hardcoded** matte positions (no `random01()`) and a camera orbit around lookAt `(0, 0.52, 0)`. Frame index is `getFrameIndex()` / env `FARMOS_FRAME` (default 0). 8 spp + `PATH_DENOISE_SPATIAL`. Writes `frame_XXXX.png` in the process CWD. On TommyLaptop with farmc Release:
+`artwork_silver_orbit.fm` is the same composition with **hardcoded** matte positions (no `random01()`) and a camera orbit around lookAt `(0, 0.52, 0)`. Frame index is `getFrameIndex()` / env `FARMOS_FRAME` (default 0). 64 spp + `PATH_DENOISE_SPATIAL`. Writes `frame_XXXX.png` in the process CWD. On TommyLaptop with farmc Release:
 
 ```
 powershell -File scripts\render_artwork_silver_orbit.ps1 -Farmc build\Release\farmc.exe
