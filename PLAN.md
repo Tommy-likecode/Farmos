@@ -163,6 +163,26 @@ M10 — Denoise / interactive path tracing [added 2026-10-18 by PM/user]
 - Open questions: **none**.
 - Spec: `spec/M10-denoise-interactive.md` (**FINAL**); fixtures: `spec/tests/M10/`.
 
+M11 — Opt-in GGX/VNDF glossy continuation (metal-black) [added 2026-10-20 by PM/user GO]
+- Goal: restore rough-metal env/background reflection via **opt-in** specular continuation (VNDF-GGX) without env-brightening artwork or forcing `setRoughness(0)`.
+- Status: **FINAL** (PM/user 2026-10-20: OQ-M11-01 .. OQ-M11-08 all A).
+- Evidence: CLAIM PASS tip `9c5eebd` — artwork `metal=1`,`rough=0.04` ball-center L=**0.00**; `setRoughness(0)` → L=**106.310** (= Oct-14 v1); root cause = M4 diffuse-only rough bounce × `(1−metal)` → 0. Shared CPU / Vulkan compute / Vulkan RT.
+- Binding (OQ-M11-01..08 A):
+  - OQ-M11-01 A: additive `setPathGlossyContinuation` / `PATH_GLOSSY_OFF` / `PATH_GLOSSY_VNDF`; default **OFF**; trap **121**.
+  - OQ-M11-02 A: VNDF-GGX reflection lobe.
+  - OQ-M11-03 A: apply only when `metal>0` && `rough>0` (dielectrics unchanged).
+  - OQ-M11-04 A: keep RectArea NEE + balance-heuristic MIS with BSDF sample.
+  - OQ-M11-05 A: no required firefly clamp in M11.
+  - OQ-M11-06 A: default stays OFF for all of M11 (no language default flip).
+  - OQ-M11-07 A: no new PE ceiling; DCE; prior ≤300/400/500/600 caps.
+  - OQ-M11-08 A: full backend parity; no silent BSDF soft-skip.
+- Binding acceptance: flag ON → silver ball-center 40×40 mean L **≥ 80** (target order ~v1 **≈106.31**); flag OFF → near-black witness L **≤ 5** / M4 goldens preserved; roughness stays **0.04**; no artwork light/env brighten; no artwork `setRoughness(0)` as product fix.
+- Out: env brighten; artwork roughness=0 as product fix; default-ON; rewriting M4 goldens under OFF; DLSS/OptiX/window/GPU raster.
+- PLAN note / §19 reopen: M4 listed “Indirect GGX rays on rough surfaces” out of scope — M11 **reopens** that non-goal **behind opt-in only** (same pattern as M10 vs M9 denoise). M4 body not edited; amendments live in `spec/M11-glossy-continuation.md` §19.
+- AC: see AC-M11-01..12 in `spec/M11-glossy-continuation.md` (binding under A).
+- Open questions: **none**.
+- Spec: `spec/M11-glossy-continuation.md` (**FINAL**); fixtures: `spec/tests/M11/`.
+
 ## Team
 - Projects Manager: plan, priorities, handoffs, acceptance.
 - poteto: all coding (via Cursor cloud agents), per milestone, reports status/blockers.

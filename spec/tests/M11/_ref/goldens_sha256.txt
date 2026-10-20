@@ -1,0 +1,2 @@
+001_glossy_off_cpu_twin.golden.png  e7655a2c9a205f90786991219a3b558e27b2314377a4f5d4a66891b5b25915dd
+004_glossy_on_metal_roi_smoke.golden.png  f6165a40a3a145f50ed9e07a8e70b51b8cffd9f60bd91701a2bf2110c8b27888

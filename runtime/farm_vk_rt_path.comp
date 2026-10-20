@@ -18,7 +18,7 @@ layout(std430, binding = 0) buffer ParamBuf {
   vec4 cam_x;
   vec4 cam_y;
   vec4 cam_z;
-  vec4 extra;      // adaptive_target, bvh_root, 0, 0
+  vec4 extra;      // adaptive_target, bvh_root, glossy, 0
 } P;
 
 struct GpuTri {
@@ -223,6 +223,38 @@ vec3 cosine_sample(float u1, float u2) {
   return vec3(r * cos(phi), r * sin(phi), sqrt(max(0.0, 1.0 - u1)));
 }
 
+int glossy_on() { return P.extra.z > 0.5 ? 1 : 0; }
+
+/* Heitz 2018 VNDF-GGX. Ve in shading frame (z = N). */
+vec3 sample_vndf_ggx(vec3 Ve, float alpha, float u1, float u2) {
+  vec3 Vh = normalize(vec3(alpha * Ve.x, alpha * Ve.y, Ve.z));
+  float lensq = Vh.x * Vh.x + Vh.y * Vh.y;
+  vec3 T1 = lensq > 0.0 ? vec3(-Vh.y, Vh.x, 0.0) * inversesqrt(lensq) : vec3(1.0, 0.0, 0.0);
+  vec3 T2 = cross(Vh, T1);
+  float r = sqrt(u1);
+  float phi = 2.0 * FARM_PI * u2;
+  float t1 = r * cos(phi);
+  float t2 = r * sin(phi);
+  float s = 0.5 * (1.0 + Vh.z);
+  t2 = (1.0 - s) * sqrt(max(0.0, 1.0 - t1 * t1)) + s * t2;
+  vec3 Nh = t1 * T1 + t2 * T2 + sqrt(max(0.0, 1.0 - t1 * t1 - t2 * t2)) * Vh;
+  return normalize(vec3(alpha * Nh.x, alpha * Nh.y, max(0.0, Nh.z)));
+}
+
+float ggx_vndf_pdf(vec3 n, vec3 view, vec3 ldir, float rough) {
+  float ndotl = dot(n, ldir);
+  float ndotv = dot(n, view);
+  if (ndotl <= 0.0 || ndotv <= NDOT_EPS) return 0.0;
+  vec3 h = normalize(view + ldir);
+  float ndoth = dot(n, h);
+  if (ndoth <= 0.0) return 0.0;
+  float alpha = rough * rough;
+  float D = ggx_d(ndoth, alpha * alpha);
+  float pdf = D * smith_g1(ndotv, alpha) / (4.0 * ndotv);
+  if (!(pdf > 0.0)) return 0.0;
+  return pdf;
+}
+
 vec3 sample_bilinear(int tw, int th, int off, float u, float v) {
   u = clamp01(u); v = clamp01(v);
   float x = u * float(tw - 1);
@@ -341,6 +373,60 @@ int dir_off() { return P.counts.w; }
 int pt_off() { return P.counts.w + P.counts2.x * 2; }
 int rect_off() { return P.counts.w + P.counts2.x * 2 + P.counts2.y * 2; }
 
+bool intersect_rect_ray(vec4 r0, vec4 r1, vec4 r2, vec4 r3, float width, float height,
+                        vec3 o, vec3 d, float t_max, out float t_hit, out vec3 n_out) {
+  if (width <= 0.0 || height <= 0.0) return false;
+  mat4 inv = inverse(rect_mw(r0, r1, r2, r3));
+  vec3 ol = (inv * vec4(o, 1.0)).xyz;
+  vec3 dl = mat3(inv) * d;
+  if (abs(dl.z) < 1e-12) return false;
+  float t = -ol.z / dl.z;
+  if (t <= T_MIN || t >= t_max) return false;
+  float lx = ol.x + t * dl.x;
+  float ly = ol.y + t * dl.y;
+  if (lx < -0.5 * width || lx > 0.5 * width || ly < -0.5 * height || ly > 0.5 * height) return false;
+  t_hit = t;
+  n_out = normalize(xform_dir(r0, r1, r2, vec3(0.0, 0.0, -1.0)));
+  return true;
+}
+
+vec3 mis_rects_along(vec3 o, vec3 d, float t_max, float pdf_bsdf, vec3 throughput) {
+  if (!(pdf_bsdf > 0.0)) return vec3(0.0);
+  int best = -1;
+  float best_t = t_max;
+  vec3 best_n = vec3(0.0);
+  int nrect = P.counts2.z;
+  int base_r = rect_off();
+  for (int k = 0; k < nrect; k++) {
+    int off = base_r + k * 6;
+    vec4 r0 = lights[off + 0], r1 = lights[off + 1], r2 = lights[off + 2], r3 = lights[off + 3];
+    float width = lights[off + 4].w;
+    float height = lights[off + 5].x;
+    float t;
+    vec3 nn;
+    if (intersect_rect_ray(r0, r1, r2, r3, width, height, o, d, best_t, t, nn)) {
+      best = k;
+      best_t = t;
+      best_n = nn;
+    }
+  }
+  if (best < 0) return vec3(0.0);
+  int off = base_r + best * 6;
+  vec3 le = lights[off + 4].xyz;
+  float width = lights[off + 4].w;
+  float height = lights[off + 5].x;
+  float area = width * height;
+  if (area <= 0.0) return vec3(0.0);
+  float dist = best_t;
+  float cos_light = dot(best_n, -d);
+  if (cos_light <= 0.0) return vec3(0.0);
+  float pdf_area = 1.0 / area;
+  float pdf_light = pdf_area * dist * dist / cos_light;
+  float sm = pdf_bsdf + pdf_light;
+  float wgt = sm > 0.0 ? pdf_bsdf / sm : 1.0;
+  return throughput * le * wgt;
+}
+
 vec3 direct_lighting(vec3 p, vec3 n, vec3 view, vec3 albedo, float metal, float trans,
                      float rough, int px, int py, int s, int depth) {
   vec3 acc = vec3(0.0);
@@ -398,10 +484,13 @@ vec3 direct_lighting(vec3 p, vec3 n, vec3 view, vec3 albedo, float metal, float 
     float scale = cos_light / (pdf_area * dist2);
     bool blocked = any_hit(origin, ldir, dist - RAY_EPS);
     float mis_d = 1.0;
-    if (P.flags.y == 1) {
+    int do_mis = (P.flags.y == 1 || (glossy_on() != 0 && metal > 0.0 && rough > 0.0)) ? 1 : 0;
+    if (do_mis != 0) {
       float ndotl = dot(n, ldir);
       if (ndotl > 0.0) {
-        float pdf_bsdf = ndotl / FARM_PI;
+        float pdf_bsdf = (glossy_on() != 0 && metal > 0.0 && rough > 0.0)
+          ? ggx_vndf_pdf(n, view, ldir, rough)
+          : (ndotl / FARM_PI);
         float pdf_light = pdf_area * dist2 / cos_light;
         float sm = pdf_light + pdf_bsdf;
         if (sm > 0.0) mis_d = pdf_light / sm;
@@ -444,6 +533,8 @@ vec3 trace_radiance(int x, int y, int s) {
   vec3 acc = vec3(0.0);
   int ambient_done = 0;
   int prev_delta = 1;
+  int prev_glossy_bsdf = 0;
+  float mis_pdf = 0.0;
   int maxb = P.counts.x;
   for (int depth = 0; depth <= maxb; depth++) {
     if (P.flags.x != 0 && depth >= 3 && prev_delta == 0) {
@@ -454,6 +545,9 @@ vec3 trace_radiance(int x, int y, int s) {
       throughput /= q;
     }
     Hit hit = closest_hit(o, d);
+    float tcap = hit.hit ? hit.t : 1e30;
+    if (mis_pdf > 0.0 && prev_glossy_bsdf != 0)
+      acc += mis_rects_along(o, d, tcap, mis_pdf, throughput);
     if (!hit.hit) {
       acc += throughput * P.background.xyz;
       break;
@@ -513,11 +607,52 @@ vec3 trace_radiance(int x, int y, int s) {
         }
       }
       prev_delta = 1;
+      mis_pdf = 0.0;
+      prev_glossy_bsdf = 0;
     } else if (rough == 0.0) {
       throughput *= schlick(f0_of(albedo, metal), ndotv);
       d = reflect_dir(d, n);
       o = p + n * RAY_EPS;
       prev_delta = 1;
+      mis_pdf = 0.0;
+      prev_glossy_bsdf = 0;
+    } else if (glossy_on() != 0 && metal > 0.0) {
+      vec3 tv, bv;
+      onb(n, tv, bv);
+      vec3 Ve = vec3(dot(view, tv), dot(view, bv), dot(view, n));
+      if (Ve.z < NDOT_EPS) Ve.z = NDOT_EPS;
+      Ve = normalize(Ve);
+      float alpha = rough * rough;
+      if (alpha < 1e-4) alpha = 1e-4;
+      float u1 = rand01(x, y, s, base + 0);
+      float u2 = rand01(x, y, s, base + 1);
+      vec3 H = sample_vndf_ggx(Ve, alpha, u1, u2);
+      float vdh = dot(Ve, H);
+      vec3 Le = 2.0 * vdh * H - Ve;
+      if (Le.z <= NDOT_EPS) {
+        u1 = rand01(x, y, s, base + 4);
+        u2 = rand01(x, y, s, base + 5);
+        H = sample_vndf_ggx(Ve, alpha, u1, u2);
+        vdh = dot(Ve, H);
+        Le = 2.0 * vdh * H - Ve;
+      }
+      if (Le.z <= NDOT_EPS) {
+        d = reflect_dir(d, n);
+        throughput *= schlick(f0_of(albedo, metal), ndotv);
+        o = p + n * RAY_EPS;
+        prev_delta = 1;
+        mis_pdf = 0.0;
+        prev_glossy_bsdf = 0;
+      } else {
+        d = normalize(tv * Le.x + bv * Le.y + n * Le.z);
+        vec3 F = schlick(f0_of(albedo, metal), max(vdh, 0.0));
+        float G1l = smith_g1(Le.z, alpha);
+        throughput *= F * G1l;
+        o = p + n * RAY_EPS;
+        mis_pdf = ggx_vndf_pdf(n, view, d, rough);
+        prev_delta = 0;
+        prev_glossy_bsdf = 1;
+      }
     } else {
       float u1 = rand01(x, y, s, base + 0);
       float u2 = rand01(x, y, s, base + 1);
@@ -530,6 +665,8 @@ vec3 trace_radiance(int x, int y, int s) {
       throughput *= weight;
       o = p + n * RAY_EPS;
       prev_delta = 0;
+      mis_pdf = 0.0;
+      prev_glossy_bsdf = 0;
     }
     if (throughput.x == 0.0 && throughput.y == 0.0 && throughput.z == 0.0) break;
   }

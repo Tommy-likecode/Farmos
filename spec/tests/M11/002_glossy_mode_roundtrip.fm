@@ -1,0 +1,19 @@
+// M11-002: setPathGlossyContinuation / getPathGlossyContinuation roundtrip.
+import { Scene, PerspectiveCamera, Renderer,
+         PATH_GLOSSY_OFF, PATH_GLOSSY_VNDF } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x4488ff));
+  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.z = 5;
+  const renderer: Renderer = new Renderer(4, 4);
+  renderer.setSamples(1);
+  println(renderer.getPathGlossyContinuation());
+  renderer.setPathGlossyContinuation(PATH_GLOSSY_VNDF);
+  println(renderer.getPathGlossyContinuation());
+  renderer.setPathGlossyContinuation(PATH_GLOSSY_OFF);
+  println(renderer.getPathGlossyContinuation());
+  return 0;
+}

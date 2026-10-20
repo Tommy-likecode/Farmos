@@ -197,6 +197,7 @@ typedef struct {
   int32_t max_bounces;
   int32_t sampling; /* 0=M4, 1=MIS, 2=AREA_SOLID */
   int rr;
+  int glossy; /* 0=OFF, 1=VNDF-GGX rough-metal continuation (M11) */
   int fast_isect; /* speed lane: local-space Möller–Trumbore, no per-tri xform */
 } PathWorld;
 
@@ -597,6 +598,48 @@ static V3 cosine_sample(double u1, double u2) {
   return v3(r * cos(phi), r * sin(phi), sqrt(fmax(0.0, 1.0 - u1)));
 }
 
+/* Heitz 2018 VNDF-GGX. Ve is the view vector in the shading frame (z = N).
+   Returns a microfacet normal in that frame. Alpha is GGX roughness (rough²). */
+static V3 sample_vndf_ggx(V3 Ve, double alpha, double u1, double u2) {
+  V3 Vh = vnorm(v3(alpha * Ve.x, alpha * Ve.y, Ve.z));
+  double lensq = Vh.x * Vh.x + Vh.y * Vh.y;
+  V3 T1;
+  if (lensq > 0.0) {
+    double inv = 1.0 / sqrt(lensq);
+    T1 = v3(-Vh.y * inv, Vh.x * inv, 0.0);
+  } else {
+    T1 = v3(1.0, 0.0, 0.0);
+  }
+  V3 T2 = vcross(Vh, T1);
+  double r = sqrt(u1);
+  double phi = 2.0 * FARM_PI * u2;
+  double t1 = r * cos(phi);
+  double t2 = r * sin(phi);
+  double s = 0.5 * (1.0 + Vh.z);
+  t2 = (1.0 - s) * sqrt(fmax(0.0, 1.0 - t1 * t1)) + s * t2;
+  double tz = sqrt(fmax(0.0, 1.0 - t1 * t1 - t2 * t2));
+  V3 Nh = v3(T1.x * t1 + T2.x * t2 + Vh.x * tz,
+             T1.y * t1 + T2.y * t2 + Vh.y * tz,
+             T1.z * t1 + T2.z * t2 + Vh.z * tz);
+  return vnorm(v3(alpha * Nh.x, alpha * Nh.y, fmax(0.0, Nh.z)));
+}
+
+/* Solid-angle pdf of the reflected direction under VNDF-GGX:
+   pdf(L) = D(H) * G1(V) / (4 * N·V). */
+static double ggx_vndf_pdf(V3 n, V3 view, V3 ldir, double rough) {
+  double ndotl = vdot(n, ldir);
+  double ndotv = vdot(n, view);
+  if (ndotl <= 0.0 || ndotv <= NDOT_EPS) return 0.0;
+  V3 h = vnorm(vadd(view, ldir));
+  double ndoth = vdot(n, h);
+  if (ndoth <= 0.0) return 0.0;
+  double alpha = rough * rough;
+  double D = ggx_d(ndoth, alpha * alpha);
+  double pdf = D * smith_g1(ndotv, alpha) / (4.0 * ndotv);
+  if (!(pdf > 0.0) || !isfinite(pdf)) return 0.0;
+  return pdf;
+}
+
 static V3 sample_bilinear(farm_Texture* tex, double u, double v) {
   int W = tex->width, H = tex->height;
   u = clamp01(u); v = clamp01(v);
@@ -744,6 +787,7 @@ static V3 direct_lighting(PathWorld* w, V3 p, V3 n, V3 view, V3 albedo, double m
   V3 acc = v3(0, 0, 0);
   V3 origin = vadd(p, vmul(n, RAY_EPS));
   int skip_spec = w->fast_isect ? 1 : 0;
+  if (w->glossy && metal > 0.0) skip_spec = 0;
   int fast = w->fast_isect;
   for (int32_t i = 0; i < w->ndir; i++) {
     V3 ldir = vnorm(vmul(w->dirs[i].travel, -1.0));
@@ -767,7 +811,7 @@ static V3 direct_lighting(PathWorld* w, V3 p, V3 n, V3 view, V3 albedo, double m
   int base = depth * 16;
   /* MIS: one-light + balance; skip atan warp. AREA_SOLID keeps the angular warp. */
   int improved = (w->sampling == 2) ? 1 : 0;
-  int do_mis = (w->sampling == 1);
+  int do_mis = (w->sampling == 1) || (w->glossy && metal > 0.0 && rough > 0.0);
   int32_t nrect = w->nrect;
   int32_t k0 = 0, k1 = nrect;
   double light_pick = 1.0;
@@ -796,7 +840,11 @@ static V3 direct_lighting(PathWorld* w, V3 p, V3 n, V3 view, V3 albedo, double m
     if (do_mis) {
       double ndotl = vdot(n, ldir);
       if (ndotl > 0.0) {
-        double pdf_bsdf = ndotl / FARM_PI;
+        double pdf_bsdf;
+        if (w->glossy && metal > 0.0 && rough > 0.0)
+          pdf_bsdf = ggx_vndf_pdf(n, view, ldir, rough);
+        else
+          pdf_bsdf = ndotl / FARM_PI;
         double pdf_light = (pdf_area * dist2 / cos_light) / light_pick;
         mis_d = balance_w(pdf_light, pdf_bsdf);
       }
@@ -857,7 +905,7 @@ static double rect_pdf_area_at(RectL* rect, V3 p, V3 hitp, int improved) {
    t already computed — no extra BVH (the old closest_hit+any_hit pair made
    the artwork speed lane slower than M4). */
 static V3 mis_rects_along(PathWorld* w, V3 o, V3 d, double t_max, double pdf_bsdf, V3 throughput) {
-  if (w->sampling != 1 || !(pdf_bsdf > 0.0)) return v3(0, 0, 0);
+  if (!(pdf_bsdf > 0.0)) return v3(0, 0, 0);
   int best = -1;
   double best_t = t_max;
   V3 best_n = v3(0, 0, 0);
@@ -889,6 +937,7 @@ static V3 trace_radiance(PathWorld* w, farm_Renderer* r, int32_t x, int32_t y, i
   int ambient_done = 0;
   int prev_delta = 1; /* camera ray: do not RR until a non-delta scatter */
   double mis_pdf = 0.0;
+  int prev_glossy_bsdf = 0;
   int maxb = w->max_bounces;
   /* RR already terminates; a slightly lower hard cap avoids long glossy tails
      (still ≤ maxBounces). */
@@ -907,7 +956,7 @@ static V3 trace_radiance(PathWorld* w, farm_Renderer* r, int32_t x, int32_t y, i
     Hit hit;
     closest_hit(w, o, d, &hit);
     double tcap = hit.hit ? hit.t : 1e30;
-    if (mis_pdf > 0.0)
+    if (mis_pdf > 0.0 && (w->sampling == 1 || prev_glossy_bsdf))
       acc = vadd(acc, mis_rects_along(w, o, d, tcap, mis_pdf, throughput));
     if (!hit.hit) {
       acc = vadd(acc, cmul(throughput, w->background));
@@ -988,12 +1037,56 @@ static V3 trace_radiance(PathWorld* w, farm_Renderer* r, int32_t x, int32_t y, i
       }
       prev_delta = 1;
       mis_pdf = 0.0;
+      prev_glossy_bsdf = 0;
     } else if (rough == 0.0) {
       throughput = cmul(throughput, schlick(f0_of(albedo, metal), ndotv));
       d = reflect_dir(d, n);
       o = vadd(p, vmul(n, RAY_EPS));
       prev_delta = 1;
       mis_pdf = 0.0;
+      prev_glossy_bsdf = 0;
+    } else if (w->glossy && metal > 0.0) {
+      /* M11: VNDF-GGX specular continuation for rough metals.
+         Estimator identity: f * N·L / pdf = F * G1(L). Do not multiply by (1−metal). */
+      V3 tv, bv; onb(n, &tv, &bv);
+      V3 Ve = v3(vdot(view, tv), vdot(view, bv), vdot(view, n));
+      if (Ve.z < NDOT_EPS) Ve.z = NDOT_EPS;
+      Ve = vnorm(Ve);
+      double alpha = rough * rough;
+      if (alpha < 1e-4) alpha = 1e-4;
+      double u1 = rand01(x, y, s, base + 0);
+      double u2 = rand01(x, y, s, base + 1);
+      V3 H = sample_vndf_ggx(Ve, alpha, u1, u2);
+      double vdh = vdot(Ve, H);
+      V3 Le = v3(2.0 * vdh * H.x - Ve.x, 2.0 * vdh * H.y - Ve.y, 2.0 * vdh * H.z - Ve.z);
+      if (Le.z <= NDOT_EPS) {
+        u1 = rand01(x, y, s, base + 4);
+        u2 = rand01(x, y, s, base + 5);
+        H = sample_vndf_ggx(Ve, alpha, u1, u2);
+        vdh = vdot(Ve, H);
+        Le = v3(2.0 * vdh * H.x - Ve.x, 2.0 * vdh * H.y - Ve.y, 2.0 * vdh * H.z - Ve.z);
+      }
+      if (Le.z <= NDOT_EPS) {
+        /* Documented fallback: perfect reflect_dir, delta-like (no MIS). */
+        d = reflect_dir(d, n);
+        throughput = cmul(throughput, schlick(f0_of(albedo, metal), ndotv));
+        o = vadd(p, vmul(n, RAY_EPS));
+        prev_delta = 1;
+        mis_pdf = 0.0;
+        prev_glossy_bsdf = 0;
+      } else {
+        d = vnorm(v3(tv.x * Le.x + bv.x * Le.y + n.x * Le.z,
+                     tv.y * Le.x + bv.y * Le.y + n.y * Le.z,
+                     tv.z * Le.x + bv.z * Le.y + n.z * Le.z));
+        if (vdh < 0.0) vdh = 0.0;
+        V3 F = schlick(f0_of(albedo, metal), vdh);
+        double G1l = smith_g1(Le.z, alpha);
+        throughput = cmul(throughput, v3(F.x * G1l, F.y * G1l, F.z * G1l));
+        o = vadd(p, vmul(n, RAY_EPS));
+        mis_pdf = ggx_vndf_pdf(n, view, d, rough);
+        prev_delta = 0;
+        prev_glossy_bsdf = 1;
+      }
     } else {
       double u1 = rand01(x, y, s, base + 0);
       double u2 = rand01(x, y, s, base + 1);
@@ -1011,6 +1104,7 @@ static V3 trace_radiance(PathWorld* w, farm_Renderer* r, int32_t x, int32_t y, i
       mis_pdf = local.z / FARM_PI;
       if (mis_pdf < 0.0) mis_pdf = 0.0;
       prev_delta = 0;
+      prev_glossy_bsdf = 0;
     }
     if (throughput.x == 0.0 && throughput.y == 0.0 && throughput.z == 0.0) break;
   }
@@ -1384,6 +1478,7 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
   world.max_bounces = self->max_bounces;
   world.sampling = farm_renderer_sampling_mode(self);
   world.rr = farm_renderer_roulette_on(self);
+  world.glossy = farm_renderer_glossy_mode(self);
   if (scene->hasBackground) world.background = v3(scene->background.r, scene->background.g, scene->background.b);
   else world.background = v3(0, 0, 0);
   int32_t cap_inst = 0, cap_amb = 0, cap_dir = 0, cap_pt = 0, cap_rect = 0, mesh_i = 0;

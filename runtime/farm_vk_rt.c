@@ -1098,6 +1098,7 @@ static void rt_fill_params(GpuParams* params, farm_Renderer* r, farm_Scene* scen
   params->flags[1] = farm_renderer_sampling_mode(r);
   params->flags[2] = r->path_adaptive_spp ? 1 : 0;
   params->extra[0] = (float)r->path_adaptive_target;
+  params->extra[2] = (float)farm_renderer_glossy_mode(r);
   if (r->preview_div > 1) {
     if (params->counts[0] > 3) params->counts[0] = 3;
     params->flags[1] = 0;

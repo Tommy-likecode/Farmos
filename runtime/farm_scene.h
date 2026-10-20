@@ -308,6 +308,8 @@ struct farm_Renderer {
   int32_t* spp_count;    // per-pixel counts when adaptive has run
   int32_t path_denoise;  // 0=OFF, 1=SPATIAL (M10)
   int8_t path_denoise_gpu_done;
+  int32_t path_glossy;   // 0=OFF, 1=VNDF (M11)
+  int8_t path_glossy_set;
   int32_t preview_div;   // 1 = full res; 4 = quarter-res preview dispatch
   int32_t preview_spp;
   int8_t preview_active;
@@ -466,6 +468,9 @@ double farm_Renderer_getPathAdaptiveTarget(farm_Renderer* self);
 void farm_Renderer_setPathDenoise(farm_Renderer* self, int64_t mode);
 int64_t farm_Renderer_getPathDenoise(farm_Renderer* self);
 int8_t farm_Renderer_isPathDenoiseAvailable(farm_Renderer* self);
+void farm_Renderer_setPathGlossyContinuation(farm_Renderer* self, int64_t mode);
+int64_t farm_Renderer_getPathGlossyContinuation(farm_Renderer* self);
+int32_t farm_renderer_glossy_mode(const farm_Renderer* self);
 void farm_Renderer_beginPathPreview(farm_Renderer* self, farm_Scene* scene, farm_PerspectiveCamera* camera);
 int8_t farm_Renderer_advancePathPreview(farm_Renderer* self, int64_t sppStep);
 void farm_Renderer_finishPathPreview(farm_Renderer* self);

@@ -847,7 +847,7 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
     float cam_x[4];
     float cam_y[4];
     float cam_z[4];
-    float extra[4];     /* adaptive_target, bvh_root, 0, 0 */
+    float extra[4];     /* adaptive_target, bvh_root, glossy, 0 */
   } GpuParams;
   GpuParams params;
   memset(&params, 0, sizeof(params));
@@ -863,6 +863,7 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   params.flags[3] = nnodes;
   params.extra[0] = (float)r->path_adaptive_target;
   params.extra[1] = (float)bvh_root;
+  params.extra[2] = (float)farm_renderer_glossy_mode(r);
   if (scene->hasBackground) {
     params.background[0] = (float)scene->background.r;
     params.background[1] = (float)scene->background.g;

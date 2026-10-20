@@ -1,0 +1,30 @@
+// M11-004: rough metal + background; glossy ON smoke (not full artwork ROI).
+// metalness=1, roughness=0.04 — do not brighten env or set roughness 0.
+import { Scene, PerspectiveCamera, SphereGeometry, MeshStandardMaterial, Mesh,
+         RectAreaLight, Renderer, PATH_GLOSSY_VNDF } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0.42, 0.45, 0.50));
+  const cam: PerspectiveCamera = new PerspectiveCamera(35.0, 1.0, 0.1, 100.0);
+  cam.position.set(0.0, 0.0, 3.0);
+  cam.lookAt(0.0, 0.0, 0.0);
+  const silver: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.92, 0.93, 0.95));
+  silver.setRoughness(0.04);
+  silver.setMetalness(1.0);
+  const ball: Mesh = new Mesh(new SphereGeometry(0.5, 16, 8), silver);
+  scene.add(ball);
+  // one soft key so NEE still exists; env fill comes from glossy bounce when ON
+  const key: RectAreaLight = new RectAreaLight(new Color(1.0, 1.0, 1.0), 6.5, 4.0, 4.0);
+  key.position.set(0.0, 3.0, 0.0);
+  key.lookAt(0.0, 0.0, 0.0);
+  scene.add(key);
+  const r: Renderer = new Renderer(64, 64);
+  r.setPathGlossyContinuation(PATH_GLOSSY_VNDF);
+  r.setSamples(16);
+  r.setMaxBounces(4);
+  r.renderPath(scene, cam);
+  r.savePNG("out.png");
+  return 0;
+}

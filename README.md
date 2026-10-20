@@ -1,5 +1,19 @@
 # Farmos
 
+## M11 — opt-in GGX/VNDF glossy continuation
+
+Spec: `spec/M11-glossy-continuation.md` (FINAL). Fixtures: `spec/tests/M11/` (ctest `m11_*`).
+
+- `setPathGlossyContinuation` / `getPathGlossyContinuation` / `PATH_GLOSSY_OFF=0` / `PATH_GLOSSY_VNDF=1`. Default **OFF** (M4 goldens unchanged). Invalid mode: trap **121**.
+- When ON, rough metals (`metalness>0` && `roughness>0`) bounce with VNDF-GGX instead of cosine × `(1−metal)`. Dielectrics, glass, and delta-mirrors (`rough==0`) are unchanged.
+- Same estimator on CPU, Vulkan compute, and Vulkan RT. No silent BSDF soft-skip. RectArea NEE stays; glossy metals MIS with the VNDF pdf (balance heuristic).
+- Artwork silver AC: roughness stays **0.04**; flag ON → ball-center 40×40 mean L ≥ **80** (target ~v1 ≈106.31); flag OFF → L ≤ **5** / M4 SHA. Do not env-brighten; `setRoughness(0)` restores v1 L=106.310 exactly but is **not** the product fix.
+- Size: no new PE ceiling; DCE unused glossy; prior ≤20/300/400/500/600 KiB caps.
+
+Linux: `bash scripts/run_suite_linux.sh build/farmc spec/tests/M11`
+
+---
+
 ## M10 — denoise / interactive
 
 Spec: `spec/M10-denoise-interactive.md` (FINAL). Fixtures: `spec/tests/M10/` (ctest `m10_*`).

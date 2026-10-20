@@ -1,0 +1,8 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# png_tol: 8
+# sha256: f6165a40a3a145f50ed9e07a8e70b51b8cffd9f60bd91701a2bf2110c8b27888
+## 64x64 rough metal (r=0.04, m=1) + bg; PATH_GLOSSY_VNDF; Linux CPU golden
+# stdout:
+# end
