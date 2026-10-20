@@ -173,3 +173,27 @@ After the first `E0505` (undefined name), further diagnostics in that compilatio
   (`farmc-<pid>-<n>-<rand>`). M6 §7.2: unusable TEMP → exit **1** and
   `error: temporary directory unavailable` (`TempDirError`, never ICE). Other driver I/O stays exit 3.
 - Covered by `local_140_unicode_temp`.
+
+## M11 glossy continuation (VNDF-GGX)
+
+Implementation-owned formulas, shared by `runtime/farm_ray.c`, `runtime/farm_vk_path.comp`, and
+`runtime/farm_vk_rt_path.comp`. Spec: `spec/M11-glossy-continuation.md` §5.
+
+- **When:** `getPathGlossyContinuation() == PATH_GLOSSY_VNDF` and the hit has `metal > 0` after clamp
+  and `rough > 0`. Dielectrics, glass, and `rough == 0` (delta mirror) stay on the M4 cosine / delta
+  branches even if the flag is ON.
+- **Lobe:** Heitz 2018 VNDF sample of isotropic GGX with `alpha = rough * rough` (same alpha as
+  existing NEE `ggx_d`). View is transformed into the M4 ONB (`|Nx|>|Ny|`). RNG slots `depth*16+0/1`
+  match the cosine bounce; one resample uses `+4/+5` if the reflected direction is below the
+  geometric hemisphere. Still invalid → documented fallback `reflect_dir` with Schlick weight
+  (treated as delta, `mis_pdf = 0`).
+- **Estimator:** VNDF identity `f * N·L / pdf = F * G1(L)` with Schlick `F0 = 0.04*(1−metal)+albedo*metal`
+  and Smith GGX `G1`. No `(1−metal)` on this path. No firefly clamp (OQ-M11-05 A).
+- **PDF (MIS):** `pdf(L) = D(H) * G1(V) / (4 * N·V)`.
+- **NEE:** RectArea / Point / Directional stay. For a glossy-metal hit, skip_spec is forced off
+  (CPU speed-lane must not drop GGX NEE). Balance-heuristic MIS uses the VNDF pdf instead of
+  Lambert, including when `PATH_SAMPLING_M4` (so NEE + BSDF-to-rect are not double-counted).
+  Dielectrics under glossy ON + M4 sampling are untouched (no extra MIS).
+- **GPU:** glossy mode is `GpuParams.extra.z`. SPIR-V regenerated via `scripts/compile_vk_shader.sh`.
+- **Env:** `FARMOS_PATH_GLOSSY=1` only if the setter was never called; method wins.
+

@@ -1570,6 +1570,12 @@ void seed_scene_summaries(Analyzer& A) {
   A.sums["farm_Renderer_getPathDenoise"] = gpd;
   Summary avd; avd.seeded = true;
   A.sums["farm_Renderer_isPathDenoiseAvailable"] = avd;
+  Summary pgl; pgl.seeded = true;
+  add_eff(pgl, false, true, A.with_field(rth, "pathGlossy"), CVal::unk());
+  A.sums["farm_Renderer_setPathGlossyContinuation"] = pgl;
+  Summary gpgl; gpgl.seeded = true;
+  add_eff(gpgl, true, false, A.with_field(rth, "pathGlossy"));
+  A.sums["farm_Renderer_getPathGlossyContinuation"] = gpgl;
   A.sums["farm_Renderer_beginPathPreview"] = rend;
   Summary adv; adv.seeded = true;
   add_eff(adv, true, false, cam);

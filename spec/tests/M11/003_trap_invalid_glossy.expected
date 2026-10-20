@@ -1,0 +1,6 @@
+# kind: runtime_trap
+# exit: 121
+# stderr_exact: true
+# stderr:
+runtime error: invalid path glossy mode
+# end

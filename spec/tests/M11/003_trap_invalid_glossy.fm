@@ -1,0 +1,12 @@
+// M11-003: invalid glossy mode → trap 121 at setter.
+import { Scene, PerspectiveCamera, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x4488ff));
+  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+  const renderer: Renderer = new Renderer(4, 4);
+  renderer.setPathGlossyContinuation(99);
+  return 0;
+}

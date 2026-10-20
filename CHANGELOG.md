@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+M11 — opt-in GGX/VNDF glossy continuation (`spec/M11-glossy-continuation.md` FINAL):
+
+- Additive `PATH_GLOSSY_OFF` / `PATH_GLOSSY_VNDF`, `setPathGlossyContinuation` / `getPathGlossyContinuation`. Default **OFF** (M4 goldens unchanged). Invalid mode traps **121** at the setter.
+- When ON, rough metals (`metal>0` && `rough>0`) sample a Heitz 2018 VNDF-GGX reflection continuation. Throughput is `F * G1(L)` (unbiased Smith-GGX identity). Dielectrics / glass / `rough==0` stay M4 cosine / delta.
+- CPU (`farm_ray.c`), Vulkan compute (`farm_vk_path.comp`), and Vulkan RT (`farm_vk_rt_path.comp`) share the estimator. No BSDF soft-skip. RectArea NEE kept; glossy metals use balance-heuristic MIS with the VNDF pdf.
+- Optional `FARMOS_PATH_GLOSSY=1` if the setter was never called; method wins. Orthogonal to sampling / denoise / progressive.
+- Fixtures: `spec/tests/M11/`. Artwork ROI: ON L≥80 / OFF L≤5; roughness stays 0.04; no env brighten. Stopgap `setRoughness(0)` → L=106.310 is documented, not shipped as the fix.
+- Size: no new PE cap (OQ-M11-07 A).
+
 M10 — denoise / interactive path tracing (`spec/M10-denoise-interactive.md` FINAL):
 
 - Additive `PATH_DENOISE_OFF` / `PATH_DENOISE_SPATIAL`, `setPathDenoise` / `getPathDenoise` / `isPathDenoiseAvailable`. Default **OFF** (M4/M9 goldens unchanged). Invalid mode traps **120** at `setPathDenoise`.

@@ -169,6 +169,15 @@ foreach(exp ${M10_EXPECTED})
   set_tests_properties(m10_${name} PROPERTIES LABELS "spec")
 endforeach()
 
+# ---- M11 Spec fixtures (spec/tests/M11) ----
+set(FARMC_M11_TESTS_DIR "${CMAKE_SOURCE_DIR}/spec/tests/M11")
+file(GLOB M11_EXPECTED "${FARMC_M11_TESTS_DIR}/*.expected")
+foreach(exp ${M11_EXPECTED})
+  get_filename_component(name ${exp} NAME_WE)
+  farmc_add_one_test(m11_${name} "${FARMC_M11_TESTS_DIR}" "${name}")
+  set_tests_properties(m11_${name} PROPERTIES LABELS "spec")
+endforeach()
+
 # AC-M3-01 / AC-M3-11: unused farmos:scene import DCE + M1/M2 link flags vs master.
 # Windows: PowerShell (no python3 required). Unix: python3.
 find_program(FARMC_PYTHON3 python3)

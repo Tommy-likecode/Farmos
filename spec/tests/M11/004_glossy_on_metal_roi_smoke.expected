@@ -1,0 +1,8 @@
+# kind: run_png
+# exit: 0
+# png: out.png
+# png_tol: 8
+# sha256: 0000000000000000000000000000000000000000000000000000000000000000
+## 64x64 rough metal (r=0.04, m=1) + bg; PATH_GLOSSY_VNDF; SHA filled after first green CPU run
+# stdout:
+# end

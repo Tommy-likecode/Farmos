@@ -1144,6 +1144,8 @@ farm_Renderer* farm_Renderer_new() {
   r->spp_count = NULL;
   r->path_denoise = 0;
   r->path_denoise_gpu_done = 0;
+  r->path_glossy = 0;
+  r->path_glossy_set = 0;
   r->preview_div = 1;
   r->preview_spp = 0;
   r->preview_active = 0;
@@ -1270,6 +1272,24 @@ int8_t farm_Renderer_isPathDenoiseAvailable(farm_Renderer* self) {
   (void)self;
   if (farm_env_exact_1("FARMOS_PATH_DENOISE_FORCE_FAIL")) return (int8_t)0;
   return (int8_t)1;
+}
+
+void farm_Renderer_setPathGlossyContinuation(farm_Renderer* self, int64_t mode) {
+  if (mode != 0 && mode != 1)
+    farm_trap(121, "invalid path glossy mode");
+  self->path_glossy = (int32_t)mode;
+  self->path_glossy_set = 1;
+}
+
+int32_t farm_renderer_glossy_mode(const farm_Renderer* self) {
+  if (self->path_glossy_set) return self->path_glossy;
+  const char* e = getenv("FARMOS_PATH_GLOSSY");
+  if (e && e[0] == '1' && e[1] == '\0') return 1;
+  return 0;
+}
+
+int64_t farm_Renderer_getPathGlossyContinuation(farm_Renderer* self) {
+  return farm_renderer_glossy_mode(self);
 }
 
 #ifdef FARM_ENABLE_VULKAN
