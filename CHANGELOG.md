@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+M12 — native Vulkan upscale (`spec/M12-native-upscale.md` FINAL):
+
+- Additive `PATH_UPSCALE_OFF` / `PATH_UPSCALE_XESS` / `PATH_UPSCALE_FSR`, `setPathUpscale` / `getPathUpscale` / `isPathUpscaleAvailable`, `setPathUpscaleResolution`. Default **OFF**. Invalid mode or resolution traps **122** at the setter (STRICT fail: `path upscale failed`).
+- Headless XeSS Vulkan glue (`runtime/farm_upscale.c`, dynamically loaded). No swapchain/window. FSR2 is selectable; execute soft-fails until the official ffx dispatch lib is present. **OUT:** DLSS/NGX, Enabler, Swapper, OptiScaler, frame-gen.
+- When denoise and upscale are both ON: denoise then upscale. GPU backends jitter Halton(2,3) while ON; identity jitter when OFF (M4 CPU SHA). Camera MV + linearized depth; object MV deferred (zeros).
+- CPU leaves render-res unless `FARMOS_PATH_UPSCALE_STRICT=1`. Vendor SDK DLLs external (`FARMOS_XESS_LIB` / `scripts/fetch_upscale_sdk.sh`). DCE: `farm_upscale.c` linked only when the upscale API is used. Glue PE ≤ **700 KiB**.
+- Fixtures: `spec/tests/M12/`. Linux soft-skips `# requires_xess:` / `# requires_fsr:`. Arc 960×540→1080p quality + timing pending TommyLaptop.
+
 M11 — opt-in GGX/VNDF glossy continuation (`spec/M11-glossy-continuation.md` FINAL):
 
 - Additive `PATH_GLOSSY_OFF` / `PATH_GLOSSY_VNDF`, `setPathGlossyContinuation` / `getPathGlossyContinuation`. Default **OFF** (M4 goldens unchanged). Invalid mode traps **121** at the setter.

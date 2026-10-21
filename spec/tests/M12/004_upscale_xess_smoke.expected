@@ -1,0 +1,10 @@
+# kind: run_png
+# exit: 0
+# requires_xess: true
+# requires_vulkan: true
+# png: out.png
+# sha256: cf3404c13f8196aa38894b8f264605723bbbfb8a22ec11e920c7c742c6a8b43f
+# png_tol: 12
+## 32→64 XeSS smoke vs solid 0x4488ff native-class reference; skip without SDK
+# stdout:
+# end

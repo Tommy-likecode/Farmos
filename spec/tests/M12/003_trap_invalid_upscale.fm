@@ -1,0 +1,12 @@
+// M12-003: invalid upscale mode → trap 122 at setter.
+import { Scene, PerspectiveCamera, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x4488ff));
+  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+  const renderer: Renderer = new Renderer(4, 4);
+  renderer.setPathUpscale(99);
+  return 0;
+}

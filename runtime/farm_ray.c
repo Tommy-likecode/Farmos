@@ -5,6 +5,9 @@
 #ifdef FARM_ENABLE_DENOISE
 #include "farm_denoise.h"
 #endif
+#ifdef FARM_ENABLE_UPSCALE
+#include "farm_upscale.h"
+#endif
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -867,7 +870,9 @@ static V3 ambient_term(PathWorld* w, V3 albedo, double metal, double trans) {
 static void camera_ray(PathWorld* w, farm_Renderer* r, int32_t x, int32_t y, int32_t s, V3* o, V3* d) {
   double jx, jy;
   pixel_jitter(s, &jx, &jy);
-  double px = x + jx, py = y + jy;
+  float ux = 0.f, uy = 0.f;
+  farm_renderer_upscale_pixel_jitter(r, &ux, &uy);
+  double px = x + jx + (double)ux, py = y + jy + (double)uy;
   double tan_half = tan((FARM_PI / 180.0) * 0.5 * w->camera->f_fov);
   double ndc_x = (px / (double)r->width) * 2.0 - 1.0;
   double ndc_y = 1.0 - (py / (double)r->height) * 2.0;
@@ -1333,6 +1338,17 @@ static void farm_renderer_maybe_denoise(farm_Renderer* self) {
 #endif
 }
 
+static void farm_renderer_maybe_upscale(farm_Renderer* self, farm_Scene* scene,
+                                       farm_PerspectiveCamera* camera) {
+#ifdef FARM_ENABLE_UPSCALE
+  farm_renderer_apply_path_upscale(self, scene, camera);
+#else
+  (void)scene; (void)camera;
+  if (farm_renderer_upscale_mode(self) != 0 && farm_env_is_1("FARMOS_PATH_UPSCALE_STRICT"))
+    farm_trap(122, "path upscale failed");
+#endif
+}
+
 static void farm_preview_snapshot_camera(farm_Renderer* self, farm_PerspectiveCamera* camera) {
   self->preview_cam_px = camera->f_position.f_x;
   self->preview_cam_py = camera->f_position.f_y;
@@ -1426,6 +1442,8 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
     farm_Renderer_resetAccumulation(self);
   }
   self->path_denoise_gpu_done = 0;
+  self->fb_width = 0;
+  self->fb_height = 0;
 
   farm_Scene_updateMatrixWorld(scene, true);
   farm_PerspectiveCamera_updateMatrixWorld(camera, true);
@@ -1447,6 +1465,7 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
 #endif
     if (rt_ok) {
       farm_renderer_maybe_denoise(self);
+      farm_renderer_maybe_upscale(self, scene, camera);
       return;
     }
     if (farm_env_is_1("FARMOS_PATH_GPU_STRICT"))
@@ -1456,6 +1475,7 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
       gpu_ok = farm_vk_render_path(self, scene, camera);
     if (gpu_ok) {
       farm_renderer_maybe_denoise(self);
+      farm_renderer_maybe_upscale(self, scene, camera);
       return;
     }
   } else if (self->path_backend == 1) {
@@ -1464,6 +1484,7 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
       gpu_ok = farm_vk_render_path(self, scene, camera);
     if (gpu_ok) {
       farm_renderer_maybe_denoise(self);
+      farm_renderer_maybe_upscale(self, scene, camera);
       return;
     }
     if (farm_env_is_1("FARMOS_PATH_GPU_STRICT"))
@@ -1546,4 +1567,5 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
     self->framebuffer[i * 3 + 2] = (uint8_t)quantize(self->accum[i * 3 + 2] / n);
   }
   farm_renderer_maybe_denoise(self);
+  farm_renderer_maybe_upscale(self, scene, camera);
 }

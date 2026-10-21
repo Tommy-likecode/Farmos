@@ -310,6 +310,16 @@ struct farm_Renderer {
   int8_t path_denoise_gpu_done;
   int32_t path_glossy;   // 0=OFF, 1=VNDF (M11)
   int8_t path_glossy_set;
+  int32_t path_upscale;  // 0=OFF, 1=XeSS, 2=FSR2 (M12)
+  int8_t path_upscale_set;
+  int8_t path_upscale_res_set;
+  int32_t path_upscale_rw, path_upscale_rh, path_upscale_dw, path_upscale_dh;
+  int32_t path_upscale_base_w, path_upscale_base_h;
+  int32_t fb_width, fb_height; /* savePNG size after upscale; 0 = use width/height */
+  int32_t path_upscale_frame;
+  int8_t path_upscale_hist_valid;
+  int8_t path_upscale_prev_vp_valid;
+  double path_upscale_prev_vp[16];
   int32_t preview_div;   // 1 = full res; 4 = quarter-res preview dispatch
   int32_t preview_spp;
   int8_t preview_active;
@@ -471,6 +481,18 @@ int8_t farm_Renderer_isPathDenoiseAvailable(farm_Renderer* self);
 void farm_Renderer_setPathGlossyContinuation(farm_Renderer* self, int64_t mode);
 int64_t farm_Renderer_getPathGlossyContinuation(farm_Renderer* self);
 int32_t farm_renderer_glossy_mode(const farm_Renderer* self);
+void farm_Renderer_setPathUpscale(farm_Renderer* self, int64_t mode);
+int64_t farm_Renderer_getPathUpscale(farm_Renderer* self);
+int8_t farm_Renderer_isPathUpscaleAvailable(farm_Renderer* self, int64_t mode);
+void farm_Renderer_setPathUpscaleResolution(farm_Renderer* self, int64_t renderW, int64_t renderH,
+                                           int64_t displayW, int64_t displayH);
+int64_t farm_Renderer_getPathUpscaleRenderWidth(farm_Renderer* self);
+int64_t farm_Renderer_getPathUpscaleRenderHeight(farm_Renderer* self);
+int64_t farm_Renderer_getPathUpscaleDisplayWidth(farm_Renderer* self);
+int64_t farm_Renderer_getPathUpscaleDisplayHeight(farm_Renderer* self);
+int32_t farm_renderer_upscale_mode(const farm_Renderer* self);
+void farm_renderer_upscale_pixel_jitter(const farm_Renderer* r, float* jx, float* jy);
+void farm_renderer_upscale_dims(const farm_Renderer* r, int* rw, int* rh, int* dw, int* dh);
 void farm_Renderer_beginPathPreview(farm_Renderer* self, farm_Scene* scene, farm_PerspectiveCamera* camera);
 int8_t farm_Renderer_advancePathPreview(farm_Renderer* self, int64_t sppStep);
 void farm_Renderer_finishPathPreview(farm_Renderer* self);

@@ -1,5 +1,20 @@
 # Farmos
 
+## M12 — native Vulkan upscale (XeSS / FSR)
+
+Spec: `spec/M12-native-upscale.md` (FINAL). Fixtures: `spec/tests/M12/` (ctest `m12_*`).
+
+- `setPathUpscale` / `getPathUpscale` / `PATH_UPSCALE_OFF=0` / `PATH_UPSCALE_XESS=1` / `PATH_UPSCALE_FSR=2`. Default **OFF**. Invalid mode or resolution: trap **122**.
+- Headless upscale-to-buffer + `savePNG` (no OS window / swapchain). Pipeline when both ON: **denoise then upscale**.
+- XeSS Vulkan is primary (Arc); FSR2 optional. **OUT forever:** DLSS/NGX, DLSS-Enabler, Swapper, OptiScaler, frame-gen, OptiX.
+- Vulkan compute + Vulkan RT run upscale when the SDK is present; CPU soft-fails (render-res) unless `FARMOS_PATH_UPSCALE_STRICT=1`.
+- Size: upscale-glue PE ≤ **700 KiB**; vendor SDK DLLs external (`scripts/fetch_upscale_sdk.sh`); DCE when unused; hello ≤ 20 KiB; prior ≤300/400/500/600 unchanged.
+- Linux without SDK: `# requires_xess:` / `# requires_fsr:` soft-skip; OFF twins + trap + roundtrip still green. Arc 960×540→1080p smoke/timing is a TommyLaptop gate.
+
+Linux: `bash scripts/run_suite_linux.sh build/farmc spec/tests/M12`
+
+---
+
 ## M11 — opt-in GGX/VNDF glossy continuation
 
 Spec: `spec/M11-glossy-continuation.md` (FINAL). Fixtures: `spec/tests/M11/` (ctest `m11_*`).

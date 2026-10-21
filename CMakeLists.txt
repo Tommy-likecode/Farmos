@@ -178,6 +178,15 @@ foreach(exp ${M11_EXPECTED})
   set_tests_properties(m11_${name} PROPERTIES LABELS "spec")
 endforeach()
 
+# ---- M12 Spec fixtures (spec/tests/M12) ----
+set(FARMC_M12_TESTS_DIR "${CMAKE_SOURCE_DIR}/spec/tests/M12")
+file(GLOB M12_EXPECTED "${FARMC_M12_TESTS_DIR}/*.expected")
+foreach(exp ${M12_EXPECTED})
+  get_filename_component(name ${exp} NAME_WE)
+  farmc_add_one_test(m12_${name} "${FARMC_M12_TESTS_DIR}" "${name}")
+  set_tests_properties(m12_${name} PROPERTIES LABELS "spec")
+endforeach()
+
 # AC-M3-01 / AC-M3-11: unused farmos:scene import DCE + M1/M2 link flags vs master.
 # Windows: PowerShell (no python3 required). Unix: python3.
 find_program(FARMC_PYTHON3 python3)
@@ -195,7 +204,7 @@ endif()
 
 # M6: size/DCE/thread-start budgets, docs, examples, benchmarks, TEMP abort.
 # local_size_budgets MUST invoke the real scripts/check_size_budgets.{ps1,py}
-# enforcer (B-01..B-09). Do not substitute a stub.
+# enforcer (B-01..B-11). Do not substitute a stub.
 if(WIN32)
   add_test(NAME local_size_budgets
     COMMAND ${PS} "${FARMC_SCRIPTS}/check_size_budgets.ps1"

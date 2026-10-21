@@ -17,7 +17,7 @@ layout(std430, binding = 0) buffer ParamBuf {
   vec4 cam_x;
   vec4 cam_y;
   vec4 cam_z;
-  vec4 extra;      // adaptive_target, bvh_root, glossy, 0
+  vec4 extra;      // adaptive_target, bvh_root, glossy, unused
 } P;
 
 struct GpuTri {
@@ -585,7 +585,7 @@ vec3 ambient_term(vec3 albedo, float metal, float trans) {
 void camera_ray(int x, int y, int s, out vec3 o, out vec3 d) {
   float jx, jy;
   pixel_jitter(s, jx, jy);
-  float px = float(x) + jx, py = float(y) + jy;
+  float px = float(x) + jx + P.cam_x.w, py = float(y) + jy + P.cam_y.w;
   float tan_half = tan((FARM_PI / 180.0) * 0.5 * P.background.w);
   float ndc_x = (px / float(P.size.x)) * 2.0 - 1.0;
   float ndc_y = 1.0 - (py / float(P.size.y)) * 2.0;

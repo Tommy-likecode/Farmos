@@ -1,0 +1,7 @@
+# kind: runtime_trap
+# exit: 122
+# env: FARMOS_PATH_UPSCALE_STRICT=1
+# env: FARMOS_PATH_UPSCALE_FORCE_FAIL=1
+# stderr:
+runtime error: path upscale failed
+# end

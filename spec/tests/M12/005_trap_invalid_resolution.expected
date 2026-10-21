@@ -1,0 +1,6 @@
+# kind: runtime_trap
+# exit: 122
+# stderr_exact: true
+# stderr:
+runtime error: invalid path upscale resolution
+# end

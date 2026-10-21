@@ -876,6 +876,7 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   params.cam_x[0] = (float)e[0]; params.cam_x[1] = (float)e[1]; params.cam_x[2] = (float)e[2];
   params.cam_y[0] = (float)e[4]; params.cam_y[1] = (float)e[5]; params.cam_y[2] = (float)e[6];
   params.cam_z[0] = (float)e[8]; params.cam_z[1] = (float)e[9]; params.cam_z[2] = (float)e[10];
+  farm_renderer_upscale_pixel_jitter(r, &params.cam_x[3], &params.cam_y[3]);
 
   int32_t npix = r->width * r->height;
   VkBuffer bufs[8] = {0}; VkDeviceMemory mems[8] = {0}; void* maps[8] = {0};

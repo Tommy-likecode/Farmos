@@ -54,6 +54,8 @@ function Parse-Expected([string]$path) {
   $epsilon = $null
   $requiresVulkan = $false
   $requiresVulkanRt = $false
+  $requiresXess = $false
+  $requiresFsr = $false
   $pngTol = $null
   $envs = New-Object System.Collections.Generic.List[object]
   $stdoutAlts = New-Object System.Collections.Generic.List[string]
@@ -131,6 +133,8 @@ function Parse-Expected([string]$path) {
     if ($line -cmatch '^# png_tol:[ \t]*(-?\d+)[ \t]*$') { $pngTol = [int]$Matches[1]; continue }
     if ($line -cmatch '^# requires_vulkan:[ \t]*true[ \t]*$') { $requiresVulkan = $true; continue }
     if ($line -cmatch '^# requires_vulkan_rt:[ \t]*true[ \t]*$') { $requiresVulkanRt = $true; continue }
+    if ($line -cmatch '^# requires_xess:[ \t]*true[ \t]*$') { $requiresXess = $true; continue }
+    if ($line -cmatch '^# requires_fsr:[ \t]*true[ \t]*$') { $requiresFsr = $true; continue }
     if ($line -cmatch '^# env:[ \t]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
       [void]$envs.Add(@{ key=$Matches[1]; val=$Matches[2] })
       continue
@@ -178,7 +182,9 @@ function Parse-Expected([string]$path) {
     pngPath=$pngPath; sha256=$sha256
     flags=$flags; repeat=$repeat; threads=$threads; diagExact=$diagExact
     epsilon=$epsilon
-    requiresVulkan=$requiresVulkan; requiresVulkanRt=$requiresVulkanRt; pngTol=$pngTol; envs=$envs; stdoutAlts=$stdoutAlts
+    requiresVulkan=$requiresVulkan; requiresVulkanRt=$requiresVulkanRt
+    requiresXess=$requiresXess; requiresFsr=$requiresFsr
+    pngTol=$pngTol; envs=$envs; stdoutAlts=$stdoutAlts
   }
 }
 
@@ -552,6 +558,34 @@ if ($exp.requiresVulkan -and -not (Test-HostVulkanDevice)) {
 
 if ($exp.requiresVulkanRt -and -not (Test-HostVulkanRtDevice)) {
   Write-Host "SKIP ${Name}: requires_vulkan_rt (no usable Vulkan RT device)"
+  Exit-Farmc 0
+}
+
+function Test-HostNamedLib([string]$EnvKey, [string[]]$Names) {
+  $cands = New-Object System.Collections.Generic.List[string]
+  $ev = [Environment]::GetEnvironmentVariable($EnvKey)
+  if (-not [string]::IsNullOrEmpty($ev)) { [void]$cands.Add($ev) }
+  foreach ($n in $Names) { [void]$cands.Add($n) }
+  $rt = $env:FARM_RUNTIME
+  if (-not [string]::IsNullOrEmpty($rt)) {
+    foreach ($n in $Names) {
+      [void]$cands.Add((Join-Path $rt "third_party\xess\$n"))
+      [void]$cands.Add((Join-Path $rt "third_party\fsr\$n"))
+    }
+  }
+  foreach ($n in $cands) {
+    if (Test-Path -LiteralPath $n) { return $true }
+  }
+  return $false
+}
+
+if ($exp.requiresXess -and (-not (Test-HostNamedLib "FARMOS_XESS_LIB" @("libxess.dll","libxess.so")) -or -not (Test-HostVulkanDevice))) {
+  Write-Host "SKIP ${Name}: requires_xess (no XeSS SDK or Vulkan device)"
+  Exit-Farmc 0
+}
+
+if ($exp.requiresFsr -and (-not (Test-HostNamedLib "FARMOS_FSR_LIB" @("ffx_fsr2_vk.dll","libffx_fsr2_vk.so")) -or -not (Test-HostVulkanDevice))) {
+  Write-Host "SKIP ${Name}: requires_fsr (no FSR2 SDK or Vulkan device)"
   Exit-Farmc 0
 }
 

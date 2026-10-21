@@ -197,3 +197,29 @@ Implementation-owned formulas, shared by `runtime/farm_ray.c`, `runtime/farm_vk_
 - **GPU:** glossy mode is `GpuParams.extra.z`. SPIR-V regenerated via `scripts/compile_vk_shader.sh`.
 - **Env:** `FARMOS_PATH_GLOSSY=1` only if the setter was never called; method wins.
 
+## M12 native Vulkan upscale (XeSS / FSR)
+
+Implementation-owned glue in `runtime/farm_upscale.c`, called after denoise from
+`farm_Renderer_renderPath`. Spec: `spec/M12-native-upscale.md`.
+
+- **API:** `setPathUpscale` / `PATH_UPSCALE_*`; constructor size is the path-trace
+  (render) resolution; `setPathUpscaleResolution` sets render/display for getters
+  and for the upscale pass. `savePNG` uses `fb_width`/`fb_height` after a successful
+  upscale (display buffer), otherwise `width`/`height`.
+- **Jitter:** Halton base 2/3 in `[-0.5, 0.5]` packed into GPU `cam_x.w` / `cam_y.w`
+  when upscale is ON **and** the backend is Vulkan. Identity on CPU and when OFF
+  (M4 SHA). SPIR-V regenerated via `scripts/compile_vk_shader.sh`.
+- **Aux:** camera motion vectors from current vs previous view-projection (NDC);
+  object / skinned MV deferred (zeros). Depth is linearized `(t−near)/(far−near)`
+  uploaded as `R32F`. Color is post-quantize LDR `RGBA8` (`XESS_INIT_FLAG_LDR_INPUT_COLOR`
+  + autoexposure).
+- **XeSS:** `dlopen` / `LoadLibrary` of `libxess` (`FARMOS_XESS_LIB` override).
+  Headless `VkImage`s, no swapchain. Quality preset chosen from scale (2× → Balanced)
+  with nearby retries. Vendor DLLs are not linked into the Farmos PE.
+- **FSR2:** `isPathUpscaleAvailable(PATH_UPSCALE_FSR)` is true when the official
+  ffx shared lib is loadable; execute is not stubbed with Enabler — missing dispatch
+  soft-fails (STRICT → trap 122).
+- **DCE:** `program_uses_upscale` gates `-DFARM_ENABLE_UPSCALE` + `farm_upscale.c`.
+- **Arc (pending):** AC-M12-04 / AC-M12-05 960×540→1080p quality + timing on
+  TommyLaptop. Do not invent Enabler workarounds if SDK interop blocks.
+
