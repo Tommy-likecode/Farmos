@@ -228,8 +228,11 @@ Implementation-owned glue in `runtime/farm_upscale.c`, called after denoise from
   ffx shared lib is loadable; execute is not stubbed with Enabler — missing dispatch
   soft-fails (STRICT → trap 122).
 - **DCE:** `program_uses_upscale` gates `-DFARM_ENABLE_UPSCALE` + `farm_upscale.c`.
-- **Arc:** helpers in `spec/tests/M12/bench/` (`PATH_GLOSSY_VNDF`). Tip `6dec6de`
-  AC-05 ratio **1.148** (binding PASS, SHOULD FAIL); png_tol max_abs 212.
-  Lever `more-optimize` (disk XeSS PSO + borrowed device) pending poteto re-smoke.
-  Do not invent Enabler workarounds.
+- **Arc:** helpers in `spec/tests/M12/bench/` (`PATH_GLOSSY_VNDF`). Tip `edeb845`
+  **PASS** under FINAL OQ-M12-10 A + OQ-M12-11 A: AC-05 native **4.302 s** /
+  XeSS **3.477 s** → ratio **1.237** (binding XeSS < native; SHOULD ≥ **1.2×**;
+  historical SHOULD ≥1.5× **superseded**). AC-04 ROI L **105.810 / 105.805**
+  ∈ [80,140], \|ΔL\| **0.005**; mean_abs **0.465** report; max_abs **211**
+  **report-only** (historical hard `# png_tol: 12` **superseded**). PE B-11
+  **72704**. Enabler not used. Do not invent Enabler workarounds.
 
