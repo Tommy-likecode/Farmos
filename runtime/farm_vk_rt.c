@@ -546,6 +546,7 @@ static int rt_buf_create(VkDeviceSize sz, uint32_t usage, uint32_t mem_props, in
 }
 
 static int ensure_rt_device(void) {
+  int cache_from_disk = 0;
   if (g_device_ready) return 1;
   if (!farm_vk_rt_probe()) return 0;
   float prio = 1.0f;
@@ -697,6 +698,8 @@ static int ensure_rt_device(void) {
               free(cache_blob);
               cache_blob = NULL;
               cache_sz = 0;
+            } else {
+              cache_from_disk = 1;
             }
           }
         }
@@ -756,7 +759,7 @@ static int ensure_rt_device(void) {
   pci.layout = g_pl;
   pci.basePipelineIndex = -1;
   if (vkCreateComputePipelines(g_dev, g_pipe_cache, 1, &pci, NULL, &g_pipe) != VK_SUCCESS) return 0;
-  if (g_pipe_cache && vkGetPipelineCacheData) {
+  if (g_pipe_cache && vkGetPipelineCacheData && !cache_from_disk) {
     char cache_path[512];
 #ifdef _WIN32
     const char* tmp = getenv("TEMP");
@@ -1305,8 +1308,11 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
     si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     si.commandBufferCount = 1;
     si.pCommandBuffers = &g_cmd;
-    if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS ||
-        vkQueueWaitIdle(g_queue) != VK_SUCCESS) return 0;
+    if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS) return 0;
+#ifdef FARM_ENABLE_UPSCALE
+    farm_upscale_prefetch_xess();
+#endif
+    if (vkQueueWaitIdle(g_queue) != VK_SUCCESS) return 0;
     const float* dn = NULL;
 #ifdef FARM_ENABLE_DENOISE
     if (dn_ok) dn = (const float*)g_dn_tmp.mapped;
@@ -1684,8 +1690,11 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
   si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   si.commandBufferCount = 1;
   si.pCommandBuffers = &g_cmd;
-  if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS ||
-      vkQueueWaitIdle(g_queue) != VK_SUCCESS) goto done;
+  if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS) goto done;
+#ifdef FARM_ENABLE_UPSCALE
+  farm_upscale_prefetch_xess();
+#endif
+  if (vkQueueWaitIdle(g_queue) != VK_SUCCESS) goto done;
 
   const float* dn = NULL;
 #ifdef FARM_ENABLE_DENOISE

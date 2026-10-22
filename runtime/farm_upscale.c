@@ -77,6 +77,10 @@ typedef uint64_t VkPipelineCache;
 #define VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO 42
 #define VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER 45
 #define VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO 17
+#define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 1000059000
+#define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES 1000083000
+#define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT16_INT8_FEATURES 1000084000
+#define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT 1000351000
 #define VK_QUEUE_COMPUTE_BIT 2
 #define VK_QUEUE_TRANSFER_BIT 4
 #define VK_BUFFER_USAGE_TRANSFER_SRC_BIT 0x00000001
@@ -117,6 +121,7 @@ typedef uint64_t VkPipelineCache;
 #define VK_NULL_HANDLE 0
 #define VK_MAKE_VERSION(maj, min, pat) (((maj)<<22)|((min)<<12)|(pat))
 #define VK_API_VERSION_1_1 VK_MAKE_VERSION(1, 1, 0)
+#define VK_API_VERSION_1_2 VK_MAKE_VERSION(1, 2, 0)
 
 typedef struct { uint32_t width, height, depth; } VkExtent3D;
 typedef struct { int32_t x, y, z; } VkOffset3D;
@@ -331,6 +336,7 @@ static int g_fsr_probe_done, g_fsr_ok;
 static VkPipelineCache g_xess_pso_cache;
 static uint32_t g_xess_pso_dw, g_xess_pso_dh;
 static int g_xess_pso_saved_exec;
+static size_t g_xess_pso_loaded_sz;
 
 static int env1(const char* n) {
   const char* e = getenv(n);
@@ -388,18 +394,60 @@ static void* try_load_named(const char* env, const char* const* names) {
   return NULL;
 }
 
+static const char* const k_xess_names[] = {
+#ifdef _WIN32
+  "libxess.dll", "libxess_vk.dll", NULL
+#else
+  "libxess.so", "libxess.so.2", "libxess.so.1", NULL
+#endif
+};
+
+static int file_readable(const char* p) {
+  FILE* f;
+  if (!p || !p[0]) return 0;
+  f = fopen(p, "rb");
+  if (!f) return 0;
+  fclose(f);
+  return 1;
+}
+
+/* File-exists only — do not map the ~75 MiB SDK (AC-05 is a new process each sample). */
+static int xess_sdk_file_present(void) {
+  const char* env = getenv("FARMOS_XESS_LIB");
+  char buf[512];
+  int i;
+  if (file_readable(env)) return 1;
+  for (i = 0; k_xess_names[i]; i++) {
+    if (file_readable(k_xess_names[i])) return 1;
+  }
+#ifdef _WIN32
+  {
+    char found[MAX_PATH];
+    if (SearchPathA(NULL, "libxess.dll", NULL, MAX_PATH, found, NULL) != 0) return 1;
+    if (SearchPathA(NULL, "libxess_vk.dll", NULL, MAX_PATH, found, NULL) != 0) return 1;
+  }
+#endif
+  {
+    const char* rt = getenv("FARM_RUNTIME");
+    if (rt && rt[0]) {
+      for (i = 0; k_xess_names[i]; i++) {
+#ifdef _WIN32
+        snprintf(buf, sizeof(buf), "%s\\third_party\\xess\\%s", rt, k_xess_names[i]);
+#else
+        snprintf(buf, sizeof(buf), "%s/third_party/xess/%s", rt, k_xess_names[i]);
+#endif
+        if (file_readable(buf)) return 1;
+      }
+    }
+  }
+  return 0;
+}
+
 int farm_upscale_probe_xess(void) {
   if (g_xess_probe_done) return g_xess_ok;
   g_xess_probe_done = 1;
   g_xess_ok = 0;
-  static const char* names[] = {
-#ifdef _WIN32
-    "libxess.dll", "libxess_vk.dll", NULL
-#else
-    "libxess.so", "libxess.so.2", "libxess.so.1", NULL
-#endif
-  };
-  g_xess = try_load_named("FARMOS_XESS_LIB", names);
+  g_xess = try_load_named("FARMOS_XESS_LIB", k_xess_names);
   if (!g_xess) return 0;
   xessVKCreateContext_fn = (PFN_xessVKCreateContext)sys_sym(g_xess, "xessVKCreateContext");
   xessVKInit_fn = (PFN_xessVKInit)sys_sym(g_xess, "xessVKInit");
@@ -415,6 +463,11 @@ int farm_upscale_probe_xess(void) {
     return 0;
   g_xess_ok = 1;
   return 1;
+}
+
+void farm_upscale_prefetch_xess(void) {
+  if (!farm_path_upscale_backend_wanted()) return;
+  farm_upscale_probe_xess();
 }
 
 int farm_upscale_probe_fsr(void) {
@@ -443,7 +496,11 @@ int farm_upscale_probe_fsr(void) {
 int farm_upscale_mode_available(int64_t mode) {
   if (mode == 0) return 1;
   if (env1("FARMOS_PATH_UPSCALE_FORCE_FAIL")) return 0;
-  if (mode == 1) return farm_upscale_probe_xess();
+  if (mode == 1) {
+    if (g_xess_ok) return 1;
+    if (g_xess_probe_done) return 0;
+    return xess_sdk_file_present();
+  }
   if (mode == 2) return farm_upscale_probe_fsr();
   return 0;
 }
@@ -452,36 +509,75 @@ int farm_upscale_xess_required_instance(unsigned* count, const char* const** nam
                                        unsigned* min_api) {
   if (count) *count = 0;
   if (names) *names = NULL;
-  if (min_api) *min_api = VK_API_VERSION_1_1;
+  if (min_api) *min_api = VK_API_VERSION_1_2;
   if (!farm_path_upscale_backend_wanted()) return 0;
-  if (!farm_upscale_probe_xess() || !xessVKGetRequiredInstanceExtensions_fn) return 0;
-  uint32_t n = 0, api = VK_API_VERSION_1_1;
-  const char* const* nm = NULL;
-  if (xessVKGetRequiredInstanceExtensions_fn(&n, &nm, &api) != XESS_RESULT_SUCCESS) return 0;
-  if (count) *count = n;
-  if (names) *names = nm;
-  if (min_api) *min_api = api;
+  /* Prefer SDK query only if libxess is already mapped; never LoadLibrary here. */
+  if (g_xess_ok && xessVKGetRequiredInstanceExtensions_fn) {
+    uint32_t n = 0, api = VK_API_VERSION_1_2;
+    const char* const* nm = NULL;
+    if (xessVKGetRequiredInstanceExtensions_fn(&n, &nm, &api) == XESS_RESULT_SUCCESS) {
+      if (count) *count = n;
+      if (names) *names = nm;
+      if (min_api) *min_api = api;
+      return 1;
+    }
+  }
+  /* XeSS 2.x headless: no extra instance extensions; Vulkan 1.2 matches RT. */
   return 1;
 }
 
 int farm_upscale_xess_required_device(void* inst, void* phys, unsigned* count,
                                      const char* const** names, void** features) {
+  /* XeSS-SR 2.x required + optional-perf extras (Intel developer guide).
+     Static so RT/compute device-create can borrow without mapping libxess. */
+  static const char* k_xess_dev_ext[] = {
+    "VK_EXT_mutable_descriptor_type",
+    "VK_KHR_shader_float16_int8",
+    "VK_KHR_16bit_storage",
+  };
+  /* VkPhysicalDeviceFeatures2 + pNext chain. Features2.features starts at +16;
+     shaderStorageImageWriteWithoutFormat is VkPhysicalDeviceFeatures field 31. */
+  static uint8_t feat2[256];
+  static uint8_t feat_mut[24];
+  static uint8_t feat_s16[32];
+  static uint8_t feat_f16[24];
   if (count) *count = 0;
   if (names) *names = NULL;
   if (features) *features = NULL;
   if (!inst || !phys) return 0;
   if (!farm_path_upscale_backend_wanted()) return 0;
-  if (!farm_upscale_probe_xess()) return 0;
-  uint32_t n = 0;
-  const char* const* nm = NULL;
-  void* feats = NULL;
-  if (xessVKGetRequiredDeviceExtensions_fn)
+  if (g_xess_ok && xessVKGetRequiredDeviceExtensions_fn) {
+    uint32_t n = 0;
+    const char* const* nm = NULL;
+    void* feats = NULL;
     xessVKGetRequiredDeviceExtensions_fn((VkInstance)inst, (VkPhysicalDevice)phys, &n, &nm);
-  if (xessVKGetRequiredDeviceFeatures_fn)
-    xessVKGetRequiredDeviceFeatures_fn((VkInstance)inst, (VkPhysicalDevice)phys, &feats);
-  if (count) *count = n;
-  if (names) *names = nm;
-  if (features) *features = feats;
+    if (xessVKGetRequiredDeviceFeatures_fn)
+      xessVKGetRequiredDeviceFeatures_fn((VkInstance)inst, (VkPhysicalDevice)phys, &feats);
+    if (count) *count = n;
+    if (names) *names = nm;
+    if (features) *features = feats;
+    return 1;
+  }
+  memset(feat2, 0, sizeof(feat2));
+  memset(feat_mut, 0, sizeof(feat_mut));
+  memset(feat_s16, 0, sizeof(feat_s16));
+  memset(feat_f16, 0, sizeof(feat_f16));
+  *(uint32_t*)feat2 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+  *(const void**)(feat2 + 8) = feat_mut;
+  *(VkBool32*)(feat2 + 16 + 31 * 4) = 1; /* shaderStorageImageWriteWithoutFormat */
+  *(uint32_t*)feat_mut = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT;
+  *(const void**)(feat_mut + 8) = feat_s16;
+  *(VkBool32*)(feat_mut + 16) = 1; /* mutableDescriptorType */
+  *(uint32_t*)feat_s16 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES;
+  *(const void**)(feat_s16 + 8) = feat_f16;
+  *(VkBool32*)(feat_s16 + 16) = 1; /* storageBuffer16BitAccess */
+  *(VkBool32*)(feat_s16 + 20) = 1; /* uniformAndStorageBuffer16BitAccess */
+  *(uint32_t*)feat_f16 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT16_INT8_FEATURES;
+  *(VkBool32*)(feat_f16 + 16) = 1; /* shaderFloat16 */
+  *(VkBool32*)(feat_f16 + 20) = 1; /* shaderInt8 (optional perf; Arc supports) */
+  if (count) *count = (unsigned)(sizeof(k_xess_dev_ext) / sizeof(k_xess_dev_ext[0]));
+  if (names) *names = k_xess_dev_ext;
+  if (features) *features = feat2;
   return 1;
 }
 
@@ -922,9 +1018,13 @@ static void destroy_xess_pso_cache(void) {
   g_xess_pso_dw = 0;
   g_xess_pso_dh = 0;
   g_xess_pso_saved_exec = 0;
+  g_xess_pso_loaded_sz = 0;
 }
 
 static void save_xess_pso_cache(uint32_t dw, uint32_t dh) {
+  /* Warm AC-05 processes already have a disk blob; vkGetPipelineCacheData
+     after execute is a per-process stall and was rewriting the same file. */
+  if (g_xess_pso_loaded_sz > 0) return;
   if (!g_xess_pso_cache || !vkGetPipelineCacheData || !g_dev) return;
   size_t n = 0;
   if (vkGetPipelineCacheData(g_dev, g_xess_pso_cache, &n, NULL) != VK_SUCCESS) return;
@@ -980,6 +1080,7 @@ static void ensure_xess_pso_cache(uint32_t dw, uint32_t dh) {
   else {
     g_xess_pso_dw = dw;
     g_xess_pso_dh = dh;
+    g_xess_pso_loaded_sz = blob_sz;
   }
   free(blob);
 }

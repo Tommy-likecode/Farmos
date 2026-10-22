@@ -1058,8 +1058,18 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   si.commandBufferCount = 1;
   si.pCommandBuffers = &cmd;
-  if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS ||
-      vkQueueWaitIdle(g_queue) != VK_SUCCESS) {
+  if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS) {
+    vkDestroyDescriptorPool(g_dev, pool, NULL);
+    for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
+    free(inst); free(amb); free(dirs); free(pts); free(rects);
+    free(tris); free(mmap); free(mat4); free(texels); free(lights);
+    free(bvh); free(prim_ids);
+    return 0;
+  }
+#ifdef FARM_ENABLE_UPSCALE
+  farm_upscale_prefetch_xess();
+#endif
+  if (vkQueueWaitIdle(g_queue) != VK_SUCCESS) {
     vkDestroyDescriptorPool(g_dev, pool, NULL);
     for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
     free(inst); free(amb); free(dirs); free(pts); free(rects);
