@@ -218,21 +218,30 @@ Implementation-owned glue in `runtime/farm_upscale.c`, called after denoise from
 - **XeSS:** `dlopen` / `LoadLibrary` of `libxess` (`FARMOS_XESS_LIB` override).
   Headless `VkImage`s, no swapchain. Images/staging/cmd persist across frames.
   Disk `VkPipelineCache` at `%TEMP%/farmos_xess_pso_<dw>x<dh>.bin` passed to
-  `xessVKInit` (process-per-frame AC-05 warmup fills it). Prefer the path-tracer
-  Vk device: when upscale is ON, RT/compute backends merge XeSS instance/device
-  extensions so borrow sticks; fall back to a dedicated device if
-  `xessVKCreateContext` rejects it. Native OFF does not load libxess at device
-  create. Quality preset chosen from scale (2× → Balanced) with nearby retries.
-  Vendor DLLs are not linked into the Farmos PE.
+  `xessVKInit` (process-per-frame AC-05 warmup fills it). Warm processes that
+  already loaded that blob skip `vkGetPipelineCacheData` + rewrite (AUDIT FAIL
+  r1: second-pass XeSS 3.477→3.791). `isPathUpscaleAvailable` is file-present
+  only; `farm_upscale_prefetch_xess` maps the SDK after `vkQueueSubmit` while
+  the path GPU is running. Prefer the path-tracer Vk device: when upscale is
+  ON, RT/compute backends merge XeSS instance/device extras without mapping
+  libxess (Vulkan 1.2; `VK_EXT_mutable_descriptor_type` +
+  `shaderStorageImageWriteWithoutFormat` + float16/int8 + 16-bit storage per
+  Intel XeSS-SR 2.x). SDK query used if the lib is already mapped. Fall back
+  to a dedicated device if `xessVKCreateContext` rejects the borrow. Native
+  OFF does not load libxess at device create. Quality preset chosen from scale
+  (2× → Balanced) with nearby retries. Vendor DLLs are not linked into the
+  Farmos PE.
 - **FSR2:** `isPathUpscaleAvailable(PATH_UPSCALE_FSR)` is true when the official
   ffx shared lib is loadable; execute is not stubbed with Enabler — missing dispatch
   soft-fails (STRICT → trap 122).
 - **DCE:** `program_uses_upscale` gates `-DFARM_ENABLE_UPSCALE` + `farm_upscale.c`.
-- **Arc:** helpers in `spec/tests/M12/bench/` (`PATH_GLOSSY_VNDF`). Tip `edeb845`
-  **PASS** under FINAL OQ-M12-10 A + OQ-M12-11 A: AC-05 native **4.302 s** /
-  XeSS **3.477 s** → ratio **1.237** (binding XeSS < native; SHOULD ≥ **1.2×**;
-  historical SHOULD ≥1.5× **superseded**). AC-04 ROI L **105.810 / 105.805**
-  ∈ [80,140], \|ΔL\| **0.005**; mean_abs **0.465** report; max_abs **211**
-  **report-only** (historical hard `# png_tol: 12` **superseded**). PE B-11
-  **72704**. Enabler not used. Do not invent Enabler workarounds.
+- **Arc:** helpers in `spec/tests/M12/bench/` (`PATH_GLOSSY_VNDF`). Last Arc
+  smoke is tip `edeb845` (not this product): AC-05 primary native **4.302 s** /
+  XeSS **3.477 s** → ratio **1.237**; independent second warm **4.288 / 3.791
+  → 1.131** (eggtooth AUDIT FAIL r1 on binding SHOULD ≥1.2× repeatability).
+  AC-04 ROI L **105.810 / 105.805** ∈ [80,140], \|ΔL\| **0.005**; mean_abs
+  **0.465** report; max_abs **211** **report-only**. PE B-11 **72704** at
+  `edeb845`. Product `4f3ef56` (more-headroom) Linux: M12 8/8, M4 24/24, M11
+  4/4, ELF B-11 **71888**. Two independent Arc warm medians are poteto's job.
+  Enabler not used. Do not invent Enabler workarounds.
 
