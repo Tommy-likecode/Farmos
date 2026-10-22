@@ -5,6 +5,12 @@
 #include "farm_upscale.h"
 #include "farm_rt.h"
 #include "farm_math.h"
+#ifdef FARM_ENABLE_VULKAN
+#include "farm_vk.h"
+#endif
+#ifdef FARM_ENABLE_VULKAN_RT
+#include "farm_vk_rt.h"
+#endif
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -275,6 +281,7 @@ VK_FN(vkDestroyImageView, void, (VkDevice, VkImageView, const void*));
 VK_FN(vkCreateCommandPool, VkResult, (VkDevice, const VkCommandPoolCreateInfo*, const void*, VkCommandPool*));
 VK_FN(vkDestroyCommandPool, void, (VkDevice, VkCommandPool, const void*));
 VK_FN(vkAllocateCommandBuffers, VkResult, (VkDevice, const VkCommandBufferAllocateInfo*, VkCommandBuffer*));
+VK_FN(vkResetCommandBuffer, VkResult, (VkCommandBuffer, uint32_t));
 VK_FN(vkBeginCommandBuffer, VkResult, (VkCommandBuffer, const VkCommandBufferBeginInfo*));
 VK_FN(vkEndCommandBuffer, VkResult, (VkCommandBuffer));
 VK_FN(vkCmdPipelineBarrier, void, (VkCommandBuffer, uint32_t, uint32_t, uint32_t, uint32_t, const void*, uint32_t, const void*, uint32_t, const VkImageMemoryBarrier*));
@@ -306,6 +313,8 @@ static VkDevice g_dev;
 static VkQueue g_queue;
 static VkCommandPool g_cpool;
 static int g_vk_ready;
+static int g_vk_borrowed;
+static int g_borrow_failed;
 static xess_context_handle_t g_xess_ctx;
 static int g_xess_inited;
 static int32_t g_init_dw, g_init_dh;
@@ -457,8 +466,86 @@ static int find_mem_type(uint32_t bits, uint32_t props) {
   return -1;
 }
 
-static int ensure_vk(void) {
-  if (g_vk_ready) return 1;
+static int bind_vk_procs(void) {
+#define LOADI(name) do { name = (PFN_##name)inst_proc(#name); if (!name) return 0; } while (0)
+  LOADI(vkDestroyInstance);
+  LOADI(vkEnumeratePhysicalDevices);
+  LOADI(vkGetPhysicalDeviceQueueFamilyProperties);
+  LOADI(vkGetPhysicalDeviceMemoryProperties);
+  LOADI(vkCreateDevice);
+#undef LOADI
+  vkGetDeviceProcAddr = (PFN_vkGetDeviceProcAddr)inst_proc("vkGetDeviceProcAddr");
+  if (!vkGetDeviceProcAddr) return 0;
+#define LOADD(name) do { name = (PFN_##name)vkGetDeviceProcAddr(g_dev, #name); if (!name) return 0; } while (0)
+  LOADD(vkDestroyDevice);
+  LOADD(vkGetDeviceQueue);
+  LOADD(vkCreateBuffer);
+  LOADD(vkDestroyBuffer);
+  LOADD(vkGetBufferMemoryRequirements);
+  LOADD(vkAllocateMemory);
+  LOADD(vkFreeMemory);
+  LOADD(vkBindBufferMemory);
+  LOADD(vkMapMemory);
+  LOADD(vkUnmapMemory);
+  LOADD(vkCreateImage);
+  LOADD(vkDestroyImage);
+  LOADD(vkGetImageMemoryRequirements);
+  LOADD(vkBindImageMemory);
+  LOADD(vkCreateImageView);
+  LOADD(vkDestroyImageView);
+  LOADD(vkCreateCommandPool);
+  LOADD(vkDestroyCommandPool);
+  LOADD(vkAllocateCommandBuffers);
+  LOADD(vkResetCommandBuffer);
+  LOADD(vkBeginCommandBuffer);
+  LOADD(vkEndCommandBuffer);
+  LOADD(vkCmdPipelineBarrier);
+  LOADD(vkCmdCopyBufferToImage);
+  LOADD(vkCmdCopyImageToBuffer);
+  LOADD(vkQueueSubmit);
+  LOADD(vkQueueWaitIdle);
+#undef LOADD
+  return 1;
+}
+
+static int create_cpool(void) {
+  VkCommandPoolCreateInfo pci;
+  memset(&pci, 0, sizeof(pci));
+  pci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+  pci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+  pci.queueFamilyIndex = g_qfam;
+  return vkCreateCommandPool(g_dev, &pci, NULL, &g_cpool) == VK_SUCCESS;
+}
+
+static int try_borrow_path_vk(void) {
+  void *inst = NULL, *phys = NULL, *dev = NULL, *queue = NULL;
+  unsigned qfam = 0;
+  int ok = 0;
+#ifdef FARM_ENABLE_VULKAN_RT
+  ok = farm_vk_rt_export_handles(&inst, &phys, &dev, &queue, &qfam);
+#endif
+#ifdef FARM_ENABLE_VULKAN
+  if (!ok) ok = farm_vk_export_handles(&inst, &phys, &dev, &queue, &qfam);
+#endif
+  if (!ok || !inst || !phys || !dev || !queue) return 0;
+  if (!load_vulkan()) return 0;
+  g_inst = inst;
+  g_phys = phys;
+  g_dev = dev;
+  g_queue = queue;
+  g_qfam = qfam;
+  g_vk_borrowed = 1;
+  if (!bind_vk_procs() || !create_cpool()) {
+    g_inst = NULL; g_phys = NULL; g_dev = NULL; g_queue = NULL;
+    g_cpool = 0;
+    g_vk_borrowed = 0;
+    return 0;
+  }
+  g_vk_ready = 1;
+  return 1;
+}
+
+static int ensure_vk_own(void) {
   if (!load_vulkan()) return 0;
 
   uint32_t iext_n = 0;
@@ -488,6 +575,7 @@ static int ensure_vk(void) {
     if (vkCreateInstance_fn(&ici, NULL, &g_inst) != VK_SUCCESS || !g_inst) return 0;
   }
 
+  uint32_t ndev = 0;
 #define LOADI(name) do { name = (PFN_##name)inst_proc(#name); if (!name) return 0; } while (0)
   LOADI(vkDestroyInstance);
   LOADI(vkEnumeratePhysicalDevices);
@@ -496,7 +584,6 @@ static int ensure_vk(void) {
   LOADI(vkCreateDevice);
 #undef LOADI
 
-  uint32_t ndev = 0;
   if (vkEnumeratePhysicalDevices(g_inst, &ndev, NULL) != VK_SUCCESS || ndev == 0) return 0;
   VkPhysicalDevice* devs = (VkPhysicalDevice*)malloc(sizeof(VkPhysicalDevice) * ndev);
   if (!devs) return 0;
@@ -574,6 +661,7 @@ static int ensure_vk(void) {
   LOADD(vkCreateCommandPool);
   LOADD(vkDestroyCommandPool);
   LOADD(vkAllocateCommandBuffers);
+  LOADD(vkResetCommandBuffer);
   LOADD(vkBeginCommandBuffer);
   LOADD(vkEndCommandBuffer);
   LOADD(vkCmdPipelineBarrier);
@@ -583,15 +671,17 @@ static int ensure_vk(void) {
   LOADD(vkQueueWaitIdle);
 #undef LOADD
   vkGetDeviceQueue(g_dev, g_qfam, 0, &g_queue);
-
-  VkCommandPoolCreateInfo pci;
-  memset(&pci, 0, sizeof(pci));
-  pci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-  pci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-  pci.queueFamilyIndex = g_qfam;
-  if (vkCreateCommandPool(g_dev, &pci, NULL, &g_cpool) != VK_SUCCESS) return 0;
+  if (!create_cpool()) return 0;
+  g_vk_borrowed = 0;
   g_vk_ready = 1;
   return 1;
+}
+
+static int ensure_vk(void) {
+  if (g_vk_ready) return 1;
+  if (!g_borrow_failed && try_borrow_path_vk()) return 1;
+  g_borrow_failed = 1;
+  return ensure_vk_own();
 }
 
 typedef struct {
@@ -714,6 +804,67 @@ static void destroy_img(UpImg* o) {
   memset(o, 0, sizeof(*o));
 }
 
+static UpImg g_img_color, g_img_vel, g_img_depth, g_img_out;
+static UpBuf g_buf_color, g_buf_vel, g_buf_depth, g_buf_out;
+static VkCommandBuffer g_xess_cmd;
+static int g_res_rw, g_res_rh, g_res_dw, g_res_dh;
+static int g_res_ok;
+
+static void destroy_xess_res(void) {
+  destroy_buf(&g_buf_color);
+  destroy_buf(&g_buf_vel);
+  destroy_buf(&g_buf_depth);
+  destroy_buf(&g_buf_out);
+  destroy_img(&g_img_color);
+  destroy_img(&g_img_vel);
+  destroy_img(&g_img_depth);
+  destroy_img(&g_img_out);
+  g_res_ok = 0;
+}
+
+static int ensure_xess_res(int rw, int rh, int dw, int dh) {
+  if (g_res_ok && g_res_rw == rw && g_res_rh == rh && g_res_dw == dw && g_res_dh == dh &&
+      g_img_color.image && g_buf_color.map && g_buf_out.map)
+    return 1;
+  destroy_xess_res();
+  uint32_t sampled = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+  uint32_t out_usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                       VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+  int np = rw * rh;
+  if (!make_img((uint32_t)rw, (uint32_t)rh, VK_FORMAT_R8G8B8A8_UNORM, sampled, &g_img_color) ||
+      !make_img((uint32_t)rw, (uint32_t)rh, VK_FORMAT_R32G32_SFLOAT, sampled, &g_img_vel) ||
+      !make_img((uint32_t)rw, (uint32_t)rh, VK_FORMAT_R32_SFLOAT, sampled, &g_img_depth) ||
+      !make_img((uint32_t)dw, (uint32_t)dh, VK_FORMAT_R8G8B8A8_UNORM, out_usage, &g_img_out) ||
+      !make_buf((VkDeviceSize)np * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &g_buf_color) ||
+      !make_buf((VkDeviceSize)np * 2 * sizeof(float), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &g_buf_vel) ||
+      !make_buf((VkDeviceSize)np * sizeof(float), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &g_buf_depth) ||
+      !make_buf((VkDeviceSize)dw * dh * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &g_buf_out)) {
+    destroy_xess_res();
+    return 0;
+  }
+  g_res_rw = rw;
+  g_res_rh = rh;
+  g_res_dw = dw;
+  g_res_dh = dh;
+  g_res_ok = 1;
+  return 1;
+}
+
+static void abandon_borrowed_vk(void) {
+  destroy_xess_res();
+  g_xess_cmd = NULL;
+  if (g_cpool && vkDestroyCommandPool && g_dev)
+    vkDestroyCommandPool(g_dev, g_cpool, NULL);
+  g_cpool = 0;
+  g_inst = NULL;
+  g_phys = NULL;
+  g_dev = NULL;
+  g_queue = NULL;
+  g_vk_ready = 0;
+  g_vk_borrowed = 0;
+  g_borrow_failed = 1;
+}
+
 static VkImageSubresourceRange color_range(void) {
   VkImageSubresourceRange r;
   memset(&r, 0, sizeof(r));
@@ -740,18 +891,23 @@ static void img_barrier(VkCommandBuffer cmd, VkImage img, uint32_t old_l, uint32
 }
 
 static int begin_cmd(VkCommandBuffer* out) {
-  VkCommandBufferAllocateInfo cai;
-  memset(&cai, 0, sizeof(cai));
-  cai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  cai.commandPool = g_cpool;
-  cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  cai.commandBufferCount = 1;
-  if (vkAllocateCommandBuffers(g_dev, &cai, out) != VK_SUCCESS) return 0;
+  if (!g_xess_cmd) {
+    VkCommandBufferAllocateInfo cai;
+    memset(&cai, 0, sizeof(cai));
+    cai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cai.commandPool = g_cpool;
+    cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cai.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(g_dev, &cai, &g_xess_cmd) != VK_SUCCESS) return 0;
+  } else if (vkResetCommandBuffer(g_xess_cmd, 0) != VK_SUCCESS) {
+    return 0;
+  }
   VkCommandBufferBeginInfo bi;
   memset(&bi, 0, sizeof(bi));
   bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-  if (vkBeginCommandBuffer(*out, &bi) != VK_SUCCESS) return 0;
+  if (vkBeginCommandBuffer(g_xess_cmd, &bi) != VK_SUCCESS) return 0;
+  *out = g_xess_cmd;
   return 1;
 }
 
@@ -794,55 +950,15 @@ static void xform4(const double* m, double x, double y, double z, double w,
   *ow = m[3] * x + m[7] * y + m[11] * z + m[15] * w;
 }
 
-static int intersect_tri(double ox, double oy, double oz, double dx, double dy, double dz,
-                         double ax, double ay, double az, double bx, double by, double bz,
-                         double cx, double cy, double cz, double* t) {
-  double e1x = bx - ax, e1y = by - ay, e1z = bz - az;
-  double e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
-  double px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x;
-  double det = e1x * px + e1y * py + e1z * pz;
-  if (det > -1e-12 && det < 1e-12) return 0;
-  double inv = 1.0 / det;
-  double tx = ox - ax, ty = oy - ay, tz = oz - az;
-  double u = (tx * px + ty * py + tz * pz) * inv;
-  if (u < 0.0 || u > 1.0) return 0;
-  double qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
-  double v = (dx * qx + dy * qy + dz * qz) * inv;
-  if (v < 0.0 || u + v > 1.0) return 0;
-  double tt = (e2x * qx + e2y * qy + e2z * qz) * inv;
-  if (tt <= 1e-6) return 0;
-  *t = tt;
+static int vp_close(const double* a, const double* b) {
+  for (int i = 0; i < 16; i++) {
+    if (fabs(a[i] - b[i]) > 1e-9) return 0;
+  }
   return 1;
 }
 
-static void xform_p(const double* e, double x, double y, double z,
-                    double* ox, double* oy, double* oz) {
-  *ox = e[0] * x + e[4] * y + e[8] * z + e[12];
-  *oy = e[1] * x + e[5] * y + e[9] * z + e[13];
-  *oz = e[2] * x + e[6] * y + e[10] * z + e[14];
-}
-
-typedef struct { farm_Mesh* mesh; const double* mw; farm_GeometryData* geo; } UpInst;
-
-static void collect_meshes(farm_Object3D* obj, UpInst** inst, int32_t* n, int32_t* cap) {
-  if (!obj || !obj->f_visible) return;
-  if (obj->type == FARM_OBJECT3D_TYPE_MESH) {
-    farm_Mesh* m = (farm_Mesh*)obj;
-    if (*n + 1 > *cap) {
-      int32_t nc = *cap ? *cap * 2 : 8;
-      UpInst* p = (UpInst*)realloc(*inst, (size_t)nc * sizeof(UpInst));
-      if (!p) return;
-      *inst = p; *cap = nc;
-    }
-    (*inst)[*n].mesh = m;
-    (*inst)[*n].mw = obj->f_matrixWorld.elements;
-    (*inst)[*n].geo = (farm_GeometryData*)m->f_geometry;
-    (*n)++;
-  }
-  for (int32_t i = 0; i < obj->children.count; i++)
-    collect_meshes(obj->children.items[i], inst, n, cap);
-}
-
+/* O(pixels): convert path-tracer first-hit t to linear depth; skip MV when the
+   camera is static. Moving camera unprojects with t (no triangle walk). */
 static void fill_aux(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera,
                      float* depth, float* mv, int rw, int rh) {
   int np = rw * rh;
@@ -860,19 +976,27 @@ static void fill_aux(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera
   double vp[16];
   mul4(camera->projectionMatrix.elements, camera->matrixWorldInverse.elements, vp);
 
-  UpInst* inst = NULL; int32_t ninst = 0, cap = 0;
-  collect_meshes((farm_Object3D*)scene, &inst, &ninst, &cap);
+  double nplane = camera->f_near > 0.0 ? camera->f_near : 0.1;
+  double fplane = camera->f_far > nplane ? camera->f_far : 100.0;
+  int have_t = r->depthbuffer && r->width == rw && r->height == rh;
+  int cam_moved = r->path_upscale_prev_vp_valid && !vp_close(vp, r->path_upscale_prev_vp);
 
   float jx = 0.f, jy = 0.f;
   farm_renderer_upscale_pixel_jitter(r, &jx, &jy);
   const double* e = camera->f_matrixWorld.elements;
   double ox = e[12], oy = e[13], oz = e[14];
   double tan_half = tan((3.14159265358979323846 / 180.0) * 0.5 * camera->f_fov);
-  double nplane = camera->f_near > 0.0 ? camera->f_near : 0.1;
-  double fplane = camera->f_far > nplane ? camera->f_far : 100.0;
 
   for (int y = 0; y < rh; y++) {
     for (int x = 0; x < rw; x++) {
+      int idx = y * rw + x;
+      double best_t = have_t ? (double)r->depthbuffer[idx] : 1e30;
+      if (!(best_t > 1e-6) || best_t >= 1e29) continue;
+      float dlin = (float)((best_t - nplane) / (fplane - nplane));
+      if (dlin < 0.f) dlin = 0.f;
+      if (dlin > 1.f) dlin = 1.f;
+      depth[idx] = dlin;
+      if (!cam_moved) continue;
       double px = (double)x + 0.5 + (double)jx;
       double py = (double)y + 0.5 + (double)jy;
       double ndc_x = (px / (double)rw) * 2.0 - 1.0;
@@ -885,48 +1009,18 @@ static void fill_aux(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera
       double len = sqrt(dx * dx + dy * dy + dz * dz);
       if (len < 1e-12) continue;
       dx /= len; dy /= len; dz /= len;
-      double best_t = 1e30;
-      for (int32_t i = 0; i < ninst; i++) {
-        farm_GeometryData* geo = inst[i].geo;
-        if (!geo || geo->index_count < 3) continue;
-        int32_t nt = geo->index_count / 3;
-        for (int32_t t = 0; t < nt; t++) {
-          int32_t i0 = geo->indices[t * 3 + 0];
-          int32_t i1 = geo->indices[t * 3 + 1];
-          int32_t i2 = geo->indices[t * 3 + 2];
-          double ax, ay, az, bx, by, bz, cxv, cyv, czv, ht;
-          xform_p(inst[i].mw, geo->positions[i0 * 3], geo->positions[i0 * 3 + 1], geo->positions[i0 * 3 + 2], &ax, &ay, &az);
-          xform_p(inst[i].mw, geo->positions[i1 * 3], geo->positions[i1 * 3 + 1], geo->positions[i1 * 3 + 2], &bx, &by, &bz);
-          xform_p(inst[i].mw, geo->positions[i2 * 3], geo->positions[i2 * 3 + 1], geo->positions[i2 * 3 + 2], &cxv, &cyv, &czv);
-          if (intersect_tri(ox, oy, oz, dx, dy, dz, ax, ay, az, bx, by, bz, cxv, cyv, czv, &ht) && ht < best_t)
-            best_t = ht;
-        }
+      double wx = ox + dx * best_t, wy = oy + dy * best_t, wz = oz + dz * best_t;
+      double ccx, ccy, ccz, ccw, pcx, pcy, pcz, pcw;
+      xform4(vp, wx, wy, wz, 1.0, &ccx, &ccy, &ccz, &ccw);
+      xform4(r->path_upscale_prev_vp, wx, wy, wz, 1.0, &pcx, &pcy, &pcz, &pcw);
+      if (fabs(ccw) > 1e-8 && fabs(pcw) > 1e-8) {
+        mv[idx * 2 + 0] = (float)(ccx / ccw - pcx / pcw);
+        mv[idx * 2 + 1] = (float)(ccy / ccw - pcy / pcw);
       }
-      int idx = y * rw + x;
-      if (best_t < 1e29) {
-        double wx = ox + dx * best_t, wy = oy + dy * best_t, wz = oz + dz * best_t;
-        double czv = best_t;
-        float dlin = (float)((czv - nplane) / (fplane - nplane));
-        if (dlin < 0.f) dlin = 0.f;
-        if (dlin > 1.f) dlin = 1.f;
-        depth[idx] = dlin;
-        if (r->path_upscale_prev_vp_valid) {
-          double ccx, ccy, ccz, ccw, pcx, pcy, pcz, pcw;
-          xform4(vp, wx, wy, wz, 1.0, &ccx, &ccy, &ccz, &ccw);
-          xform4(r->path_upscale_prev_vp, wx, wy, wz, 1.0, &pcx, &pcy, &pcz, &pcw);
-          if (fabs(ccw) > 1e-8 && fabs(pcw) > 1e-8) {
-            mv[idx * 2 + 0] = (float)(ccx / ccw - pcx / pcw);
-            mv[idx * 2 + 1] = (float)(ccy / ccw - pcy / pcw);
-          }
-        }
-      }
-      if (r->depthbuffer && r->width == rw && r->height == rh)
-        r->depthbuffer[idx] = (float)best_t;
     }
   }
   memcpy(r->path_upscale_prev_vp, vp, sizeof(vp));
   r->path_upscale_prev_vp_valid = 1;
-  free(inst);
 }
 
 static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera,
@@ -935,8 +1029,16 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
   if (!ensure_vk()) return 0;
 
   if (!g_xess_ctx) {
-    if (xessVKCreateContext_fn(g_inst, g_phys, g_dev, &g_xess_ctx) != XESS_RESULT_SUCCESS || !g_xess_ctx)
-      return 0;
+    if (xessVKCreateContext_fn(g_inst, g_phys, g_dev, &g_xess_ctx) != XESS_RESULT_SUCCESS || !g_xess_ctx) {
+      if (g_vk_borrowed) {
+        abandon_borrowed_vk();
+        if (!ensure_vk_own()) return 0;
+        if (xessVKCreateContext_fn(g_inst, g_phys, g_dev, &g_xess_ctx) != XESS_RESULT_SUCCESS || !g_xess_ctx)
+          return 0;
+      } else {
+        return 0;
+      }
+    }
   }
   if (!g_xess_inited || g_init_dw != dw || g_init_dh != dh) {
     xess_vk_init_params_t ip;
@@ -947,7 +1049,7 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
                               XESS_INIT_FLAG_ENABLE_AUTOEXPOSURE);
     ip.creationNodeMask = 1;
     ip.visibleNodeMask = 1;
-    /* 2× smoke (960×540→1080p / 32→64) maps to Balanced (~2.0). Retry nearby presets. */
+    /* 2x smoke (960x540->1080p / 32->64) maps to Balanced (~2.0). Retry nearby presets. */
     double sx = (double)dw / (double)rw, sy = (double)dh / (double)rh;
     double sc = sx < sy ? sx : sy;
     uint32_t quals[6];
@@ -983,32 +1085,11 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
     r->path_upscale_hist_valid = 0;
   }
 
-  UpImg color, vel, depthi, outi;
-  memset(&color, 0, sizeof(color));
-  memset(&vel, 0, sizeof(vel));
-  memset(&depthi, 0, sizeof(depthi));
-  memset(&outi, 0, sizeof(outi));
-  uint32_t sampled = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-  uint32_t out_usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                       VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-  if (!make_img((uint32_t)rw, (uint32_t)rh, VK_FORMAT_R8G8B8A8_UNORM, sampled, &color) ||
-      !make_img((uint32_t)rw, (uint32_t)rh, VK_FORMAT_R32G32_SFLOAT, sampled, &vel) ||
-      !make_img((uint32_t)rw, (uint32_t)rh, VK_FORMAT_R32_SFLOAT, sampled, &depthi) ||
-      !make_img((uint32_t)dw, (uint32_t)dh, VK_FORMAT_R8G8B8A8_UNORM, out_usage, &outi)) {
-    destroy_img(&color); destroy_img(&vel); destroy_img(&depthi); destroy_img(&outi);
-    return 0;
-  }
+  if (!ensure_xess_res(rw, rh, dw, dh)) return 0;
 
-  float* dbuf = (float*)malloc((size_t)rw * (size_t)rh * sizeof(float));
-  float* mvbuf = (float*)malloc((size_t)rw * (size_t)rh * 2 * sizeof(float));
-  uint8_t* rgba = (uint8_t*)malloc((size_t)rw * (size_t)rh * 4);
-  if (!dbuf || !mvbuf || !rgba) {
-    free(dbuf); free(mvbuf); free(rgba);
-    destroy_img(&color); destroy_img(&vel); destroy_img(&depthi); destroy_img(&outi);
-    return 0;
-  }
-  fill_aux(r, scene, camera, dbuf, mvbuf, rw, rh);
+  fill_aux(r, scene, camera, (float*)g_buf_depth.map, (float*)g_buf_vel.map, rw, rh);
   int np = rw * rh;
+  uint8_t* rgba = (uint8_t*)g_buf_color.map;
   uint8_t* fb = r->framebuffer;
   for (int i = 0; i < np; i++) {
     rgba[i * 4 + 0] = fb[i * 3 + 0];
@@ -1017,31 +1098,8 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
     rgba[i * 4 + 3] = 255;
   }
 
-  UpBuf bcol, bvel, bdep, bout;
-  memset(&bcol, 0, sizeof(bcol));
-  memset(&bvel, 0, sizeof(bvel));
-  memset(&bdep, 0, sizeof(bdep));
-  memset(&bout, 0, sizeof(bout));
-  if (!make_buf((VkDeviceSize)np * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &bcol) ||
-      !make_buf((VkDeviceSize)np * 2 * sizeof(float), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &bvel) ||
-      !make_buf((VkDeviceSize)np * sizeof(float), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &bdep) ||
-      !make_buf((VkDeviceSize)dw * dh * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &bout)) {
-    destroy_buf(&bcol); destroy_buf(&bvel); destroy_buf(&bdep); destroy_buf(&bout);
-    free(dbuf); free(mvbuf); free(rgba);
-    destroy_img(&color); destroy_img(&vel); destroy_img(&depthi); destroy_img(&outi);
-    return 0;
-  }
-  memcpy(bcol.map, rgba, (size_t)np * 4);
-  memcpy(bvel.map, mvbuf, (size_t)np * 2 * sizeof(float));
-  memcpy(bdep.map, dbuf, (size_t)np * sizeof(float));
-
   VkCommandBuffer cmd = NULL;
-  if (!begin_cmd(&cmd)) {
-    destroy_buf(&bcol); destroy_buf(&bvel); destroy_buf(&bdep); destroy_buf(&bout);
-    free(dbuf); free(mvbuf); free(rgba);
-    destroy_img(&color); destroy_img(&vel); destroy_img(&depthi); destroy_img(&outi);
-    return 0;
-  }
+  if (!begin_cmd(&cmd)) return 0;
 
   VkBufferImageCopy cpy;
   memset(&cpy, 0, sizeof(cpy));
@@ -1049,34 +1107,34 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
   cpy.imageSubresource.layerCount = 1;
   cpy.imageExtent.depth = 1;
 
-  img_barrier(cmd, color.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+  img_barrier(cmd, g_img_color.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
               0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
-  img_barrier(cmd, vel.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+  img_barrier(cmd, g_img_vel.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
               0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
-  img_barrier(cmd, depthi.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+  img_barrier(cmd, g_img_depth.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
               0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
   cpy.imageExtent.width = (uint32_t)rw; cpy.imageExtent.height = (uint32_t)rh;
-  vkCmdCopyBufferToImage(cmd, bcol.buf, color.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cpy);
-  vkCmdCopyBufferToImage(cmd, bvel.buf, vel.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cpy);
-  vkCmdCopyBufferToImage(cmd, bdep.buf, depthi.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cpy);
-  img_barrier(cmd, color.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+  vkCmdCopyBufferToImage(cmd, g_buf_color.buf, g_img_color.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cpy);
+  vkCmdCopyBufferToImage(cmd, g_buf_vel.buf, g_img_vel.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cpy);
+  vkCmdCopyBufferToImage(cmd, g_buf_depth.buf, g_img_depth.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cpy);
+  img_barrier(cmd, g_img_color.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
               VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
               VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-  img_barrier(cmd, vel.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+  img_barrier(cmd, g_img_vel.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
               VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
               VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-  img_barrier(cmd, depthi.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+  img_barrier(cmd, g_img_depth.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
               VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
               VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-  img_barrier(cmd, outi.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
+  img_barrier(cmd, g_img_out.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
               0, VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
   xess_vk_execute_params_t ex;
   memset(&ex, 0, sizeof(ex));
-  fill_view_info(&ex.colorTexture, &color);
-  fill_view_info(&ex.velocityTexture, &vel);
-  fill_view_info(&ex.depthTexture, &depthi);
-  fill_view_info(&ex.outputTexture, &outi);
+  fill_view_info(&ex.colorTexture, &g_img_color);
+  fill_view_info(&ex.velocityTexture, &g_img_vel);
+  fill_view_info(&ex.depthTexture, &g_img_depth);
+  fill_view_info(&ex.outputTexture, &g_img_out);
   float jx = 0.f, jy = 0.f;
   farm_renderer_upscale_pixel_jitter(r, &jx, &jy);
   ex.jitterOffsetX = jx;
@@ -1088,13 +1146,10 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
   int32_t xrc = xessVKExecute_fn(g_xess_ctx, cmd, &ex);
   if (xrc != XESS_RESULT_SUCCESS) {
     submit_wait(cmd);
-    destroy_buf(&bcol); destroy_buf(&bvel); destroy_buf(&bdep); destroy_buf(&bout);
-    free(dbuf); free(mvbuf); free(rgba);
-    destroy_img(&color); destroy_img(&vel); destroy_img(&depthi); destroy_img(&outi);
     return 0;
   }
 
-  img_barrier(cmd, outi.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+  img_barrier(cmd, g_img_out.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
               VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
   VkBufferImageCopy oc;
@@ -1104,22 +1159,12 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
   oc.imageExtent.width = (uint32_t)dw;
   oc.imageExtent.height = (uint32_t)dh;
   oc.imageExtent.depth = 1;
-  vkCmdCopyImageToBuffer(cmd, outi.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, bout.buf, 1, &oc);
-  if (!submit_wait(cmd)) {
-    destroy_buf(&bcol); destroy_buf(&bvel); destroy_buf(&bdep); destroy_buf(&bout);
-    free(dbuf); free(mvbuf); free(rgba);
-    destroy_img(&color); destroy_img(&vel); destroy_img(&depthi); destroy_img(&outi);
-    return 0;
-  }
+  vkCmdCopyImageToBuffer(cmd, g_img_out.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, g_buf_out.buf, 1, &oc);
+  if (!submit_wait(cmd)) return 0;
 
-  uint8_t* src = (uint8_t*)bout.map;
+  uint8_t* src = (uint8_t*)g_buf_out.map;
   uint8_t* dst = (uint8_t*)farm_arena_alloc((size_t)dw * (size_t)dh * 3);
-  if (!dst) {
-    destroy_buf(&bcol); destroy_buf(&bvel); destroy_buf(&bdep); destroy_buf(&bout);
-    free(dbuf); free(mvbuf); free(rgba);
-    destroy_img(&color); destroy_img(&vel); destroy_img(&depthi); destroy_img(&outi);
-    return 0;
-  }
+  if (!dst) return 0;
   int nout = dw * dh;
   for (int i = 0; i < nout; i++) {
     dst[i * 3 + 0] = src[i * 4 + 0];
@@ -1131,10 +1176,6 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
   r->fb_height = dh;
   r->path_upscale_hist_valid = 1;
   r->path_upscale_frame += 1;
-
-  destroy_buf(&bcol); destroy_buf(&bvel); destroy_buf(&bdep); destroy_buf(&bout);
-  free(dbuf); free(mvbuf); free(rgba);
-  destroy_img(&color); destroy_img(&vel); destroy_img(&depthi); destroy_img(&outi);
   return 1;
 }
 

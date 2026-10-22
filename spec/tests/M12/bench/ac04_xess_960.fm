@@ -1,0 +1,98 @@
+// AC-M12-04 XeSS 960x540 -> 1920x1080. PATH_GLOSSY_VNDF + 64 spp + spatial denoise.
+// Composition locked to artwork_silver_still (fixed positions, no random01).
+import { Scene, PerspectiveCamera, PlaneGeometry, BoxGeometry, SphereGeometry,
+         CylinderGeometry, MeshStandardMaterial, Mesh,
+         RectAreaLight, Renderer, PATH_BACKEND_VULKAN, PATH_BACKEND_VULKAN_RT,
+         PATH_GLOSSY_VNDF, PATH_DENOISE_SPATIAL, PATH_UPSCALE_XESS } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0.42, 0.45, 0.50));
+
+  const camera: PerspectiveCamera = new PerspectiveCamera(34, 1920.0 / 1080.0, 0.1, 100);
+  camera.position.set(4.55, 2.25, 5.35);
+  camera.lookAt(0, 0.52, 0);
+
+  const floorMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.93, 0.93, 0.94));
+  floorMat.setRoughness(1);
+  floorMat.setMetalness(0);
+  const floor: Mesh = new Mesh(new PlaneGeometry(16, 16), floorMat);
+  floor.quaternion.x = -0.7071067811865476;
+  floor.quaternion.y = 0;
+  floor.quaternion.z = 0;
+  floor.quaternion.w = 0.7071067811865476;
+  scene.add(floor);
+
+  const wallMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.62, 0.66, 0.72));
+  wallMat.setRoughness(1);
+  const wall: Mesh = new Mesh(new PlaneGeometry(16, 8), wallMat);
+  wall.position.set(0, 3.2, -4.2);
+  scene.add(wall);
+
+  const silverMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.92, 0.93, 0.95));
+  silverMat.setMetalness(1);
+  silverMat.setRoughness(0.04);
+  const silver: Mesh = new Mesh(new SphereGeometry(0.52, 32, 16), silverMat);
+  silver.position.set(0, 0.52, 0);
+  scene.add(silver);
+
+  const boxMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.78, 0.18, 0.16));
+  boxMat.setRoughness(1);
+  boxMat.setMetalness(0);
+  const box: Mesh = new Mesh(new BoxGeometry(0.55, 0.72, 0.48), boxMat);
+  box.position.set(-1.55, 0.36, 0.95);
+  scene.add(box);
+
+  const cylMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.12, 0.48, 0.42));
+  cylMat.setRoughness(1);
+  cylMat.setMetalness(0);
+  const cyl: Mesh = new Mesh(new CylinderGeometry(0.28, 0.95, 32), cylMat);
+  cyl.position.set(1.05, 0.475, -0.15);
+  scene.add(cyl);
+
+  const ballMat: MeshStandardMaterial = new MeshStandardMaterial(new Color(0.18, 0.32, 0.72));
+  ballMat.setRoughness(1);
+  ballMat.setMetalness(0);
+  const ball: Mesh = new Mesh(new SphereGeometry(0.40, 32, 16), ballMat);
+  ball.position.set(-1.05, 0.40, -1.25);
+  scene.add(ball);
+
+  const key: RectAreaLight = new RectAreaLight(0xffffff, 6.5, 8.0, 6.5);
+  key.position.set(0.15, 5.8, 0.4);
+  key.lookAt(0, 0.2, 0);
+  scene.add(key);
+  const fill: RectAreaLight = new RectAreaLight(0xffe6cc, 3.2, 3.5, 2.6);
+  fill.position.set(-2.8, 3.1, 2.0);
+  fill.lookAt(0, 0.5, 0);
+  scene.add(fill);
+
+  const renderer: Renderer = new Renderer(960, 540);
+  renderer.setSamples(64);
+  renderer.setMaxBounces(6);
+  renderer.setPathGlossyContinuation(PATH_GLOSSY_VNDF);
+  renderer.setPathDenoise(PATH_DENOISE_SPATIAL);
+  renderer.setPathUpscale(PATH_UPSCALE_XESS);
+  renderer.setPathUpscaleResolution(960, 540, 1920, 1080);
+  if (renderer.isVulkanRayTracingAvailable()) {
+    renderer.setPathBackend(PATH_BACKEND_VULKAN_RT);
+    println("vulkan_rt");
+  } else if (renderer.isVulkanPathAvailable()) {
+    renderer.setPathBackend(PATH_BACKEND_VULKAN);
+    println("vulkan");
+  } else {
+    println("cpu");
+  }
+  if (renderer.isPathUpscaleAvailable(PATH_UPSCALE_XESS)) {
+    println("xess_available");
+  } else {
+    println("xess_unavailable");
+  }
+  let i: int = 0;
+  while (i < 12) {
+    renderer.renderPath(scene, camera);
+    i = i + 1;
+  }
+  renderer.savePNG("xess_1080.png");
+  return 0;
+}

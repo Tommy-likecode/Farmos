@@ -847,7 +847,7 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
     float cam_x[4];
     float cam_y[4];
     float cam_z[4];
-    float extra[4];     /* adaptive_target, bvh_root, glossy, 0 */
+    float extra[4];     /* adaptive_target, bvh_root, glossy, want_first_hit_t */
   } GpuParams;
   GpuParams params;
   memset(&params, 0, sizeof(params));
@@ -864,6 +864,7 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   params.extra[0] = (float)r->path_adaptive_target;
   params.extra[1] = (float)bvh_root;
   params.extra[2] = (float)farm_renderer_glossy_mode(r);
+  params.extra[3] = farm_renderer_upscale_mode(r) != 0 ? 1.f : 0.f;
   if (scene->hasBackground) {
     params.background[0] = (float)scene->background.r;
     params.background[1] = (float)scene->background.g;
@@ -886,7 +887,8 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   sizes[2] = sizeof(float) * 16 * (size_t)nmat;
   sizes[3] = sizeof(float) * 4 * (size_t)nlight_vec4;
   sizes[4] = sizeof(float) * (size_t)(ntex > 0 ? ntex : 4);
-  sizes[5] = sizeof(float) * 3 * (size_t)npix;
+  /* RGB sample sums + optional first-hit t tail (denoise still reads 3*npix). */
+  sizes[5] = sizeof(float) * 4 * (size_t)npix;
   sizes[6] = sizeof(GpuBvhNodeHost) * (size_t)(nnodes > 0 ? nnodes : 1);
   sizes[7] = sizeof(int32_t) * (size_t)(nid > 0 ? nid : 1);
   int ok = 1;
@@ -1045,11 +1047,23 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
     r->framebuffer[i * 3 + 1] = (uint8_t)quantize_f(my);
     r->framebuffer[i * 3 + 2] = (uint8_t)quantize_f(mz);
   }
+  if (r->depthbuffer && farm_renderer_upscale_mode(r) != 0)
+    memcpy(r->depthbuffer, gpu_acc + 3 * npix, (size_t)npix * sizeof(float));
 
   vkDestroyDescriptorPool(g_dev, pool, NULL);
   for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
   free(inst); free(amb); free(dirs); free(pts); free(rects);
   free(tris); free(mmap); free(mat4); free(texels); free(lights);
   free(bvh); free(prim_ids);
+  return 1;
+}
+
+int farm_vk_export_handles(void** inst, void** phys, void** dev, void** queue, unsigned* qfam) {
+  if (!g_device_ready || !g_inst || !g_dev || !g_queue) return 0;
+  if (inst) *inst = g_inst;
+  if (phys) *phys = g_phys;
+  if (dev) *dev = g_dev;
+  if (queue) *queue = g_queue;
+  if (qfam) *qfam = g_qfam;
   return 1;
 }

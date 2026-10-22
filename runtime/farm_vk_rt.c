@@ -1099,6 +1099,7 @@ static void rt_fill_params(GpuParams* params, farm_Renderer* r, farm_Scene* scen
   params->flags[2] = r->path_adaptive_spp ? 1 : 0;
   params->extra[0] = (float)r->path_adaptive_target;
   params->extra[2] = (float)farm_renderer_glossy_mode(r);
+  params->extra[3] = farm_renderer_upscale_mode(r) != 0 ? 1.f : 0.f;
   if (r->preview_div > 1) {
     if (params->counts[0] > 3) params->counts[0] = 3;
     params->flags[1] = 0;
@@ -1182,6 +1183,8 @@ static void rt_readback(farm_Renderer* r, int32_t dw, int32_t dh, const float* g
     }
   }
   if (denoise_ok) r->path_denoise_gpu_done = 1;
+  if (r->depthbuffer && farm_renderer_upscale_mode(r) != 0 && dw == fw && dh == fh)
+    memcpy(r->depthbuffer, gpu_acc + 3 * npix, (size_t)npix * sizeof(float));
 }
 
 int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera) {
@@ -1202,7 +1205,7 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
       g_fast_full_w == r->width && g_fast_full_h == r->height &&
       g_tlas && g_blas && g_dset && g_cmd &&
       g_ssbo[0].mapped_ok && g_ssbo[5].mapped_ok &&
-      g_ssbo_sz[5] >= sizeof(float) * 3 * (size_t)dw * (size_t)dh) {
+      g_ssbo_sz[5] >= sizeof(float) * 4 * (size_t)dw * (size_t)dh) {
     GpuParams params;
     rt_fill_params(&params, r, scene, camera, dw, dh,
                    g_fast_ntri, g_fast_nmat, g_fast_namb, g_fast_ndir,
@@ -1393,9 +1396,10 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
   sizes[2] = sizeof(float) * 16 * (size_t)nmat;
   sizes[3] = sizeof(float) * 4 * (size_t)nlight_vec4;
   sizes[4] = sizeof(float) * (size_t)(ntex > 0 ? ntex : 4);
-  sizes[5] = sizeof(float) * 3 * (size_t)dw * (size_t)dh;
+  /* RGB sample sums + optional first-hit t tail (denoise still reads 3*npix). */
+  sizes[5] = sizeof(float) * 4 * (size_t)dw * (size_t)dh;
 
-  /* Lever: persist BLAS/TLAS + SSBOs. Shader / packing / 8×8 dispatch unchanged. */
+  /* Lever: persist BLAS/TLAS + SSBOs. RGB packing stride-3; first-hit t in tail. */
   uint64_t as_fp = 1469598103934665603ull;
   as_fp = fnv64(as_fp, &as_tri, sizeof(as_tri));
   as_fp = fnv64(as_fp, positions, (size_t)as_tri * 9 * sizeof(float));
@@ -1646,4 +1650,14 @@ done:
   free(inst); free(amb); free(dirs); free(pts); free(rects);
   free(tris); free(positions); free(mmap); free(mat4); free(texels); free(lights);
   return success;
+}
+
+int farm_vk_rt_export_handles(void** inst, void** phys, void** dev, void** queue, unsigned* qfam) {
+  if (!g_device_ready || !g_inst || !g_dev || !g_queue) return 0;
+  if (inst) *inst = g_inst;
+  if (phys) *phys = g_phys;
+  if (dev) *dev = g_dev;
+  if (queue) *queue = g_queue;
+  if (qfam) *qfam = g_qfam;
+  return 1;
 }

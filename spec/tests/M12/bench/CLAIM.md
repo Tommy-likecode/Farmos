@@ -1,6 +1,6 @@
 # M12 CLAIM — Native Vulkan Upscale (XeSS / FSR)
 
-**Verdict:** **PASS (Linux CI + Windows PE)** / **PENDING (Arc AC-M12-04/05 — missing libxess.dll)**  
+**Verdict:** **FAIL Arc (prior tip `3edb3f0`)** / **PENDING re-smoke** after lever `fix-fill-aux-vk`  
 **Do not merge** until eggtooth AUDIT PASS via Projects Manager.
 
 | Field | Value |
@@ -9,22 +9,19 @@
 | Branch | `cursor/m12-native-upscale-f17d` |
 | Base | `4a661e59` (M11 merged) |
 | Implementation tip | `2025473` (`M12: native Vulkan upscale (XeSS / FSR)`) |
-| TommyLaptop tip | `9b4a11f` (this CLAIM's previous PR tip; PE + Arc search) |
+| Prior Arc FAIL tip | `3edb3f0` |
+| Lever | `fix-fill-aux-vk` (path-tracer depth + persistent XeSS Vk) |
 | Spec | `spec/M12-native-upscale.md` FINAL (OQ-M12-01..09 all A) |
-| Date | 2026-10-21 |
+| Date | 2026-10-22 |
 
-## Linux verification (cloud agent)
+## Linux verification (this lever)
 
-Host: Linux cloud agent, no Vulkan device, no XeSS/FSR SDK.
+Host: Linux cloud agent, no Vulkan device, no XeSS/FSR SDK. After fill_aux / persist-Vk:
 
 | Suite | Result |
 |-------|--------|
 | `spec/tests/M12` | 8/8 green (004/006 soft-skip `requires_vulkan`) |
 | `spec/tests/M4` | 24/24 PASS (AC-M12-11 jitter OFF) |
-| `spec/tests/M7` | 9/9 green (GPU skip) |
-| `spec/tests/M9` | 6/6 green (RT skip) |
-| `spec/tests/M10` | 6/6 PASS |
-| `spec/tests/M11` | 4/4 PASS |
 | `scripts/check_size_budgets.py` | PASS |
 
 ### ELF sizes (Linux, farmc `-s`; PE budgets not enforced here)
@@ -36,41 +33,43 @@ Host: Linux cloud agent, no Vulkan device, no XeSS/FSR SDK.
 | B-08 | GPU-linked cornell | 182400 | 409600 |
 | B-09 | RT-linked cornell | 284840 | 512000 |
 | B-10 | denoise-linked | 59520 | 614400 |
-| B-11 | upscale-glue-linked (path+denoise+upscale) | **71864** | **716800** (700 KiB) |
+| B-11 | upscale-glue-linked (path+denoise+upscale) | **67768** | **716800** (700 KiB) |
 
-DCE: hello / unused-math / glass / GPU cornell omit `farm_upscale.c`; upscale-glue demo links `farm_upscale.c` + `-DFARM_ENABLE_UPSCALE`.
+DCE: hello / unused-math / glass / GPU cornell omit `farm_upscale.c`; upscale-glue demo links `farm_upscale.c` + `-DFARM_ENABLE_UPSCALE`. Glue shrank vs 71864 after removing CPU ray×tris.
 
-## TommyLaptop (tip `9b4a11f`)
+## Prior TommyLaptop evidence (tip `3edb3f0`, official XeSS 2.1.1)
 
-Host: Windows x64, Intel Arc, 1 Vulkan device. Env dirty: ACE-Tray, DSATray, Steam++, Intel Graphics services. Watt Toolkit: git fetch OK.
+Host: Windows x64, Intel Arc, `PATH_BACKEND_VULKAN_RT`. SDK:
+`FARMOS_XESS_LIB=D:\Tommy\Farmos\runtime\third_party\xess\libxess.dll`.
+**Enabler / Swapper / OptiScaler NOT USED.**
 
-### AC-M12-07 Windows PE — **PASS**
+### AC-M12-07 Windows PE — **PASS** (tip `9b4a11f`; PE not re-run this lever)
 
-`scripts/check_size_budgets.py` Release MSVC:
+Release MSVC `check_size_budgets.py`: B-11 **73216** / 716800. Hello 13824.
 
-| ID | Artifact | Bytes | Budget | Status |
-|----|----------|-------|--------|--------|
-| B-01 | hello | 13824 | 20480 | OK |
-| B-03 | glass+mirror | 66048 | 307200 | OK |
-| B-08 | GPU-linked | 183296 | 409600 | OK |
-| B-09 | RT-linked | 288256 | 512000 | OK |
-| B-10 | denoise-linked | 59392 | 614400 | OK |
-| B-11 | upscale-glue-linked | **73216** | **716800** | OK |
+### AC-M12-04 / AC-M12-05 at `3edb3f0` — **FAIL**
 
-### `ctest -C Release -R m12_`
+Glossy VNDF ON (local dirty `out/m12_arc/` then); silver ROI L ~191 both lanes.
 
-8/8 Passed. 004/006 soft-skipped (`requires_vulkan` harness quirk; Arc has 1 Vulkan device). Would still skip for `# requires_xess` without DLL.
+| Gate | Result |
+|------|--------|
+| AC-M12-04 silver L~100+ | **PASS** (~191) |
+| AC-M12-04 `# png_tol: 12` | **FAIL** (max_abs 206) |
+| AC-M12-05 SHOULD ≥1.5× | **FAIL** (ratio native/xess **0.330**; 7.646 s vs 23.136 s median) |
+| In-process AC-04 walls | native ~37 s / XeSS ~191 s |
 
-### AC-M12-04 / AC-M12-05 — **PENDING / BLOCKED**
+RCA (`INVESTIGATION_timing.md`): primary tax CPU `fill_aux` O(pixels×tris) after GPU color; secondary per-frame Vk create/destroy + staging upload/readback + second Vk device.
 
-**BLOCKER (verbatim): missing libxess.dll.**
+## This lever (`fix-fill-aux-vk`) — product change, Arc re-smoke PENDING
 
-- `FARMOS_XESS_LIB` unset
-- `runtime/third_party/xess/` absent
-- Searched Intel / Downloads / `D:\Tommy` / System32 — none
-- `DLSS-Enabler-0.9.4.zip` in Downloads was **NOT USED** (OUT forever)
+Code on this PR (after `3edb3f0`):
 
-No Enabler / Swapper / OptiScaler workaround. XeSS smoke and timing cannot run until the official Intel `libxess.dll` is placed via `scripts/fetch_upscale_sdk.sh` or `FARMOS_XESS_LIB`.
+1. **Depth from the path tracer.** GPU compute/RT write first-hit `t` in the accum SSBO tail (`accum[3*npix + i]`); denoise still reads stride-3 RGB. CPU first sample records first-bounce `t` into `depthbuffer`. `fill_aux` is O(pixels): linearize `t` to 0–1 depth. Static camera **skips** MV (zeros). Moving camera unprojects with `t` — **no** CPU ray×tris.
+2. **Persistent XeSS Vk.** Color/vel/depth/output images + staging buffers + command buffer live across frames. Prefer borrowing the path-tracer `VkDevice` (`farm_vk_rt_export_handles` / `farm_vk_export_handles`); if `xessVKCreateContext` rejects it, fall back to a dedicated upscale device.
+3. Official Intel XeSS only. Default `PATH_UPSCALE_OFF` untouched. Glue budget still ≤700 KiB.
+4. Arc AC helpers committed: `spec/tests/M12/bench/ac04_*.fm`, `ac05_*.fm`, `run_arc_ac.py` with `PATH_GLOSSY_VNDF`.
+
+**Arc AC-M12-04/05 re-smoke is owned by poteto on TommyLaptop after this push.** This agent has no Arc hardware. Until that re-smoke, CLAIM stays **FAIL Arc / no merge**.
 
 ## AC-M12-01..12
 
@@ -78,26 +77,21 @@ No Enabler / Swapper / OptiScaler workaround. XeSS smoke and timing cannot run u
 |----|--------|----------|
 | AC-M12-01 | **PASS** | `001_upscale_off_cpu_twin` SHA = M4-001 |
 | AC-M12-02 | **PASS** | `002_upscale_mode_roundtrip` |
-| AC-M12-03 | **PASS** | `003_trap_invalid_upscale` exit 122 `invalid path upscale mode` |
-| AC-M12-04 | **PENDING / BLOCKED** | missing `libxess.dll` on TommyLaptop; Linux/Windows 004 skipped without SDK |
-| AC-M12-05 | **PENDING / BLOCKED** | same blocker; SHOULD ≥1.5× after first CLEAN Arc tip with SDK |
-| AC-M12-06 | **PASS (skip policy)** | `006_denoise_then_upscale` present; denoise-then-upscale order in `farm_Renderer_renderPath`; soft-skip without SDK |
-| AC-M12-07 | **PASS** | Linux ELF + Windows PE B-11 **73216** / 716800; hello 13824; unused DCE |
-| AC-M12-08 | **PASS** | No Enabler/Swapper/OptiScaler/DLSS/NGX/OptiX/frame-gen in runtime; Enabler zip on disk **not used**; artwork composition untouched |
-| AC-M12-09 | **PASS** | `# requires_xess` / `# requires_vulkan` skip; OFF twins + traps + roundtrip green on Linux and Windows ctest |
-| AC-M12-10 | **PASS** | M9 STRICT / M10 denoise suites unchanged; upscale STRICT is 122-family (`008`) |
-| AC-M12-11 | **PASS** | M4 CPU SHA suite; jitter identity when OFF / on CPU |
-| AC-M12-12 | **PASS** | `005_trap_invalid_resolution` exit 122 `invalid path upscale resolution` |
-
-## Known gaps (not Enabler workarounds)
-
-1. **missing libxess.dll** blocks AC-M12-04/05 on Arc. Obtain the official Intel XeSS SDK (`scripts/fetch_upscale_sdk.sh` / `FARMOS_XESS_LIB` / `runtime/third_party/xess/libxess.dll`). Do **not** ship DLSS-Enabler / Swapper / OptiScaler.
-2. **FSR2 execute** is optional: setter + `isPathUpscaleAvailable` work; dispatch soft-fails until official ffx Vulkan symbols resolve. XeSS is the primary PASS path.
-3. Windows `m12_004` / `m12_006` currently skip on `requires_vulkan` even with a device present (harness quirk). After `libxess.dll` lands they still need `# requires_xess` (and a vulkan probe fix if 004/006 should run on Arc).
+| AC-M12-03 | **PASS** | `003_trap_invalid_upscale` exit 122 |
+| AC-M12-04 | **FAIL** then **PENDING re-smoke** | `3edb3f0` png_tol FAIL; silver L PASS; re-smoke after this lever |
+| AC-M12-05 | **FAIL** then **PENDING re-smoke** | `3edb3f0` ratio 0.330; binding wall < native after fill_aux fix |
+| AC-M12-06 | **PASS (skip policy)** | `006_denoise_then_upscale`; denoise-then-upscale order |
+| AC-M12-07 | **PASS** | Linux B-11 **67768** / 716800; prior PE B-11 73216 (re-verify on laptop if needed) |
+| AC-M12-08 | **PASS** | No Enabler/Swapper/OptiScaler/DLSS/NGX; official SDK only |
+| AC-M12-09 | **PASS** | `# requires_xess` / `# requires_vulkan` skip on Linux |
+| AC-M12-10 | **PASS** | M9/M10 STRICT unchanged |
+| AC-M12-11 | **PASS** | M4 CPU SHA; jitter identity when OFF |
+| AC-M12-12 | **PASS** | `005_trap_invalid_resolution` exit 122 |
 
 ## Product rules held
 
 - Default OFF; M4/M10/M11 goldens under OFF.
-- Headless buffer + `savePNG` only (M10 OQ-M10-01 stands).
-- Vendor SDK DLLs external (not in PE cap). B-11 PE 73216 ≪ 700 KiB.
+- Headless buffer + `savePNG` only.
+- Vendor SDK DLLs external (not in PE cap).
 - Frame-gen OUT. Enabler zip on TommyLaptop was not used.
+- No merge. No eggtooth this turn.

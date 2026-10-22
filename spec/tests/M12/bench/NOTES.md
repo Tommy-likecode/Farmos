@@ -1,18 +1,19 @@
-# M12 Arc notes (TommyLaptop tip `9b4a11f`)
+# M12 Arc notes
 
-CLAIM recommendation: **PENDING** (PE PASS; AC-M12-04/05 blocked on missing `libxess.dll`).
+CLAIM recommendation: **FAIL Arc** at tip `3edb3f0` (timing + png_tol); **PENDING** poteto re-smoke on TommyLaptop after `fix-fill-aux-vk`.
 
 | Item | Status |
 |------|--------|
-| XeSS SDK obtain / license | **BLOCKED** — missing `libxess.dll`. `FARMOS_XESS_LIB` unset; `runtime/third_party/xess/` absent; searched Intel / Downloads / `D:\Tommy` / System32 — none. Fetch script remains `scripts/fetch_upscale_sdk.sh`; DLLs **external**. |
-| Headless VkImage usages | glue creates color/depth/MV/output images (no swapchain) |
-| AC-M12-04 quality | **PENDING / BLOCKED** — missing `libxess.dll`; no 960×540→1080p smoke |
-| AC-M12-05 timing | **PENDING / BLOCKED** — same; SHOULD ≥1.5× after first CLEAN tip with SDK |
-| AC-M12-07 Windows PE | **PASS** (Release MSVC `check_size_budgets.py`): hello 13824; glass 66048; GPU 183296; RT 288256; denoise 59392; **B-11 73216 / 716800** |
-| `ctest -C Release -R m12_` | 8/8 Passed. 004/006 soft-skipped (`requires_vulkan` harness quirk; Arc has 1 Vulkan device). Would still skip `# requires_xess` without DLL. |
-| FSR2 optional | selectable; `isPathUpscaleAvailable` follows lib presence; execute soft-fails until official ffx dispatch symbols resolve |
-| Enabler / Swapper / OptiScaler | **OUT** — `DLSS-Enabler-0.9.4.zip` in Downloads was **NOT USED**. Do not use if SDK interop blocks; report blocker. |
-| Env | Dirty: ACE-Tray, DSATray, Steam++, Intel Graphics services. Watt Toolkit: git fetch OK. |
-| Linux CI without SDK | OFF twins + trap + roundtrip + CPU soft-fail + STRICT FORCE_FAIL; XeSS/FSR smokes soft-skip |
+| XeSS SDK | Official 2.1.1 on TommyLaptop (`FARMOS_XESS_LIB`). Linux CI has no SDK. |
+| Headless VkImage | Persistent color/depth/MV/output images (no swapchain); prefer path-tracer device |
+| Depth / MV | Path-tracer first-hit `t` + cheap camera MV (static skip). CPU `fill_aux` ray×tris **removed**. |
+| AC-M12-04 quality | Prior FAIL png_tol:12 (max_abs 206); silver ROI L ~191 PASS. Re-smoke pending. |
+| AC-M12-05 timing | Prior FAIL ratio 0.330. Binding: XeSS wall strictly < native. SHOULD ≥1.5×. Re-smoke pending. |
+| AC-M12-07 Windows PE | **PASS** at `9b4a11f` (B-11 73216 / 716800). Re-verify on laptop if glue grows. |
+| FSR2 optional | selectable; execute soft-fails until official ffx dispatch symbols resolve |
+| Enabler / Swapper / OptiScaler | **OUT** — not used. |
+| Arc helpers | `ac04_*.fm` / `ac05_*.fm` / `run_arc_ac.py` with `PATH_GLOSSY_VNDF`, 64 spp, denoise spatial, fixed positions |
 
-Constructor size is the path-trace resolution. For the 960×540→1080p Arc smoke **after** official `libxess.dll` is present: construct `new Renderer(960, 540)` then `setPathUpscaleResolution(960, 540, 1920, 1080)`.
+Constructor size is the path-trace resolution. For 960×540→1080p: `new Renderer(960, 540)` then `setPathUpscaleResolution(960, 540, 1920, 1080)`.
+
+Remaining Arc risks: XeSS rejecting the borrowed RT device (fallback creates a second device); first-frame `xessVKInit` cold-start on AC-05 process-per-frame; png_tol outliers independent of the timing tax.

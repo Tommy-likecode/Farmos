@@ -18,7 +18,7 @@ layout(std430, binding = 0) buffer ParamBuf {
   vec4 cam_x;
   vec4 cam_y;
   vec4 cam_z;
-  vec4 extra;      // adaptive_target, bvh_root, glossy, unused
+  vec4 extra;      // adaptive_target, bvh_root, glossy, want_first_hit_t
 } P;
 
 struct GpuTri {
@@ -695,8 +695,16 @@ void main() {
       if (k >= 4 && (m2 / float(k)) < P.extra.x) break;
     }
   }
-  int i = (y * W + x) * 3;
+  int pix = y * W + x;
+  int i = pix * 3;
   accum[i + 0] = sum.x;
   accum[i + 1] = sum.y;
   accum[i + 2] = sum.z;
+  /* Tail after RGB: first-hit t for XeSS depth. Denoise still reads stride-3 RGB. */
+  if (P.extra.w > 0.5) {
+    vec3 o, d;
+    camera_ray(x, y, start_s, o, d);
+    Hit h = closest_hit(o, d);
+    accum[W * H * 3 + pix] = h.hit ? h.t : 1e30;
+  }
 }
