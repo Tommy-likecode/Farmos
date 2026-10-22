@@ -491,6 +491,9 @@ int64_t farm_Renderer_getPathUpscaleRenderHeight(farm_Renderer* self);
 int64_t farm_Renderer_getPathUpscaleDisplayWidth(farm_Renderer* self);
 int64_t farm_Renderer_getPathUpscaleDisplayHeight(farm_Renderer* self);
 int32_t farm_renderer_upscale_mode(const farm_Renderer* self);
+/* 1 if this process asked for XeSS/FSR (setter or FARMOS_PATH_UPSCALE=1).
+   Path-tracer backends use this at instance/device create so XeSS can borrow. */
+int farm_path_upscale_backend_wanted(void);
 void farm_renderer_upscale_pixel_jitter(const farm_Renderer* r, float* jx, float* jy);
 void farm_renderer_upscale_dims(const farm_Renderer* r, int* rw, int* rh, int* dw, int* dh);
 void farm_Renderer_beginPathPreview(farm_Renderer* self, farm_Scene* scene, farm_PerspectiveCamera* camera);

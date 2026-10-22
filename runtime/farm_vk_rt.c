@@ -5,6 +5,9 @@
 #ifdef FARM_ENABLE_DENOISE
 #include "farm_vk_denoise_spv.h"
 #endif
+#ifdef FARM_ENABLE_UPSCALE
+#include "farm_upscale.h"
+#endif
 #include "farm_rt.h"
 #include <string.h>
 #include <stdlib.h>
@@ -387,7 +390,23 @@ static int create_instance_and_pick(void) {
   memset(&ci, 0, sizeof(ci));
   ci.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
   ci.pApplicationInfo = &app;
-  if (vkCreateInstance_fn(&ci, NULL, &g_inst) != VK_SUCCESS || !g_inst) return 0;
+#ifdef FARM_ENABLE_UPSCALE
+  {
+    unsigned iext_n = 0, min_api = VK_API_VERSION_1_2;
+    const char* const* iext = NULL;
+    if (farm_upscale_xess_required_instance(&iext_n, &iext, &min_api)) {
+      ci.enabledExtensionCount = iext_n;
+      ci.ppEnabledExtensionNames = iext;
+      if (min_api > app.apiVersion) app.apiVersion = min_api;
+    }
+  }
+#endif
+  if (vkCreateInstance_fn(&ci, NULL, &g_inst) != VK_SUCCESS || !g_inst) {
+    ci.enabledExtensionCount = 0;
+    ci.ppEnabledExtensionNames = NULL;
+    app.apiVersion = VK_API_VERSION_1_2;
+    if (vkCreateInstance_fn(&ci, NULL, &g_inst) != VK_SUCCESS || !g_inst) return 0;
+  }
 
 #define LOADI(name) do { name = (PFN_##name)inst_proc(#name); if (!name) return 0; } while (0)
   LOADI(vkDestroyInstance);
@@ -552,15 +571,55 @@ static int ensure_rt_device(void) {
   *(const void**)(rq_feat + 8) = as_feat;
   *(VkBool32*)(rq_feat + 16) = 1;
 
+  const char* ext_names[32];
+  uint32_t ext_n = (uint32_t)(sizeof(k_req_ext) / sizeof(k_req_ext[0]));
+  uint32_t rt_ext_n = ext_n;
+  for (uint32_t i = 0; i < ext_n; i++) ext_names[i] = k_req_ext[i];
+#ifdef FARM_ENABLE_UPSCALE
+  {
+    unsigned xn = 0;
+    const char* const* xnames = NULL;
+    void* xess_feats = NULL;
+    if (farm_upscale_xess_required_device(g_inst, g_phys, &xn, &xnames, &xess_feats)) {
+      if (xnames) {
+        for (unsigned i = 0; i < xn && ext_n < 32; i++) {
+          int seen = 0;
+          for (uint32_t j = 0; j < ext_n; j++) {
+            if (strcmp(ext_names[j], xnames[i]) == 0) { seen = 1; break; }
+          }
+          if (!seen) ext_names[ext_n++] = xnames[i];
+        }
+      }
+      *(const void**)(bda_feat + 8) = xess_feats;
+    }
+  }
+#endif
+
   VkDeviceCreateInfo dci;
   memset(&dci, 0, sizeof(dci));
   dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
   dci.pNext = rq_feat;
   dci.queueCreateInfoCount = 1;
   dci.pQueueCreateInfos = &qci;
-  dci.enabledExtensionCount = (uint32_t)(sizeof(k_req_ext) / sizeof(k_req_ext[0]));
-  dci.ppEnabledExtensionNames = k_req_ext;
-  if (vkCreateDevice(g_phys, &dci, NULL, &g_dev) != VK_SUCCESS || !g_dev) return 0;
+  dci.enabledExtensionCount = ext_n;
+  dci.ppEnabledExtensionNames = ext_names;
+  if (vkCreateDevice(g_phys, &dci, NULL, &g_dev) != VK_SUCCESS || !g_dev) {
+#ifdef FARM_ENABLE_UPSCALE
+    *(const void**)(bda_feat + 8) = NULL;
+    dci.pNext = rq_feat;
+    dci.enabledExtensionCount = ext_n;
+    dci.ppEnabledExtensionNames = ext_names;
+    if (vkCreateDevice(g_phys, &dci, NULL, &g_dev) != VK_SUCCESS || !g_dev) {
+#endif
+      *(const void**)(bda_feat + 8) = NULL;
+      dci.pNext = rq_feat;
+      dci.enabledExtensionCount = rt_ext_n;
+      dci.ppEnabledExtensionNames = k_req_ext;
+      if (vkCreateDevice(g_phys, &dci, NULL, &g_dev) != VK_SUCCESS || !g_dev) return 0;
+#ifdef FARM_ENABLE_UPSCALE
+    }
+#endif
+  }
 
   vkGetDeviceProcAddr = (PFN_vkGetDeviceProcAddr)inst_proc("vkGetDeviceProcAddr");
   if (!vkGetDeviceProcAddr) return 0;

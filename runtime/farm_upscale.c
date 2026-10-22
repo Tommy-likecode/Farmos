@@ -76,6 +76,7 @@ typedef uint64_t VkPipelineCache;
 #define VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO 40
 #define VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO 42
 #define VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER 45
+#define VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO 17
 #define VK_QUEUE_COMPUTE_BIT 2
 #define VK_QUEUE_TRANSFER_BIT 4
 #define VK_BUFFER_USAGE_TRANSFER_SRC_BIT 0x00000001
@@ -196,6 +197,10 @@ typedef struct {
   VkDeviceSize bufferOffset; uint32_t bufferRowLength; uint32_t bufferImageHeight;
   VkImageSubresourceLayers imageSubresource; VkOffset3D imageOffset; VkExtent3D imageExtent;
 } VkBufferImageCopy;
+typedef struct {
+  uint32_t sType; const void* pNext; uint32_t flags;
+  size_t initialDataSize; const void* pInitialData;
+} VkPipelineCacheCreateInfo;
 
 XESS_PACK_B()
 typedef struct {
@@ -289,6 +294,9 @@ VK_FN(vkCmdCopyBufferToImage, void, (VkCommandBuffer, VkBuffer, VkImage, uint32_
 VK_FN(vkCmdCopyImageToBuffer, void, (VkCommandBuffer, VkImage, uint32_t, VkBuffer, uint32_t, const VkBufferImageCopy*));
 VK_FN(vkQueueSubmit, VkResult, (VkQueue, uint32_t, const VkSubmitInfo*, VkFence));
 VK_FN(vkQueueWaitIdle, VkResult, (VkQueue));
+VK_FN(vkCreatePipelineCache, VkResult, (VkDevice, const VkPipelineCacheCreateInfo*, const void*, VkPipelineCache*));
+VK_FN(vkDestroyPipelineCache, void, (VkDevice, VkPipelineCache, const void*));
+VK_FN(vkGetPipelineCacheData, VkResult, (VkDevice, VkPipelineCache, size_t*, void*));
 #undef VK_FN
 
 static void* g_vk_loader;
@@ -320,6 +328,9 @@ static int g_xess_inited;
 static int32_t g_init_dw, g_init_dh;
 static int g_xess_probe_done, g_xess_ok;
 static int g_fsr_probe_done, g_fsr_ok;
+static VkPipelineCache g_xess_pso_cache;
+static uint32_t g_xess_pso_dw, g_xess_pso_dh;
+static int g_xess_pso_saved_exec;
 
 static int env1(const char* n) {
   const char* e = getenv(n);
@@ -437,6 +448,43 @@ int farm_upscale_mode_available(int64_t mode) {
   return 0;
 }
 
+int farm_upscale_xess_required_instance(unsigned* count, const char* const** names,
+                                       unsigned* min_api) {
+  if (count) *count = 0;
+  if (names) *names = NULL;
+  if (min_api) *min_api = VK_API_VERSION_1_1;
+  if (!farm_path_upscale_backend_wanted()) return 0;
+  if (!farm_upscale_probe_xess() || !xessVKGetRequiredInstanceExtensions_fn) return 0;
+  uint32_t n = 0, api = VK_API_VERSION_1_1;
+  const char* const* nm = NULL;
+  if (xessVKGetRequiredInstanceExtensions_fn(&n, &nm, &api) != XESS_RESULT_SUCCESS) return 0;
+  if (count) *count = n;
+  if (names) *names = nm;
+  if (min_api) *min_api = api;
+  return 1;
+}
+
+int farm_upscale_xess_required_device(void* inst, void* phys, unsigned* count,
+                                     const char* const** names, void** features) {
+  if (count) *count = 0;
+  if (names) *names = NULL;
+  if (features) *features = NULL;
+  if (!inst || !phys) return 0;
+  if (!farm_path_upscale_backend_wanted()) return 0;
+  if (!farm_upscale_probe_xess()) return 0;
+  uint32_t n = 0;
+  const char* const* nm = NULL;
+  void* feats = NULL;
+  if (xessVKGetRequiredDeviceExtensions_fn)
+    xessVKGetRequiredDeviceExtensions_fn((VkInstance)inst, (VkPhysicalDevice)phys, &n, &nm);
+  if (xessVKGetRequiredDeviceFeatures_fn)
+    xessVKGetRequiredDeviceFeatures_fn((VkInstance)inst, (VkPhysicalDevice)phys, &feats);
+  if (count) *count = n;
+  if (names) *names = nm;
+  if (features) *features = feats;
+  return 1;
+}
+
 static int load_vulkan(void) {
   if (g_vk_loader) return 1;
 #ifdef _WIN32
@@ -505,6 +553,9 @@ static int bind_vk_procs(void) {
   LOADD(vkQueueSubmit);
   LOADD(vkQueueWaitIdle);
 #undef LOADD
+  vkCreatePipelineCache = (PFN_vkCreatePipelineCache)vkGetDeviceProcAddr(g_dev, "vkCreatePipelineCache");
+  vkDestroyPipelineCache = (PFN_vkDestroyPipelineCache)vkGetDeviceProcAddr(g_dev, "vkDestroyPipelineCache");
+  vkGetPipelineCacheData = (PFN_vkGetPipelineCacheData)vkGetDeviceProcAddr(g_dev, "vkGetPipelineCacheData");
   return 1;
 }
 
@@ -670,6 +721,9 @@ static int ensure_vk_own(void) {
   LOADD(vkQueueSubmit);
   LOADD(vkQueueWaitIdle);
 #undef LOADD
+  vkCreatePipelineCache = (PFN_vkCreatePipelineCache)vkGetDeviceProcAddr(g_dev, "vkCreatePipelineCache");
+  vkDestroyPipelineCache = (PFN_vkDestroyPipelineCache)vkGetDeviceProcAddr(g_dev, "vkDestroyPipelineCache");
+  vkGetPipelineCacheData = (PFN_vkGetPipelineCacheData)vkGetDeviceProcAddr(g_dev, "vkGetPipelineCacheData");
   vkGetDeviceQueue(g_dev, g_qfam, 0, &g_queue);
   if (!create_cpool()) return 0;
   g_vk_borrowed = 0;
@@ -850,8 +904,89 @@ static int ensure_xess_res(int rw, int rh, int dw, int dh) {
   return 1;
 }
 
+static void xess_pso_cache_path(char* out, size_t outsz, uint32_t dw, uint32_t dh) {
+#ifdef _WIN32
+  const char* tmp = getenv("TEMP");
+  if (!tmp) tmp = getenv("TMP");
+  if (!tmp) tmp = ".";
+  snprintf(out, outsz, "%s\\farmos_xess_pso_%ux%u.bin", tmp, (unsigned)dw, (unsigned)dh);
+#else
+  snprintf(out, outsz, "/tmp/farmos_xess_pso_%ux%u.bin", (unsigned)dw, (unsigned)dh);
+#endif
+}
+
+static void destroy_xess_pso_cache(void) {
+  if (g_xess_pso_cache && vkDestroyPipelineCache && g_dev)
+    vkDestroyPipelineCache(g_dev, g_xess_pso_cache, NULL);
+  g_xess_pso_cache = 0;
+  g_xess_pso_dw = 0;
+  g_xess_pso_dh = 0;
+  g_xess_pso_saved_exec = 0;
+}
+
+static void save_xess_pso_cache(uint32_t dw, uint32_t dh) {
+  if (!g_xess_pso_cache || !vkGetPipelineCacheData || !g_dev) return;
+  size_t n = 0;
+  if (vkGetPipelineCacheData(g_dev, g_xess_pso_cache, &n, NULL) != VK_SUCCESS) return;
+  if (n == 0 || n >= 16u * 1024u * 1024u) return;
+  void* blob = malloc(n);
+  if (!blob) return;
+  if (vkGetPipelineCacheData(g_dev, g_xess_pso_cache, &n, blob) == VK_SUCCESS) {
+    char path[512];
+    xess_pso_cache_path(path, sizeof(path), dw, dh);
+    FILE* cf = fopen(path, "wb");
+    if (cf) {
+      fwrite(blob, 1, n, cf);
+      fclose(cf);
+    }
+  }
+  free(blob);
+}
+
+static void ensure_xess_pso_cache(uint32_t dw, uint32_t dh) {
+  if (g_xess_pso_cache && g_xess_pso_dw == dw && g_xess_pso_dh == dh) return;
+  destroy_xess_pso_cache();
+  if (!vkCreatePipelineCache || !g_dev) return;
+  char path[512];
+  xess_pso_cache_path(path, sizeof(path), dw, dh);
+  void* blob = NULL;
+  size_t blob_sz = 0;
+  FILE* cf = fopen(path, "rb");
+  if (cf) {
+    if (fseek(cf, 0, SEEK_END) == 0) {
+      long sz = ftell(cf);
+      if (sz > 0 && sz < 16 * 1024 * 1024) {
+        blob_sz = (size_t)sz;
+        blob = malloc(blob_sz);
+        if (blob) {
+          rewind(cf);
+          if (fread(blob, 1, blob_sz, cf) != blob_sz) {
+            free(blob);
+            blob = NULL;
+            blob_sz = 0;
+          }
+        }
+      }
+    }
+    fclose(cf);
+  }
+  VkPipelineCacheCreateInfo cci;
+  memset(&cci, 0, sizeof(cci));
+  cci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+  cci.initialDataSize = blob_sz;
+  cci.pInitialData = blob;
+  if (vkCreatePipelineCache(g_dev, &cci, NULL, &g_xess_pso_cache) != VK_SUCCESS)
+    g_xess_pso_cache = 0;
+  else {
+    g_xess_pso_dw = dw;
+    g_xess_pso_dh = dh;
+  }
+  free(blob);
+}
+
 static void abandon_borrowed_vk(void) {
   destroy_xess_res();
+  destroy_xess_pso_cache();
   g_xess_cmd = NULL;
   if (g_cpool && vkDestroyCommandPool && g_dev)
     vkDestroyCommandPool(g_dev, g_cpool, NULL);
@@ -874,20 +1009,30 @@ static VkImageSubresourceRange color_range(void) {
   return r;
 }
 
+static void img_barriers_n(VkCommandBuffer cmd, const VkImage* imgs, int n,
+                           uint32_t old_l, uint32_t new_l,
+                           uint32_t src_a, uint32_t dst_a, uint32_t src_st, uint32_t dst_st) {
+  VkImageMemoryBarrier b[4];
+  memset(b, 0, sizeof(b));
+  VkImageSubresourceRange rg = color_range();
+  if (n > 4) n = 4;
+  for (int i = 0; i < n; i++) {
+    b[i].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    b[i].srcAccessMask = src_a;
+    b[i].dstAccessMask = dst_a;
+    b[i].oldLayout = old_l;
+    b[i].newLayout = new_l;
+    b[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b[i].image = imgs[i];
+    b[i].subresourceRange = rg;
+  }
+  vkCmdPipelineBarrier(cmd, src_st, dst_st, 0, 0, NULL, 0, NULL, (uint32_t)n, b);
+}
+
 static void img_barrier(VkCommandBuffer cmd, VkImage img, uint32_t old_l, uint32_t new_l,
                         uint32_t src_a, uint32_t dst_a, uint32_t src_st, uint32_t dst_st) {
-  VkImageMemoryBarrier b;
-  memset(&b, 0, sizeof(b));
-  b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-  b.srcAccessMask = src_a;
-  b.dstAccessMask = dst_a;
-  b.oldLayout = old_l;
-  b.newLayout = new_l;
-  b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  b.image = img;
-  b.subresourceRange = color_range();
-  vkCmdPipelineBarrier(cmd, src_st, dst_st, 0, 0, NULL, 0, NULL, 1, &b);
+  img_barriers_n(cmd, &img, 1, old_l, new_l, src_a, dst_a, src_st, dst_st);
 }
 
 static int begin_cmd(VkCommandBuffer* out) {
@@ -1049,6 +1194,8 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
                               XESS_INIT_FLAG_ENABLE_AUTOEXPOSURE);
     ip.creationNodeMask = 1;
     ip.visibleNodeMask = 1;
+    ensure_xess_pso_cache((uint32_t)dw, (uint32_t)dh);
+    ip.pipelineCache = g_xess_pso_cache;
     /* 2x smoke (960x540->1080p / 32->64) maps to Balanced (~2.0). Retry nearby presets. */
     double sx = (double)dw / (double)rw, sy = (double)dh / (double)rh;
     double sc = sx < sy ? sx : sy;
@@ -1083,6 +1230,7 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
     g_init_dw = dw;
     g_init_dh = dh;
     r->path_upscale_hist_valid = 0;
+    save_xess_pso_cache((uint32_t)dw, (uint32_t)dh);
   }
 
   if (!ensure_xess_res(rw, rh, dw, dh)) return 0;
@@ -1107,25 +1255,21 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
   cpy.imageSubresource.layerCount = 1;
   cpy.imageExtent.depth = 1;
 
-  img_barrier(cmd, g_img_color.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-              0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
-  img_barrier(cmd, g_img_vel.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-              0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
-  img_barrier(cmd, g_img_depth.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-              0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  {
+    VkImage ins[3] = { g_img_color.image, g_img_vel.image, g_img_depth.image };
+    img_barriers_n(cmd, ins, 3, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  }
   cpy.imageExtent.width = (uint32_t)rw; cpy.imageExtent.height = (uint32_t)rh;
   vkCmdCopyBufferToImage(cmd, g_buf_color.buf, g_img_color.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cpy);
   vkCmdCopyBufferToImage(cmd, g_buf_vel.buf, g_img_vel.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cpy);
   vkCmdCopyBufferToImage(cmd, g_buf_depth.buf, g_img_depth.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cpy);
-  img_barrier(cmd, g_img_color.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-              VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-              VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-  img_barrier(cmd, g_img_vel.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-              VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-              VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-  img_barrier(cmd, g_img_depth.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-              VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-              VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+  {
+    VkImage ins[3] = { g_img_color.image, g_img_vel.image, g_img_depth.image };
+    img_barriers_n(cmd, ins, 3, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                   VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+  }
   img_barrier(cmd, g_img_out.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL,
               0, VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
@@ -1161,6 +1305,10 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
   oc.imageExtent.depth = 1;
   vkCmdCopyImageToBuffer(cmd, g_img_out.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, g_buf_out.buf, 1, &oc);
   if (!submit_wait(cmd)) return 0;
+  if (!g_xess_pso_saved_exec) {
+    save_xess_pso_cache((uint32_t)dw, (uint32_t)dh);
+    g_xess_pso_saved_exec = 1;
+  }
 
   uint8_t* src = (uint8_t*)g_buf_out.map;
   uint8_t* dst = (uint8_t*)farm_arena_alloc((size_t)dw * (size_t)dh * 3);

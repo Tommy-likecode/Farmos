@@ -1317,12 +1317,17 @@ static double farm_halton_u(uint32_t n, uint32_t base) {
   return inv;
 }
 
+static int g_upscale_mode_set;
+static int g_upscale_backend_wanted;
+
 void farm_Renderer_setPathUpscale(farm_Renderer* self, int64_t mode) {
   if (mode != 0 && mode != 1 && mode != 2)
     farm_trap(122, "invalid path upscale mode");
   self->path_upscale = (int32_t)mode;
   self->path_upscale_set = 1;
   self->path_upscale_hist_valid = 0;
+  g_upscale_mode_set = 1;
+  g_upscale_backend_wanted = (mode == 1 || mode == 2);
 }
 
 int32_t farm_renderer_upscale_mode(const farm_Renderer* self) {
@@ -1330,6 +1335,12 @@ int32_t farm_renderer_upscale_mode(const farm_Renderer* self) {
   const char* e = getenv("FARMOS_PATH_UPSCALE");
   if (e && e[0] == '1' && e[1] == '\0') return 1;
   return 0;
+}
+
+int farm_path_upscale_backend_wanted(void) {
+  if (g_upscale_mode_set) return g_upscale_backend_wanted;
+  const char* e = getenv("FARMOS_PATH_UPSCALE");
+  return e && e[0] == '1' && e[1] == '\0';
 }
 
 int64_t farm_Renderer_getPathUpscale(farm_Renderer* self) {

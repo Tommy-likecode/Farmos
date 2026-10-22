@@ -209,21 +209,27 @@ Implementation-owned glue in `runtime/farm_upscale.c`, called after denoise from
 - **Jitter:** Halton base 2/3 in `[-0.5, 0.5]` packed into GPU `cam_x.w` / `cam_y.w`
   when upscale is ON **and** the backend is Vulkan. Identity on CPU and when OFF
   (M4 SHA). SPIR-V regenerated via `scripts/compile_vk_shader.sh`.
-- **Aux:** path-tracer first-hit `t` (GPU accum SSBO tail after RGB; CPU first bounce
-  into `depthbuffer`). `fill_aux` is O(pixels) linearize + cheap camera MV; static
-  camera writes zero MV (no CPU ray×tris). Object / skinned MV deferred.
-  Depth is linearized `(t−near)/(far−near)` uploaded as `R32F`. Color is post-quantize
-  LDR `RGBA8` (`XESS_INIT_FLAG_LDR_INPUT_COLOR` + autoexposure).
+- **Aux:** path-tracer first-hit `t` from sample 0 bounce 0 (GPU accum SSBO tail
+  after RGB; no extra `closest_hit`). CPU first bounce into `depthbuffer`.
+  `fill_aux` is O(pixels) linearize + cheap camera MV; static camera writes zero
+  MV (no CPU ray×tris). Object / skinned MV deferred. Depth is linearized
+  `(t−near)/(far−near)` uploaded as `R32F`. Color is post-quantize LDR `RGBA8`
+  (`XESS_INIT_FLAG_LDR_INPUT_COLOR` + autoexposure).
 - **XeSS:** `dlopen` / `LoadLibrary` of `libxess` (`FARMOS_XESS_LIB` override).
   Headless `VkImage`s, no swapchain. Images/staging/cmd persist across frames.
-  Prefer the path-tracer Vk device; fall back to a dedicated device if
-  `xessVKCreateContext` rejects the borrow. Quality preset chosen from scale
-  (2× → Balanced) with nearby retries. Vendor DLLs are not linked into the Farmos PE.
+  Disk `VkPipelineCache` at `%TEMP%/farmos_xess_pso_<dw>x<dh>.bin` passed to
+  `xessVKInit` (process-per-frame AC-05 warmup fills it). Prefer the path-tracer
+  Vk device: when upscale is ON, RT/compute backends merge XeSS instance/device
+  extensions so borrow sticks; fall back to a dedicated device if
+  `xessVKCreateContext` rejects it. Native OFF does not load libxess at device
+  create. Quality preset chosen from scale (2× → Balanced) with nearby retries.
+  Vendor DLLs are not linked into the Farmos PE.
 - **FSR2:** `isPathUpscaleAvailable(PATH_UPSCALE_FSR)` is true when the official
   ffx shared lib is loadable; execute is not stubbed with Enabler — missing dispatch
   soft-fails (STRICT → trap 122).
 - **DCE:** `program_uses_upscale` gates `-DFARM_ENABLE_UPSCALE` + `farm_upscale.c`.
-- **Arc:** helpers in `spec/tests/M12/bench/` (`PATH_GLOSSY_VNDF`). Prior tip
-  `3edb3f0` FAIL timing (ratio 0.330) + png_tol; re-smoke after fill_aux/persist-Vk
-  is owned by poteto on TommyLaptop. Do not invent Enabler workarounds.
+- **Arc:** helpers in `spec/tests/M12/bench/` (`PATH_GLOSSY_VNDF`). Tip `6dec6de`
+  AC-05 ratio **1.148** (binding PASS, SHOULD FAIL); png_tol max_abs 212.
+  Lever `more-optimize` (disk XeSS PSO + borrowed device) pending poteto re-smoke.
+  Do not invent Enabler workarounds.
 
