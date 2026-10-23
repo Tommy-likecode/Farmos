@@ -1,0 +1,17 @@
+// M12-007: CPU + XeSS ON soft-fails (leave render-res). No STRICT. SHA = M4-001.
+import { Scene, PerspectiveCamera, Renderer, PATH_UPSCALE_XESS } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x4488ff));
+  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.z = 5;
+  const renderer: Renderer = new Renderer(16, 16);
+  renderer.setSamples(1);
+  renderer.setMaxBounces(4);
+  renderer.setPathUpscale(PATH_UPSCALE_XESS);
+  renderer.renderPath(scene, camera);
+  renderer.savePNG("out.png");
+  return 0;
+}

@@ -103,6 +103,7 @@ Scene graph: `Scene`, `Object3D`, `Mesh`, geometries (`BoxGeometry`, `SphereGeom
 - M9: `PATH_BACKEND_VULKAN_RT` (2), `isVulkanRayTracingAvailable()`. Trap 118 valid set `{0,1,2}`. Hardware RT is Vulkan acceleration structures + `VK_KHR_ray_query` inside compute (`farm_vk_rt.c` linked only when that opt-in is reachable; compute `farm_vk.c` is also linked for fallback). Soft fallback HW RT → compute → CPU; `FARMOS_PATH_GPU_STRICT=1` traps 117 on selected HW RT fail. `FARMOS_VULKAN_RT_FORCE_FAIL=1`. M8 RR/MIS/adaptive apply on backend 2 when enabled.
 - M10: `PATH_DENOISE_OFF` / `PATH_DENOISE_SPATIAL`, `setPathDenoise` / `getPathDenoise`; default OFF; invalid mode traps 120.
 - M11: `PATH_GLOSSY_OFF` / `PATH_GLOSSY_VNDF`, `setPathGlossyContinuation` / `getPathGlossyContinuation`; default **OFF**; invalid mode traps **121**. When ON, rough metals (`metal>0` && `rough>0`) sample a VNDF-GGX reflection continuation (CPU, Vulkan compute, and Vulkan RT). Dielectrics / glass / `rough==0` mirrors stay M4. RectArea NEE remains; glossy metals use balance-heuristic MIS with the VNDF pdf. `FARMOS_PATH_GLOSSY=1` if the setter was never called; method wins.
+- M12: `PATH_UPSCALE_OFF` / `PATH_UPSCALE_XESS` / `PATH_UPSCALE_FSR`, `setPathUpscale` / `getPathUpscale` / `isPathUpscaleAvailable`, `setPathUpscaleResolution`; default **OFF**; invalid mode or resolution traps **122**. Headless XeSS (primary) / FSR2 (optional) after path (+ optional M10 denoise). Vulkan compute and Vulkan RT run upscale when the SDK is present; CPU soft-fails unless `FARMOS_PATH_UPSCALE_STRICT=1`. Jitter is identity when upscale is OFF. `farm_upscale.c` is linked only when the upscale API is reachable.
 
 `farm_ray.c` is linked only when `renderPath` is a reachable call.
 
@@ -127,6 +128,8 @@ Budgets (stripped Windows x64 PE unless noted) are in `spec/M6-hardening.md` §3
 | B-03 | glass + mirror (CPU, no Vulkan opt-in) | ≤ 300 KiB |
 | B-08 | GPU-linked path demo (Vulkan opt-in reachable) | ≤ 400 KiB |
 | B-09 | RT-linked path demo (`PATH_BACKEND_VULKAN_RT` reachable) | ≤ 500 KiB |
+| B-10 | denoise-linked path demo | ≤ 600 KiB |
+| B-11 | upscale-glue-linked path demo (path + optional denoise + upscale) | ≤ 700 KiB |
 | B-04 | `S_demo − S_scene` | ≤ 64 KiB |
 | B-05 | Cornell 800×600 `renderPath` peak working set | ≤ 64 MiB |
 | B-06 | unused `farmos:math` import | ≤ 20 KiB |

@@ -1,0 +1,15 @@
+// M12-008: STRICT + FORCE_FAIL → trap 122 path upscale failed.
+import { Scene, PerspectiveCamera, Renderer, PATH_UPSCALE_XESS } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x4488ff));
+  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.z = 5;
+  const renderer: Renderer = new Renderer(8, 8);
+  renderer.setSamples(1);
+  renderer.setPathUpscale(PATH_UPSCALE_XESS);
+  renderer.renderPath(scene, camera);
+  return 0;
+}

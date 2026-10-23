@@ -2,6 +2,9 @@
    (LoadLibrary / dlopen). Never a load-time import of vulkan-1.dll / libvulkan.so.1. */
 #include "farm_vk.h"
 #include "farm_vk_path_spv.h"
+#ifdef FARM_ENABLE_UPSCALE
+#include "farm_upscale.h"
+#endif
 #include "farm_rt.h"
 #include <string.h>
 #include <stdlib.h>
@@ -270,7 +273,23 @@ static int create_instance_and_pick(void) {
   memset(&ci, 0, sizeof(ci));
   ci.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
   ci.pApplicationInfo = &app;
-  if (vkCreateInstance_fn(&ci, NULL, &g_inst) != VK_SUCCESS || !g_inst) return 0;
+#ifdef FARM_ENABLE_UPSCALE
+  {
+    unsigned iext_n = 0, min_api = VK_API_VERSION_1_1;
+    const char* const* iext = NULL;
+    if (farm_upscale_xess_required_instance(&iext_n, &iext, &min_api)) {
+      ci.enabledExtensionCount = iext_n;
+      ci.ppEnabledExtensionNames = iext;
+      if (min_api > app.apiVersion) app.apiVersion = min_api;
+    }
+  }
+#endif
+  if (vkCreateInstance_fn(&ci, NULL, &g_inst) != VK_SUCCESS || !g_inst) {
+    ci.enabledExtensionCount = 0;
+    ci.ppEnabledExtensionNames = NULL;
+    app.apiVersion = VK_API_VERSION_1_1;
+    if (vkCreateInstance_fn(&ci, NULL, &g_inst) != VK_SUCCESS || !g_inst) return 0;
+  }
 
 #define LOADI(name) do { name = (PFN_##name)inst_proc(#name); if (!name) return 0; } while (0)
   LOADI(vkDestroyInstance);
@@ -367,12 +386,34 @@ static int ensure_device(void) {
   qci.queueFamilyIndex = g_qfam;
   qci.queueCount = 1;
   qci.pQueuePriorities = &prio;
+  const char* ext_names[32];
+  uint32_t ext_n = 0;
+  void* xess_feats = NULL;
+#ifdef FARM_ENABLE_UPSCALE
+  {
+    unsigned xn = 0;
+    const char* const* xnames = NULL;
+    if (farm_upscale_xess_required_device(g_inst, g_phys, &xn, &xnames, &xess_feats)) {
+      if (xnames) {
+        for (unsigned i = 0; i < xn && ext_n < 32; i++) ext_names[ext_n++] = xnames[i];
+      }
+    }
+  }
+#endif
   VkDeviceCreateInfo dci;
   memset(&dci, 0, sizeof(dci));
   dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+  dci.pNext = xess_feats;
   dci.queueCreateInfoCount = 1;
   dci.pQueueCreateInfos = &qci;
-  if (vkCreateDevice(g_phys, &dci, NULL, &g_dev) != VK_SUCCESS || !g_dev) return 0;
+  dci.enabledExtensionCount = ext_n;
+  dci.ppEnabledExtensionNames = ext_n ? ext_names : NULL;
+  if (vkCreateDevice(g_phys, &dci, NULL, &g_dev) != VK_SUCCESS || !g_dev) {
+    dci.pNext = NULL;
+    dci.enabledExtensionCount = 0;
+    dci.ppEnabledExtensionNames = NULL;
+    if (vkCreateDevice(g_phys, &dci, NULL, &g_dev) != VK_SUCCESS || !g_dev) return 0;
+  }
 
   vkGetDeviceProcAddr = (PFN_vkGetDeviceProcAddr)inst_proc("vkGetDeviceProcAddr");
   if (!vkGetDeviceProcAddr) return 0;
@@ -847,7 +888,7 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
     float cam_x[4];
     float cam_y[4];
     float cam_z[4];
-    float extra[4];     /* adaptive_target, bvh_root, glossy, 0 */
+    float extra[4];     /* adaptive_target, bvh_root, glossy, want_first_hit_t */
   } GpuParams;
   GpuParams params;
   memset(&params, 0, sizeof(params));
@@ -864,6 +905,7 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   params.extra[0] = (float)r->path_adaptive_target;
   params.extra[1] = (float)bvh_root;
   params.extra[2] = (float)farm_renderer_glossy_mode(r);
+  params.extra[3] = farm_renderer_upscale_mode(r) != 0 ? 1.f : 0.f;
   if (scene->hasBackground) {
     params.background[0] = (float)scene->background.r;
     params.background[1] = (float)scene->background.g;
@@ -876,6 +918,7 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   params.cam_x[0] = (float)e[0]; params.cam_x[1] = (float)e[1]; params.cam_x[2] = (float)e[2];
   params.cam_y[0] = (float)e[4]; params.cam_y[1] = (float)e[5]; params.cam_y[2] = (float)e[6];
   params.cam_z[0] = (float)e[8]; params.cam_z[1] = (float)e[9]; params.cam_z[2] = (float)e[10];
+  farm_renderer_upscale_pixel_jitter(r, &params.cam_x[3], &params.cam_y[3]);
 
   int32_t npix = r->width * r->height;
   VkBuffer bufs[8] = {0}; VkDeviceMemory mems[8] = {0}; void* maps[8] = {0};
@@ -885,7 +928,8 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   sizes[2] = sizeof(float) * 16 * (size_t)nmat;
   sizes[3] = sizeof(float) * 4 * (size_t)nlight_vec4;
   sizes[4] = sizeof(float) * (size_t)(ntex > 0 ? ntex : 4);
-  sizes[5] = sizeof(float) * 3 * (size_t)npix;
+  /* RGB sample sums + optional first-hit t tail (denoise still reads 3*npix). */
+  sizes[5] = sizeof(float) * 4 * (size_t)npix;
   sizes[6] = sizeof(GpuBvhNodeHost) * (size_t)(nnodes > 0 ? nnodes : 1);
   sizes[7] = sizeof(int32_t) * (size_t)(nid > 0 ? nid : 1);
   int ok = 1;
@@ -1014,8 +1058,19 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   si.commandBufferCount = 1;
   si.pCommandBuffers = &cmd;
-  if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS ||
-      vkQueueWaitIdle(g_queue) != VK_SUCCESS) {
+  if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS) {
+    vkDestroyDescriptorPool(g_dev, pool, NULL);
+    for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
+    free(inst); free(amb); free(dirs); free(pts); free(rects);
+    free(tris); free(mmap); free(mat4); free(texels); free(lights);
+    free(bvh); free(prim_ids);
+    return 0;
+  }
+#ifdef FARM_ENABLE_UPSCALE
+  farm_upscale_prefetch_xess();
+  farm_upscale_prepare_xess(r);
+#endif
+  if (vkQueueWaitIdle(g_queue) != VK_SUCCESS) {
     vkDestroyDescriptorPool(g_dev, pool, NULL);
     for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
     free(inst); free(amb); free(dirs); free(pts); free(rects);
@@ -1044,11 +1099,23 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
     r->framebuffer[i * 3 + 1] = (uint8_t)quantize_f(my);
     r->framebuffer[i * 3 + 2] = (uint8_t)quantize_f(mz);
   }
+  if (r->depthbuffer && farm_renderer_upscale_mode(r) != 0)
+    memcpy(r->depthbuffer, gpu_acc + 3 * npix, (size_t)npix * sizeof(float));
 
   vkDestroyDescriptorPool(g_dev, pool, NULL);
   for (int i = 0; i < 8; i++) destroy_ssbo(bufs[i], mems[i]);
   free(inst); free(amb); free(dirs); free(pts); free(rects);
   free(tris); free(mmap); free(mat4); free(texels); free(lights);
   free(bvh); free(prim_ids);
+  return 1;
+}
+
+int farm_vk_export_handles(void** inst, void** phys, void** dev, void** queue, unsigned* qfam) {
+  if (!g_device_ready || !g_inst || !g_dev || !g_queue) return 0;
+  if (inst) *inst = g_inst;
+  if (phys) *phys = g_phys;
+  if (dev) *dev = g_dev;
+  if (queue) *queue = g_queue;
+  if (qfam) *qfam = g_qfam;
   return 1;
 }

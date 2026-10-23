@@ -10,6 +10,8 @@ bool program_uses_parallel(Program& prog);
 bool program_uses_ray(Program& prog);
 // True when denoise API / PATH_DENOISE_SPATIAL is reachable (gates farm_denoise.c).
 bool program_uses_denoise(Program& prog);
+// True when upscale API / PATH_UPSCALE_* is reachable (gates farm_upscale.c).
+bool program_uses_upscale(Program& prog);
 // True when a reachable user module opts into the Vulkan path backend (gates farm_vk.c).
 bool program_uses_vulkan(Program& prog);
 // True when HW RT (backend 2 / isVulkanRayTracingAvailable) is reachable (gates farm_vk_rt.c).

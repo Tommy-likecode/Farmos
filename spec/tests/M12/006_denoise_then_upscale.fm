@@ -1,0 +1,21 @@
+// M12-006: denoise ON + upscale ON (order: denoise then upscale). Soft-skip without SDK.
+import { Scene, PerspectiveCamera, Renderer,
+         PATH_UPSCALE_XESS, PATH_DENOISE_SPATIAL, PATH_BACKEND_VULKAN } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x4488ff));
+  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.z = 5;
+  const renderer: Renderer = new Renderer(16, 16);
+  renderer.setSamples(2);
+  renderer.setMaxBounces(4);
+  renderer.setPathBackend(PATH_BACKEND_VULKAN);
+  renderer.setPathDenoise(PATH_DENOISE_SPATIAL);
+  renderer.setPathUpscale(PATH_UPSCALE_XESS);
+  renderer.setPathUpscaleResolution(16, 16, 32, 32);
+  renderer.renderPath(scene, camera);
+  renderer.savePNG("out.png");
+  return 0;
+}

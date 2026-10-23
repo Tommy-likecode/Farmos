@@ -183,6 +183,30 @@ M11 — Opt-in GGX/VNDF glossy continuation (metal-black) [added 2026-10-20 by P
 - Open questions: **none**.
 - Spec: `spec/M11-glossy-continuation.md` (**FINAL**); fixtures: `spec/tests/M11/`.
 
+
+M12 — Native Vulkan upscale (XeSS / FSR) [added 2026-10-21 by PM/user GO draft-native-upscale]
+- Goal: opt-in native Vulkan temporal upscale (Intel **XeSS** primary on Arc; optional **AMD FSR2**) after path (+ optional M10 denoise); default **OFF**.
+- Status: **FINAL** (PM/user 2026-10-21: OQ-M12-01 .. OQ-M12-09 all A).
+- Why: user wanted DLSS-Enabler for Intel/AMD; survey = wrong tool (no NGX/DLSS; offline path + PATH_DENOISE_SPATIAL; no swapchain). User chose native XeSS/FSR milestone. Enabler/Swapper/OptiScaler **OUT forever** for this milestone.
+- **Reopens from M10 (explicit):**
+  - OQ-M10-06 A (DLSS/vendor upscalers OUT) → **selective reopen**: native XeSS/FSR **IN**; DLSS/NGX, Enabler, Swapper, OptiScaler injection **still OUT**.
+  - OQ-M10-01 A (no OS window/swapchain) → under **OQ-M12-01 A** (**headless** upscale-to-buffer + savePNG) **stands / not reopened**. OQ-M12-01 B rejected.
+- Binding (OQ-M12-01..09 A):
+  - OQ-M12-01 A: headless buffer + savePNG; **no** OS window; M10-01 stands.
+  - OQ-M12-02 A: XeSS primary + FSR2 optional; DLSS/Enabler/Swapper/OptiScaler OUT.
+  - OQ-M12-03 A: camera MV + depth; object MV deferred.
+  - OQ-M12-04 A: `setPathUpscale` / `PATH_UPSCALE_OFF|XESS|FSR`; default **OFF**; trap **122**.
+  - OQ-M12-05 A: denoise **then** upscale when both ON.
+  - OQ-M12-06 A: Vulkan compute + Vulkan RT MUST; CPU soft; STRICT 122-family.
+  - OQ-M12-07 A: upscale-glue PE ≤ **700 KiB** (vendor DLLs external); DCE when OFF.
+  - OQ-M12-08 A: TommyLaptop Arc smoke (960×540→1080p) + Linux soft-skip.
+  - OQ-M12-09 A: frame-gen OUT.
+- Out: DLSS/NGX; Enabler/Swapper/OptiScaler; frame-gen; OptiX; GPU raster; rewriting goldens under OFF; full game engine; OS window/swapchain.
+- AC: see AC-M12-01..12 in `spec/M12-native-upscale.md` (binding under A).
+- Open questions: **none**.
+- Spec: `spec/M12-native-upscale.md` (**FINAL**); fixtures: `spec/tests/M12/`.
+- Order: after M11; coding only after poteto assign by PM.
+
 ## Team
 - Projects Manager: plan, priorities, handoffs, acceptance.
 - poteto: all coding (via Cursor cloud agents), per milestone, reports status/blockers.

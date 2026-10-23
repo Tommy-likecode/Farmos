@@ -5,6 +5,9 @@
 #ifdef FARM_ENABLE_DENOISE
 #include "farm_denoise.h"
 #endif
+#ifdef FARM_ENABLE_UPSCALE
+#include "farm_upscale.h"
+#endif
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -867,7 +870,9 @@ static V3 ambient_term(PathWorld* w, V3 albedo, double metal, double trans) {
 static void camera_ray(PathWorld* w, farm_Renderer* r, int32_t x, int32_t y, int32_t s, V3* o, V3* d) {
   double jx, jy;
   pixel_jitter(s, &jx, &jy);
-  double px = x + jx, py = y + jy;
+  float ux = 0.f, uy = 0.f;
+  farm_renderer_upscale_pixel_jitter(r, &ux, &uy);
+  double px = x + jx + (double)ux, py = y + jy + (double)uy;
   double tan_half = tan((FARM_PI / 180.0) * 0.5 * w->camera->f_fov);
   double ndc_x = (px / (double)r->width) * 2.0 - 1.0;
   double ndc_y = 1.0 - (py / (double)r->height) * 2.0;
@@ -929,7 +934,8 @@ static V3 mis_rects_along(PathWorld* w, V3 o, V3 d, double t_max, double pdf_bsd
   return vmul(cmul(throughput, rect->le), wgt);
 }
 
-static V3 trace_radiance(PathWorld* w, farm_Renderer* r, int32_t x, int32_t y, int32_t s) {
+static V3 trace_radiance(PathWorld* w, farm_Renderer* r, int32_t x, int32_t y, int32_t s,
+                         double* first_t_out) {
   V3 o, d;
   camera_ray(w, r, x, y, s, &o, &d);
   V3 throughput = v3(1, 1, 1);
@@ -955,6 +961,8 @@ static V3 trace_radiance(PathWorld* w, farm_Renderer* r, int32_t x, int32_t y, i
     }
     Hit hit;
     closest_hit(w, o, d, &hit);
+    if (depth == 0 && first_t_out)
+      *first_t_out = hit.hit ? hit.t : 1e30;
     double tcap = hit.hit ? hit.t : 1e30;
     if (mis_pdf > 0.0 && (w->sampling == 1 || prev_glossy_bsdf))
       acc = vadd(acc, mis_rects_along(w, o, d, tcap, mis_pdf, throughput));
@@ -1287,8 +1295,10 @@ static void run_tiles(TileJob* job) {
         double* acc = &job->r->accum[((size_t)y * (size_t)W + (size_t)x) * 3];
         int k = 0;
         double mean = 0.0, m2 = 0.0;
+        double first_t = 1e30;
         for (int s = 0; s < job->samples; s++) {
-          V3 L = trace_radiance(job->w, job->r, x, y, job->start_s + s);
+          V3 L = trace_radiance(job->w, job->r, x, y, job->start_s + s,
+                                s == 0 ? &first_t : NULL);
           acc[0] += L.x; acc[1] += L.y; acc[2] += L.z;
           k++;
           if (job->adaptive) {
@@ -1301,6 +1311,8 @@ static void run_tiles(TileJob* job) {
         }
         if (job->r->spp_count)
           job->r->spp_count[(size_t)y * (size_t)W + (size_t)x] += k;
+        if (job->r->depthbuffer && farm_renderer_upscale_mode(job->r) != 0)
+          job->r->depthbuffer[(size_t)y * (size_t)W + (size_t)x] = (float)first_t;
       }
     }
   }
@@ -1330,6 +1342,17 @@ static void farm_renderer_maybe_denoise(farm_Renderer* self) {
 #else
   if (self->path_denoise != 0 && farm_env_is_1("FARMOS_PATH_DENOISE_STRICT"))
     farm_trap(120, "path denoise failed");
+#endif
+}
+
+static void farm_renderer_maybe_upscale(farm_Renderer* self, farm_Scene* scene,
+                                       farm_PerspectiveCamera* camera) {
+#ifdef FARM_ENABLE_UPSCALE
+  farm_renderer_apply_path_upscale(self, scene, camera);
+#else
+  (void)scene; (void)camera;
+  if (farm_renderer_upscale_mode(self) != 0 && farm_env_is_1("FARMOS_PATH_UPSCALE_STRICT"))
+    farm_trap(122, "path upscale failed");
 #endif
 }
 
@@ -1426,6 +1449,8 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
     farm_Renderer_resetAccumulation(self);
   }
   self->path_denoise_gpu_done = 0;
+  self->fb_width = 0;
+  self->fb_height = 0;
 
   farm_Scene_updateMatrixWorld(scene, true);
   farm_PerspectiveCamera_updateMatrixWorld(camera, true);
@@ -1447,6 +1472,7 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
 #endif
     if (rt_ok) {
       farm_renderer_maybe_denoise(self);
+      farm_renderer_maybe_upscale(self, scene, camera);
       return;
     }
     if (farm_env_is_1("FARMOS_PATH_GPU_STRICT"))
@@ -1456,6 +1482,7 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
       gpu_ok = farm_vk_render_path(self, scene, camera);
     if (gpu_ok) {
       farm_renderer_maybe_denoise(self);
+      farm_renderer_maybe_upscale(self, scene, camera);
       return;
     }
   } else if (self->path_backend == 1) {
@@ -1464,6 +1491,7 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
       gpu_ok = farm_vk_render_path(self, scene, camera);
     if (gpu_ok) {
       farm_renderer_maybe_denoise(self);
+      farm_renderer_maybe_upscale(self, scene, camera);
       return;
     }
     if (farm_env_is_1("FARMOS_PATH_GPU_STRICT"))
@@ -1546,4 +1574,5 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
     self->framebuffer[i * 3 + 2] = (uint8_t)quantize(self->accum[i * 3 + 2] / n);
   }
   farm_renderer_maybe_denoise(self);
+  farm_renderer_maybe_upscale(self, scene, camera);
 }

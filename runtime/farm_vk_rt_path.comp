@@ -18,7 +18,7 @@ layout(std430, binding = 0) buffer ParamBuf {
   vec4 cam_x;
   vec4 cam_y;
   vec4 cam_z;
-  vec4 extra;      // adaptive_target, bvh_root, glossy, 0
+  vec4 extra;      // adaptive_target, bvh_root, glossy, want_first_hit_t
 } P;
 
 struct GpuTri {
@@ -516,7 +516,7 @@ vec3 ambient_term(vec3 albedo, float metal, float trans) {
 void camera_ray(int x, int y, int s, out vec3 o, out vec3 d) {
   float jx, jy;
   pixel_jitter(s, jx, jy);
-  float px = float(x) + jx, py = float(y) + jy;
+  float px = float(x) + jx + P.cam_x.w, py = float(y) + jy + P.cam_y.w;
   float tan_half = tan((FARM_PI / 180.0) * 0.5 * P.background.w);
   float ndc_x = (px / float(P.size.x)) * 2.0 - 1.0;
   float ndc_y = 1.0 - (py / float(P.size.y)) * 2.0;
@@ -526,7 +526,7 @@ void camera_ray(int x, int y, int s, out vec3 o, out vec3 d) {
   d = normalize(P.cam_x.xyz * cx + P.cam_y.xyz * cy + P.cam_z.xyz * (-1.0));
 }
 
-vec3 trace_radiance(int x, int y, int s) {
+vec3 trace_radiance(int x, int y, int s, inout float first_t) {
   vec3 o, d;
   camera_ray(x, y, s, o, d);
   vec3 throughput = vec3(1.0);
@@ -545,6 +545,8 @@ vec3 trace_radiance(int x, int y, int s) {
       throughput /= q;
     }
     Hit hit = closest_hit(o, d);
+    if (depth == 0 && first_t < 0.0)
+      first_t = hit.hit ? hit.t : 1e30;
     float tcap = hit.hit ? hit.t : 1e30;
     if (mis_pdf > 0.0 && prev_glossy_bsdf != 0)
       acc += mis_rects_along(o, d, tcap, mis_pdf, throughput);
@@ -683,8 +685,9 @@ void main() {
   vec3 sum = vec3(0.0);
   float mean = 0.0, m2 = 0.0;
   int k = 0;
+  float first_t = -1.0;
   for (int s = 0; s < samples; s++) {
-    vec3 L = trace_radiance(x, y, start_s + s);
+    vec3 L = trace_radiance(x, y, start_s + s, first_t);
     sum += L;
     k++;
     if (P.flags.z != 0) {
@@ -695,8 +698,12 @@ void main() {
       if (k >= 4 && (m2 / float(k)) < P.extra.x) break;
     }
   }
-  int i = (y * W + x) * 3;
+  int pix = y * W + x;
+  int i = pix * 3;
   accum[i + 0] = sum.x;
   accum[i + 1] = sum.y;
   accum[i + 2] = sum.z;
+  /* Tail after RGB: first-hit t from sample 0 bounce 0 (no extra closest_hit). */
+  if (P.extra.w > 0.5)
+    accum[W * H * 3 + pix] = first_t >= 0.0 ? first_t : 1e30;
 }

@@ -51,6 +51,8 @@ def parse_expected(path):
     epsilon = None
     requires_vulkan = False
     requires_vulkan_rt = False
+    requires_xess = False
+    requires_fsr = False
     png_tol = None
     envs = []
     stdout_alts = []
@@ -119,6 +121,12 @@ def parse_expected(path):
             m = re.match(r"^# requires_vulkan_rt:[ \t]*true[ \t]*$", line)
             if m:
                 requires_vulkan_rt = True; continue
+            m = re.match(r"^# requires_xess:[ \t]*true[ \t]*$", line)
+            if m:
+                requires_xess = True; continue
+            m = re.match(r"^# requires_fsr:[ \t]*true[ \t]*$", line)
+            if m:
+                requires_fsr = True; continue
             m = re.match(r"^# env:[ \t]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
             if m:
                 envs.append((m.group(1), m.group(2))); continue
@@ -156,7 +164,8 @@ def parse_expected(path):
                 diags=diags, png=png_path, sha256=sha256, stderr_exact=stderr_exact,
                 flags=flags, repeat=repeat, threads=threads, diag_exact=diag_exact,
                 epsilon=epsilon, requires_vulkan=requires_vulkan,
-                requires_vulkan_rt=requires_vulkan_rt, png_tol=png_tol,
+                requires_vulkan_rt=requires_vulkan_rt, requires_xess=requires_xess,
+                requires_fsr=requires_fsr, png_tol=png_tol,
                 envs=envs, stdout_alts=stdout_alts)
 
 png_scratch = None
@@ -349,6 +358,35 @@ def host_has_vulkan_rt_device():
     destroy(inst, None)
     return found_rt
 
+def host_has_named_lib(env_key, names, extra_dirs=()):
+    import ctypes
+    cand = []
+    ev = os.environ.get(env_key)
+    if ev:
+        cand.append(ev)
+    cand.extend(names)
+    rt = os.environ.get("FARM_RUNTIME")
+    if rt:
+        for n in names:
+            cand.append(os.path.join(rt, "third_party", "xess", n))
+            cand.append(os.path.join(rt, "third_party", "fsr", n))
+    for d in extra_dirs:
+        for n in names:
+            cand.append(os.path.join(d, n))
+    for n in cand:
+        try:
+            ctypes.CDLL(n)
+            return True
+        except OSError:
+            continue
+    return False
+
+def host_has_xess_lib():
+    return host_has_named_lib("FARMOS_XESS_LIB", ("libxess.so", "libxess.so.2", "libxess.so.1", "libxess.dll"))
+
+def host_has_fsr_lib():
+    return host_has_named_lib("FARMOS_FSR_LIB", ("libffx_fsr2_vk.so", "libffx_fsr2_api_vk.so", "ffx_fsr2_vk.dll"))
+
 def parse_farmc_diags(err):
     got = []
     for ln in err.split("\n"):
@@ -460,6 +498,14 @@ if exp.get("requires_vulkan") and not host_has_vulkan_device():
 
 if exp.get("requires_vulkan_rt") and not host_has_vulkan_rt_device():
     print(f"SKIP {name}: requires_vulkan_rt (no usable Vulkan RT device)")
+    sys.exit(0)
+
+if exp.get("requires_xess") and (not host_has_xess_lib() or not host_has_vulkan_device()):
+    print(f"SKIP {name}: requires_xess (no XeSS SDK or Vulkan device)")
+    sys.exit(0)
+
+if exp.get("requires_fsr") and (not host_has_fsr_lib() or not host_has_vulkan_device()):
+    print(f"SKIP {name}: requires_fsr (no FSR2 SDK or Vulkan device)")
     sys.exit(0)
 
 p = run_build()

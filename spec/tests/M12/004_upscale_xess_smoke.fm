@@ -1,0 +1,24 @@
+// M12-004: XeSS ON smoke. Soft-skip without SDK (`# requires_xess`).
+import { Scene, PerspectiveCamera, Renderer,
+         PATH_UPSCALE_XESS, PATH_BACKEND_VULKAN } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x4488ff));
+  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.z = 5;
+  const renderer: Renderer = new Renderer(32, 32);
+  renderer.setSamples(1);
+  renderer.setMaxBounces(4);
+  renderer.setPathBackend(PATH_BACKEND_VULKAN);
+  renderer.setPathUpscale(PATH_UPSCALE_XESS);
+  renderer.setPathUpscaleResolution(32, 32, 64, 64);
+  let i: int = 0;
+  while (i < 8) {
+    renderer.renderPath(scene, camera);
+    i = i + 1;
+  }
+  renderer.savePNG("out.png");
+  return 0;
+}

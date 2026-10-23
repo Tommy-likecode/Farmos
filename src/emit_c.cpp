@@ -113,6 +113,20 @@ static bool is_denoise_opt_in_name(const std::string& n) {
          n == "isPathDenoiseAvailable";
 }
 
+static bool is_upscale_opt_in_name(const std::string& n) {
+  return n == "PATH_UPSCALE_OFF" ||
+         n == "PATH_UPSCALE_XESS" ||
+         n == "PATH_UPSCALE_FSR" ||
+         n == "setPathUpscale" ||
+         n == "getPathUpscale" ||
+         n == "isPathUpscaleAvailable" ||
+         n == "setPathUpscaleResolution" ||
+         n == "getPathUpscaleRenderWidth" ||
+         n == "getPathUpscaleRenderHeight" ||
+         n == "getPathUpscaleDisplayWidth" ||
+         n == "getPathUpscaleDisplayHeight";
+}
+
 static bool expr_uses_denoise(ExprPtr e) {
   if (!e) return false;
   if (e->kind == ExprKind::Ident && is_denoise_opt_in_name(e->name)) return true;
@@ -147,6 +161,44 @@ bool program_uses_denoise(Program& prog) {
     for (auto& s : m.structs)
       for (auto& md : s.methods) if (stmt_uses_denoise(md.body)) return true;
     for (auto& op : m.operators) if (stmt_uses_denoise(op.body)) return true;
+  }
+  return false;
+}
+
+static bool expr_uses_upscale(ExprPtr e) {
+  if (!e) return false;
+  if (e->kind == ExprKind::Ident && is_upscale_opt_in_name(e->name)) return true;
+  if (e->kind == ExprKind::Field && is_upscale_opt_in_name(e->name)) return true;
+  if (e->kind == ExprKind::Call && e->lhs && e->lhs->kind == ExprKind::Field &&
+      is_upscale_opt_in_name(e->lhs->name))
+    return true;
+  if (expr_uses_upscale(e->lhs) || expr_uses_upscale(e->rhs)) return true;
+  for (auto& a : e->args) if (expr_uses_upscale(a)) return true;
+  for (auto& fv : e->fields) if (expr_uses_upscale(fv.second)) return true;
+  return false;
+}
+
+static bool stmt_uses_upscale(StmtPtr s) {
+  if (!s) return false;
+  if (expr_uses_upscale(s->init) || expr_uses_upscale(s->cond) || expr_uses_upscale(s->lhs) ||
+      expr_uses_upscale(s->rhs) || expr_uses_upscale(s->for_cond) || expr_uses_upscale(s->ret))
+    return true;
+  if (stmt_uses_upscale(s->then_b) || stmt_uses_upscale(s->else_b) ||
+      stmt_uses_upscale(s->for_init) || stmt_uses_upscale(s->for_update))
+    return true;
+  for (auto& x : s->stmts) if (stmt_uses_upscale(x)) return true;
+  return false;
+}
+
+bool program_uses_upscale(Program& prog) {
+  for (auto& m : prog.modules) {
+    if (is_stdlib_mod(m.path)) continue;
+    for (auto& f : m.functions) if (stmt_uses_upscale(f.body)) return true;
+    for (auto& c : m.classes)
+      for (auto& md : c.methods) if (stmt_uses_upscale(md.body)) return true;
+    for (auto& s : m.structs)
+      for (auto& md : s.methods) if (stmt_uses_upscale(md.body)) return true;
+    for (auto& op : m.operators) if (stmt_uses_upscale(op.body)) return true;
   }
   return false;
 }

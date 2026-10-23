@@ -1,0 +1,12 @@
+// M12-005: display < render → trap 122-family at setter.
+import { Scene, PerspectiveCamera, Renderer } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x4488ff));
+  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+  const renderer: Renderer = new Renderer(8, 8);
+  renderer.setPathUpscaleResolution(32, 32, 16, 16);
+  return 0;
+}

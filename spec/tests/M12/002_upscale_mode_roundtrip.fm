@@ -1,0 +1,26 @@
+// M12-002: setPathUpscale / getPathUpscale roundtrip; resolution helpers.
+import { Scene, PerspectiveCamera, Renderer,
+         PATH_UPSCALE_OFF, PATH_UPSCALE_XESS, PATH_UPSCALE_FSR } from "farmos:scene";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x4488ff));
+  const camera: PerspectiveCamera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.z = 5;
+  const renderer: Renderer = new Renderer(4, 4);
+  renderer.setSamples(1);
+  println(renderer.getPathUpscale());
+  renderer.setPathUpscale(PATH_UPSCALE_XESS);
+  println(renderer.getPathUpscale());
+  renderer.setPathUpscale(PATH_UPSCALE_FSR);
+  println(renderer.getPathUpscale());
+  renderer.setPathUpscale(PATH_UPSCALE_OFF);
+  println(renderer.getPathUpscale());
+  renderer.setPathUpscaleResolution(8, 8, 16, 16);
+  println(renderer.getPathUpscaleRenderWidth());
+  println(renderer.getPathUpscaleRenderHeight());
+  println(renderer.getPathUpscaleDisplayWidth());
+  println(renderer.getPathUpscaleDisplayHeight());
+  return 0;
+}

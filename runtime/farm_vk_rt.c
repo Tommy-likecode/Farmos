@@ -5,6 +5,9 @@
 #ifdef FARM_ENABLE_DENOISE
 #include "farm_vk_denoise_spv.h"
 #endif
+#ifdef FARM_ENABLE_UPSCALE
+#include "farm_upscale.h"
+#endif
 #include "farm_rt.h"
 #include <string.h>
 #include <stdlib.h>
@@ -387,7 +390,23 @@ static int create_instance_and_pick(void) {
   memset(&ci, 0, sizeof(ci));
   ci.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
   ci.pApplicationInfo = &app;
-  if (vkCreateInstance_fn(&ci, NULL, &g_inst) != VK_SUCCESS || !g_inst) return 0;
+#ifdef FARM_ENABLE_UPSCALE
+  {
+    unsigned iext_n = 0, min_api = VK_API_VERSION_1_2;
+    const char* const* iext = NULL;
+    if (farm_upscale_xess_required_instance(&iext_n, &iext, &min_api)) {
+      ci.enabledExtensionCount = iext_n;
+      ci.ppEnabledExtensionNames = iext;
+      if (min_api > app.apiVersion) app.apiVersion = min_api;
+    }
+  }
+#endif
+  if (vkCreateInstance_fn(&ci, NULL, &g_inst) != VK_SUCCESS || !g_inst) {
+    ci.enabledExtensionCount = 0;
+    ci.ppEnabledExtensionNames = NULL;
+    app.apiVersion = VK_API_VERSION_1_2;
+    if (vkCreateInstance_fn(&ci, NULL, &g_inst) != VK_SUCCESS || !g_inst) return 0;
+  }
 
 #define LOADI(name) do { name = (PFN_##name)inst_proc(#name); if (!name) return 0; } while (0)
   LOADI(vkDestroyInstance);
@@ -527,6 +546,7 @@ static int rt_buf_create(VkDeviceSize sz, uint32_t usage, uint32_t mem_props, in
 }
 
 static int ensure_rt_device(void) {
+  int cache_from_disk = 0;
   if (g_device_ready) return 1;
   if (!farm_vk_rt_probe()) return 0;
   float prio = 1.0f;
@@ -552,15 +572,55 @@ static int ensure_rt_device(void) {
   *(const void**)(rq_feat + 8) = as_feat;
   *(VkBool32*)(rq_feat + 16) = 1;
 
+  const char* ext_names[32];
+  uint32_t ext_n = (uint32_t)(sizeof(k_req_ext) / sizeof(k_req_ext[0]));
+  uint32_t rt_ext_n = ext_n;
+  for (uint32_t i = 0; i < ext_n; i++) ext_names[i] = k_req_ext[i];
+#ifdef FARM_ENABLE_UPSCALE
+  {
+    unsigned xn = 0;
+    const char* const* xnames = NULL;
+    void* xess_feats = NULL;
+    if (farm_upscale_xess_required_device(g_inst, g_phys, &xn, &xnames, &xess_feats)) {
+      if (xnames) {
+        for (unsigned i = 0; i < xn && ext_n < 32; i++) {
+          int seen = 0;
+          for (uint32_t j = 0; j < ext_n; j++) {
+            if (strcmp(ext_names[j], xnames[i]) == 0) { seen = 1; break; }
+          }
+          if (!seen) ext_names[ext_n++] = xnames[i];
+        }
+      }
+      *(const void**)(bda_feat + 8) = xess_feats;
+    }
+  }
+#endif
+
   VkDeviceCreateInfo dci;
   memset(&dci, 0, sizeof(dci));
   dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
   dci.pNext = rq_feat;
   dci.queueCreateInfoCount = 1;
   dci.pQueueCreateInfos = &qci;
-  dci.enabledExtensionCount = (uint32_t)(sizeof(k_req_ext) / sizeof(k_req_ext[0]));
-  dci.ppEnabledExtensionNames = k_req_ext;
-  if (vkCreateDevice(g_phys, &dci, NULL, &g_dev) != VK_SUCCESS || !g_dev) return 0;
+  dci.enabledExtensionCount = ext_n;
+  dci.ppEnabledExtensionNames = ext_names;
+  if (vkCreateDevice(g_phys, &dci, NULL, &g_dev) != VK_SUCCESS || !g_dev) {
+#ifdef FARM_ENABLE_UPSCALE
+    *(const void**)(bda_feat + 8) = NULL;
+    dci.pNext = rq_feat;
+    dci.enabledExtensionCount = ext_n;
+    dci.ppEnabledExtensionNames = ext_names;
+    if (vkCreateDevice(g_phys, &dci, NULL, &g_dev) != VK_SUCCESS || !g_dev) {
+#endif
+      *(const void**)(bda_feat + 8) = NULL;
+      dci.pNext = rq_feat;
+      dci.enabledExtensionCount = rt_ext_n;
+      dci.ppEnabledExtensionNames = k_req_ext;
+      if (vkCreateDevice(g_phys, &dci, NULL, &g_dev) != VK_SUCCESS || !g_dev) return 0;
+#ifdef FARM_ENABLE_UPSCALE
+    }
+#endif
+  }
 
   vkGetDeviceProcAddr = (PFN_vkGetDeviceProcAddr)inst_proc("vkGetDeviceProcAddr");
   if (!vkGetDeviceProcAddr) return 0;
@@ -638,6 +698,8 @@ static int ensure_rt_device(void) {
               free(cache_blob);
               cache_blob = NULL;
               cache_sz = 0;
+            } else {
+              cache_from_disk = 1;
             }
           }
         }
@@ -697,7 +759,7 @@ static int ensure_rt_device(void) {
   pci.layout = g_pl;
   pci.basePipelineIndex = -1;
   if (vkCreateComputePipelines(g_dev, g_pipe_cache, 1, &pci, NULL, &g_pipe) != VK_SUCCESS) return 0;
-  if (g_pipe_cache && vkGetPipelineCacheData) {
+  if (g_pipe_cache && vkGetPipelineCacheData && !cache_from_disk) {
     char cache_path[512];
 #ifdef _WIN32
     const char* tmp = getenv("TEMP");
@@ -1099,6 +1161,7 @@ static void rt_fill_params(GpuParams* params, farm_Renderer* r, farm_Scene* scen
   params->flags[2] = r->path_adaptive_spp ? 1 : 0;
   params->extra[0] = (float)r->path_adaptive_target;
   params->extra[2] = (float)farm_renderer_glossy_mode(r);
+  params->extra[3] = farm_renderer_upscale_mode(r) != 0 ? 1.f : 0.f;
   if (r->preview_div > 1) {
     if (params->counts[0] > 3) params->counts[0] = 3;
     params->flags[1] = 0;
@@ -1116,6 +1179,7 @@ static void rt_fill_params(GpuParams* params, farm_Renderer* r, farm_Scene* scen
   params->cam_x[0] = (float)e[0]; params->cam_x[1] = (float)e[1]; params->cam_x[2] = (float)e[2];
   params->cam_y[0] = (float)e[4]; params->cam_y[1] = (float)e[5]; params->cam_y[2] = (float)e[6];
   params->cam_z[0] = (float)e[8]; params->cam_z[1] = (float)e[9]; params->cam_z[2] = (float)e[10];
+  farm_renderer_upscale_pixel_jitter(r, &params->cam_x[3], &params->cam_y[3]);
 }
 
 static void rt_readback(farm_Renderer* r, int32_t dw, int32_t dh, const float* gpu_acc,
@@ -1181,6 +1245,8 @@ static void rt_readback(farm_Renderer* r, int32_t dw, int32_t dh, const float* g
     }
   }
   if (denoise_ok) r->path_denoise_gpu_done = 1;
+  if (r->depthbuffer && farm_renderer_upscale_mode(r) != 0 && dw == fw && dh == fh)
+    memcpy(r->depthbuffer, gpu_acc + 3 * npix, (size_t)npix * sizeof(float));
 }
 
 int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera) {
@@ -1201,7 +1267,7 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
       g_fast_full_w == r->width && g_fast_full_h == r->height &&
       g_tlas && g_blas && g_dset && g_cmd &&
       g_ssbo[0].mapped_ok && g_ssbo[5].mapped_ok &&
-      g_ssbo_sz[5] >= sizeof(float) * 3 * (size_t)dw * (size_t)dh) {
+      g_ssbo_sz[5] >= sizeof(float) * 4 * (size_t)dw * (size_t)dh) {
     GpuParams params;
     rt_fill_params(&params, r, scene, camera, dw, dh,
                    g_fast_ntri, g_fast_nmat, g_fast_namb, g_fast_ndir,
@@ -1242,8 +1308,12 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
     si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     si.commandBufferCount = 1;
     si.pCommandBuffers = &g_cmd;
-    if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS ||
-        vkQueueWaitIdle(g_queue) != VK_SUCCESS) return 0;
+    if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS) return 0;
+#ifdef FARM_ENABLE_UPSCALE
+    farm_upscale_prefetch_xess();
+    farm_upscale_prepare_xess(r);
+#endif
+    if (vkQueueWaitIdle(g_queue) != VK_SUCCESS) return 0;
     const float* dn = NULL;
 #ifdef FARM_ENABLE_DENOISE
     if (dn_ok) dn = (const float*)g_dn_tmp.mapped;
@@ -1392,9 +1462,10 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
   sizes[2] = sizeof(float) * 16 * (size_t)nmat;
   sizes[3] = sizeof(float) * 4 * (size_t)nlight_vec4;
   sizes[4] = sizeof(float) * (size_t)(ntex > 0 ? ntex : 4);
-  sizes[5] = sizeof(float) * 3 * (size_t)dw * (size_t)dh;
+  /* RGB sample sums + optional first-hit t tail (denoise still reads 3*npix). */
+  sizes[5] = sizeof(float) * 4 * (size_t)dw * (size_t)dh;
 
-  /* Lever: persist BLAS/TLAS + SSBOs. Shader / packing / 8×8 dispatch unchanged. */
+  /* Lever: persist BLAS/TLAS + SSBOs. RGB packing stride-3; first-hit t in tail. */
   uint64_t as_fp = 1469598103934665603ull;
   as_fp = fnv64(as_fp, &as_tri, sizeof(as_tri));
   as_fp = fnv64(as_fp, positions, (size_t)as_tri * 9 * sizeof(float));
@@ -1620,8 +1691,12 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
   si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   si.commandBufferCount = 1;
   si.pCommandBuffers = &g_cmd;
-  if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS ||
-      vkQueueWaitIdle(g_queue) != VK_SUCCESS) goto done;
+  if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS) goto done;
+#ifdef FARM_ENABLE_UPSCALE
+  farm_upscale_prefetch_xess();
+  farm_upscale_prepare_xess(r);
+#endif
+  if (vkQueueWaitIdle(g_queue) != VK_SUCCESS) goto done;
 
   const float* dn = NULL;
 #ifdef FARM_ENABLE_DENOISE
@@ -1645,4 +1720,14 @@ done:
   free(inst); free(amb); free(dirs); free(pts); free(rects);
   free(tris); free(positions); free(mmap); free(mat4); free(texels); free(lights);
   return success;
+}
+
+int farm_vk_rt_export_handles(void** inst, void** phys, void** dev, void** queue, unsigned* qfam) {
+  if (!g_device_ready || !g_inst || !g_dev || !g_queue) return 0;
+  if (inst) *inst = g_inst;
+  if (phys) *phys = g_phys;
+  if (dev) *dev = g_dev;
+  if (queue) *queue = g_queue;
+  if (qfam) *qfam = g_qfam;
+  return 1;
 }

@@ -1146,6 +1146,16 @@ farm_Renderer* farm_Renderer_new() {
   r->path_denoise_gpu_done = 0;
   r->path_glossy = 0;
   r->path_glossy_set = 0;
+  r->path_upscale = 0;
+  r->path_upscale_set = 0;
+  r->path_upscale_res_set = 0;
+  r->path_upscale_rw = r->path_upscale_rh = r->path_upscale_dw = r->path_upscale_dh = 0;
+  r->path_upscale_base_w = r->path_upscale_base_h = 0;
+  r->fb_width = r->fb_height = 0;
+  r->path_upscale_frame = 0;
+  r->path_upscale_hist_valid = 0;
+  r->path_upscale_prev_vp_valid = 0;
+  memset(r->path_upscale_prev_vp, 0, sizeof(r->path_upscale_prev_vp));
   r->preview_div = 1;
   r->preview_spp = 0;
   r->preview_active = 0;
@@ -1172,6 +1182,11 @@ void farm_Renderer_setSize(farm_Renderer* self, int64_t width, int64_t height) {
   
   self->width = (int32_t)width;
   self->height = (int32_t)height;
+  self->path_upscale_base_w = (int32_t)width;
+  self->path_upscale_base_h = (int32_t)height;
+  self->fb_width = 0;
+  self->fb_height = 0;
+  self->path_upscale_hist_valid = 0;
   
   int64_t n = width * height;
   self->framebuffer = (uint8_t*)farm_arena_alloc((size_t)n * 3);
@@ -1290,6 +1305,121 @@ int32_t farm_renderer_glossy_mode(const farm_Renderer* self) {
 
 int64_t farm_Renderer_getPathGlossyContinuation(farm_Renderer* self) {
   return farm_renderer_glossy_mode(self);
+}
+
+static double farm_halton_u(uint32_t n, uint32_t base) {
+  double inv = 0.0, f = 1.0 / (double)base;
+  while (n > 0) {
+    inv += (double)(n % base) * f;
+    n /= base;
+    f /= (double)base;
+  }
+  return inv;
+}
+
+static int g_upscale_mode_set;
+static int g_upscale_backend_wanted;
+
+void farm_Renderer_setPathUpscale(farm_Renderer* self, int64_t mode) {
+  if (mode != 0 && mode != 1 && mode != 2)
+    farm_trap(122, "invalid path upscale mode");
+  self->path_upscale = (int32_t)mode;
+  self->path_upscale_set = 1;
+  self->path_upscale_hist_valid = 0;
+  g_upscale_mode_set = 1;
+  g_upscale_backend_wanted = (mode == 1 || mode == 2);
+}
+
+int32_t farm_renderer_upscale_mode(const farm_Renderer* self) {
+  if (self->path_upscale_set) return self->path_upscale;
+  const char* e = getenv("FARMOS_PATH_UPSCALE");
+  if (e && e[0] == '1' && e[1] == '\0') return 1;
+  return 0;
+}
+
+int farm_path_upscale_backend_wanted(void) {
+  if (g_upscale_mode_set) return g_upscale_backend_wanted;
+  const char* e = getenv("FARMOS_PATH_UPSCALE");
+  return e && e[0] == '1' && e[1] == '\0';
+}
+
+int64_t farm_Renderer_getPathUpscale(farm_Renderer* self) {
+  return farm_renderer_upscale_mode(self);
+}
+
+#ifdef FARM_ENABLE_UPSCALE
+int farm_upscale_mode_available(int64_t mode);
+#endif
+
+int8_t farm_Renderer_isPathUpscaleAvailable(farm_Renderer* self, int64_t mode) {
+  (void)self;
+  if (farm_env_exact_1("FARMOS_PATH_UPSCALE_FORCE_FAIL")) return (int8_t)0;
+  if (mode == 0) return (int8_t)1;
+#ifdef FARM_ENABLE_UPSCALE
+  return farm_upscale_mode_available(mode) ? (int8_t)1 : (int8_t)0;
+#else
+  return (int8_t)0;
+#endif
+}
+
+void farm_Renderer_setPathUpscaleResolution(farm_Renderer* self, int64_t renderW, int64_t renderH,
+                                           int64_t displayW, int64_t displayH) {
+  if (renderW < 1 || renderH < 1 || displayW < 1 || displayH < 1 ||
+      displayW < renderW || displayH < renderH)
+    farm_trap(122, "invalid path upscale resolution");
+  self->path_upscale_rw = (int32_t)renderW;
+  self->path_upscale_rh = (int32_t)renderH;
+  self->path_upscale_dw = (int32_t)displayW;
+  self->path_upscale_dh = (int32_t)displayH;
+  self->path_upscale_res_set = 1;
+  self->path_upscale_hist_valid = 0;
+}
+
+void farm_renderer_upscale_dims(const farm_Renderer* r, int* rw, int* rh, int* dw, int* dh) {
+  int w = r->path_upscale_base_w > 0 ? r->path_upscale_base_w : r->width;
+  int h = r->path_upscale_base_h > 0 ? r->path_upscale_base_h : r->height;
+  if (r->path_upscale_res_set) {
+    *rw = r->path_upscale_rw; *rh = r->path_upscale_rh;
+    *dw = r->path_upscale_dw; *dh = r->path_upscale_dh;
+    return;
+  }
+  if (farm_renderer_upscale_mode(r) == 0) {
+    *rw = r->width; *rh = r->height; *dw = r->width; *dh = r->height;
+    return;
+  }
+  *dw = w; *dh = h;
+  *rw = w / 2; if (*rw < 1) *rw = 1;
+  *rh = h / 2; if (*rh < 1) *rh = 1;
+}
+
+int64_t farm_Renderer_getPathUpscaleRenderWidth(farm_Renderer* self) {
+  int rw, rh, dw, dh;
+  farm_renderer_upscale_dims(self, &rw, &rh, &dw, &dh);
+  return rw;
+}
+int64_t farm_Renderer_getPathUpscaleRenderHeight(farm_Renderer* self) {
+  int rw, rh, dw, dh;
+  farm_renderer_upscale_dims(self, &rw, &rh, &dw, &dh);
+  return rh;
+}
+int64_t farm_Renderer_getPathUpscaleDisplayWidth(farm_Renderer* self) {
+  int rw, rh, dw, dh;
+  farm_renderer_upscale_dims(self, &rw, &rh, &dw, &dh);
+  return dw;
+}
+int64_t farm_Renderer_getPathUpscaleDisplayHeight(farm_Renderer* self) {
+  int rw, rh, dw, dh;
+  farm_renderer_upscale_dims(self, &rw, &rh, &dw, &dh);
+  return dh;
+}
+
+void farm_renderer_upscale_pixel_jitter(const farm_Renderer* r, float* jx, float* jy) {
+  *jx = 0.f; *jy = 0.f;
+  if (!r || farm_renderer_upscale_mode(r) == 0) return;
+  if (r->path_backend == 0) return;
+  uint32_t s = (uint32_t)r->path_upscale_frame + 1u;
+  *jx = (float)farm_halton_u(s, 2) - 0.5f;
+  *jy = (float)farm_halton_u(s, 3) - 0.5f;
 }
 
 #ifdef FARM_ENABLE_VULKAN
@@ -1824,7 +1954,8 @@ void farm_Renderer_savePNG(farm_Renderer* self, FarmString path) {
   
   // IHDR
   uint8_t ihdr[13];
-  uint32_t w = self->width, h = self->height;
+  uint32_t w = self->fb_width > 0 ? (uint32_t)self->fb_width : (uint32_t)self->width;
+  uint32_t h = self->fb_height > 0 ? (uint32_t)self->fb_height : (uint32_t)self->height;
   ihdr[0] = (w >> 24) & 0xFF; ihdr[1] = (w >> 16) & 0xFF;
   ihdr[2] = (w >> 8) & 0xFF; ihdr[3] = w & 0xFF;
   ihdr[4] = (h >> 24) & 0xFF; ihdr[5] = (h >> 16) & 0xFF;
@@ -1837,15 +1968,15 @@ void farm_Renderer_savePNG(farm_Renderer* self, FarmString path) {
   write_png_chunk(f, "IHDR", ihdr, 13);
   
   // IDAT (with filter type 0 per scanline, compression level 0)
-  uint32_t scanline_size = 1 + self->width * 3; // filter byte + RGB
-  uint32_t raw_size = scanline_size * self->height;
+  uint32_t scanline_size = 1 + w * 3; // filter byte + RGB
+  uint32_t raw_size = scanline_size * h;
   uint8_t* raw_data = (uint8_t*)farm_arena_alloc(raw_size);
   
-  for (int32_t y = 0; y < self->height; y++) {
+  for (uint32_t y = 0; y < h; y++) {
     raw_data[y * scanline_size] = 0; // filter type None
-    memcpy(&raw_data[y * scanline_size + 1], 
-           &self->framebuffer[y * self->width * 3], 
-           self->width * 3);
+    memcpy(&raw_data[y * scanline_size + 1],
+           &self->framebuffer[y * w * 3],
+           w * 3);
   }
   
   // Zlib wrapper matching Python zlib.compress(..., level=0) exactly

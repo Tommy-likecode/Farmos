@@ -197,3 +197,47 @@ Implementation-owned formulas, shared by `runtime/farm_ray.c`, `runtime/farm_vk_
 - **GPU:** glossy mode is `GpuParams.extra.z`. SPIR-V regenerated via `scripts/compile_vk_shader.sh`.
 - **Env:** `FARMOS_PATH_GLOSSY=1` only if the setter was never called; method wins.
 
+## M12 native Vulkan upscale (XeSS / FSR)
+
+Implementation-owned glue in `runtime/farm_upscale.c`, called after denoise from
+`farm_Renderer_renderPath`. Spec: `spec/M12-native-upscale.md`.
+
+- **API:** `setPathUpscale` / `PATH_UPSCALE_*`; constructor size is the path-trace
+  (render) resolution; `setPathUpscaleResolution` sets render/display for getters
+  and for the upscale pass. `savePNG` uses `fb_width`/`fb_height` after a successful
+  upscale (display buffer), otherwise `width`/`height`.
+- **Jitter:** Halton base 2/3 in `[-0.5, 0.5]` packed into GPU `cam_x.w` / `cam_y.w`
+  when upscale is ON **and** the backend is Vulkan. Identity on CPU and when OFF
+  (M4 SHA). SPIR-V regenerated via `scripts/compile_vk_shader.sh`.
+- **Aux:** path-tracer first-hit `t` from sample 0 bounce 0 (GPU accum SSBO tail
+  after RGB; no extra `closest_hit`). CPU first bounce into `depthbuffer`.
+  `fill_aux` is O(pixels) linearize + cheap camera MV; static camera writes zero
+  MV (no CPU ray×tris). Object / skinned MV deferred. Depth is linearized
+  `(t−near)/(far−near)` uploaded as `R32F`. Color is post-quantize LDR `RGBA8`
+  (`XESS_INIT_FLAG_LDR_INPUT_COLOR` + autoexposure).
+- **XeSS:** `dlopen` / `LoadLibrary` of `libxess` (`FARMOS_XESS_LIB` override).
+  Headless `VkImage`s, no swapchain. Images/staging/cmd persist across frames.
+  Disk `VkPipelineCache` at `%TEMP%/farmos_xess_pso_<dw>x<dh>.bin` passed to
+  `xessVKInit`. Warm processes that already loaded that blob skip
+  `vkGetPipelineCacheData` + rewrite. `isPathUpscaleAvailable` is file-present
+  only. When upscale is ON, RT/compute backends query official
+  `xessVKGetRequired*` extras onto the path-tracer device (hardcoded extras
+  in more-headroom likely broke borrow). After path `vkQueueSubmit`,
+  `farm_upscale_prepare_xess` runs CreateContext + init + image alloc during
+  `vkQueueWaitIdle`. Fall back to a dedicated device if CreateContext
+  rejects the borrow. Native OFF does not load libxess at device create.
+  Quality preset from scale (2× → Balanced) with nearby retries. Vendor DLLs
+  are not linked into the Farmos PE.
+- **FSR2:** `isPathUpscaleAvailable(PATH_UPSCALE_FSR)` is true when the official
+  ffx shared lib is loadable; execute is not stubbed with Enabler — missing dispatch
+  soft-fails (STRICT → trap 122).
+- **DCE:** `program_uses_upscale` gates `-DFARM_ENABLE_UPSCALE` + `farm_upscale.c`.
+- **Arc:** helpers in `spec/tests/M12/bench/` (`PATH_GLOSSY_VNDF`). Glossy
+  CLAIM **PASS** under FINAL OQ-M12-12 A + OQ-M12-13 A at docs `7f0a080` /
+  product `fd31e46` (clean host, chrome/msedge absent): AC-05 Pass1 **1.052**
+  / Pass2 **1.162** (SHOULD ≥ **1.05×**; XeSS < native both); ROI L
+  **187.228 / 187.877** ∈ [80,200], \|ΔL\| **3.932**; PE B-11 **72704**.
+  Historical ≥1.2× / [80,140] superseded. Linux M12 8/8, M4 24/24, M11 4/4,
+  M7 9/9, ELF B-11 **67792**. Enabler not used. **No merge** until eggtooth
+  AUDIT PASS via PM.
+
