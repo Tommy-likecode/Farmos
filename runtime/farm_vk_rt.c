@@ -1311,6 +1311,7 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
     if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS) return 0;
 #ifdef FARM_ENABLE_UPSCALE
     farm_upscale_prefetch_xess();
+    farm_upscale_prepare_xess(r);
 #endif
     if (vkQueueWaitIdle(g_queue) != VK_SUCCESS) return 0;
     const float* dn = NULL;
@@ -1693,6 +1694,7 @@ int farm_vk_rt_render_path(farm_Renderer* r, farm_Scene* scene, farm_Perspective
   if (vkQueueSubmit(g_queue, 1, &si, VK_NULL_HANDLE) != VK_SUCCESS) goto done;
 #ifdef FARM_ENABLE_UPSCALE
   farm_upscale_prefetch_xess();
+  farm_upscale_prepare_xess(r);
 #endif
   if (vkQueueWaitIdle(g_queue) != VK_SUCCESS) goto done;
 

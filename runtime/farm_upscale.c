@@ -77,10 +77,6 @@ typedef uint64_t VkPipelineCache;
 #define VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO 42
 #define VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER 45
 #define VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO 17
-#define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 1000059000
-#define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES 1000083000
-#define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT16_INT8_FEATURES 1000084000
-#define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT 1000351000
 #define VK_QUEUE_COMPUTE_BIT 2
 #define VK_QUEUE_TRANSFER_BIT 4
 #define VK_BUFFER_USAGE_TRANSFER_SRC_BIT 0x00000001
@@ -511,8 +507,9 @@ int farm_upscale_xess_required_instance(unsigned* count, const char* const** nam
   if (names) *names = NULL;
   if (min_api) *min_api = VK_API_VERSION_1_2;
   if (!farm_path_upscale_backend_wanted()) return 0;
-  /* Prefer SDK query only if libxess is already mapped; never LoadLibrary here. */
-  if (g_xess_ok && xessVKGetRequiredInstanceExtensions_fn) {
+  /* Official extras (edeb845 borrow). Map libxess here — device-create is too
+     late to add instance extensions. isPathUpscaleAvailable stays file-present. */
+  if (farm_upscale_probe_xess() && xessVKGetRequiredInstanceExtensions_fn) {
     uint32_t n = 0, api = VK_API_VERSION_1_2;
     const char* const* nm = NULL;
     if (xessVKGetRequiredInstanceExtensions_fn(&n, &nm, &api) == XESS_RESULT_SUCCESS) {
@@ -522,62 +519,27 @@ int farm_upscale_xess_required_instance(unsigned* count, const char* const** nam
       return 1;
     }
   }
-  /* XeSS 2.x headless: no extra instance extensions; Vulkan 1.2 matches RT. */
   return 1;
 }
 
 int farm_upscale_xess_required_device(void* inst, void* phys, unsigned* count,
                                      const char* const** names, void** features) {
-  /* XeSS-SR 2.x required + optional-perf extras (Intel developer guide).
-     Static so RT/compute device-create can borrow without mapping libxess. */
-  static const char* k_xess_dev_ext[] = {
-    "VK_EXT_mutable_descriptor_type",
-    "VK_KHR_shader_float16_int8",
-    "VK_KHR_16bit_storage",
-  };
-  /* VkPhysicalDeviceFeatures2 + pNext chain. Features2.features starts at +16;
-     shaderStorageImageWriteWithoutFormat is VkPhysicalDeviceFeatures field 31. */
-  static uint8_t feat2[256];
-  static uint8_t feat_mut[24];
-  static uint8_t feat_s16[32];
-  static uint8_t feat_f16[24];
   if (count) *count = 0;
   if (names) *names = NULL;
   if (features) *features = NULL;
   if (!inst || !phys) return 0;
   if (!farm_path_upscale_backend_wanted()) return 0;
-  if (g_xess_ok && xessVKGetRequiredDeviceExtensions_fn) {
-    uint32_t n = 0;
-    const char* const* nm = NULL;
-    void* feats = NULL;
+  if (!farm_upscale_probe_xess()) return 0;
+  uint32_t n = 0;
+  const char* const* nm = NULL;
+  void* feats = NULL;
+  if (xessVKGetRequiredDeviceExtensions_fn)
     xessVKGetRequiredDeviceExtensions_fn((VkInstance)inst, (VkPhysicalDevice)phys, &n, &nm);
-    if (xessVKGetRequiredDeviceFeatures_fn)
-      xessVKGetRequiredDeviceFeatures_fn((VkInstance)inst, (VkPhysicalDevice)phys, &feats);
-    if (count) *count = n;
-    if (names) *names = nm;
-    if (features) *features = feats;
-    return 1;
-  }
-  memset(feat2, 0, sizeof(feat2));
-  memset(feat_mut, 0, sizeof(feat_mut));
-  memset(feat_s16, 0, sizeof(feat_s16));
-  memset(feat_f16, 0, sizeof(feat_f16));
-  *(uint32_t*)feat2 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-  *(const void**)(feat2 + 8) = feat_mut;
-  *(VkBool32*)(feat2 + 16 + 31 * 4) = 1; /* shaderStorageImageWriteWithoutFormat */
-  *(uint32_t*)feat_mut = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT;
-  *(const void**)(feat_mut + 8) = feat_s16;
-  *(VkBool32*)(feat_mut + 16) = 1; /* mutableDescriptorType */
-  *(uint32_t*)feat_s16 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES;
-  *(const void**)(feat_s16 + 8) = feat_f16;
-  *(VkBool32*)(feat_s16 + 16) = 1; /* storageBuffer16BitAccess */
-  *(VkBool32*)(feat_s16 + 20) = 1; /* uniformAndStorageBuffer16BitAccess */
-  *(uint32_t*)feat_f16 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT16_INT8_FEATURES;
-  *(VkBool32*)(feat_f16 + 16) = 1; /* shaderFloat16 */
-  *(VkBool32*)(feat_f16 + 20) = 1; /* shaderInt8 (optional perf; Arc supports) */
-  if (count) *count = (unsigned)(sizeof(k_xess_dev_ext) / sizeof(k_xess_dev_ext[0]));
-  if (names) *names = k_xess_dev_ext;
-  if (features) *features = feat2;
+  if (xessVKGetRequiredDeviceFeatures_fn)
+    xessVKGetRequiredDeviceFeatures_fn((VkInstance)inst, (VkPhysicalDevice)phys, &feats);
+  if (count) *count = n;
+  if (names) *names = nm;
+  if (features) *features = feats;
   return 1;
 }
 
@@ -992,6 +954,8 @@ static int ensure_xess_res(int rw, int rh, int dw, int dh) {
     destroy_xess_res();
     return 0;
   }
+  if (g_buf_vel.map)
+    memset(g_buf_vel.map, 0, (size_t)np * 2 * sizeof(float));
   g_res_rw = rw;
   g_res_rh = rh;
   g_res_dw = dw;
@@ -1208,12 +1172,10 @@ static int vp_close(const double* a, const double* b) {
 static void fill_aux(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera,
                      float* depth, float* mv, int rw, int rh) {
   int np = rw * rh;
-  for (int i = 0; i < np; i++) {
-    depth[i] = 1.0f;
-    mv[i * 2 + 0] = 0.0f;
-    mv[i * 2 + 1] = 0.0f;
+  if (!scene || !camera) {
+    for (int i = 0; i < np; i++) depth[i] = 1.0f;
+    return;
   }
-  if (!scene || !camera) return;
   farm_Scene_updateMatrixWorld(scene, true);
   farm_PerspectiveCamera_updateMatrixWorld(camera, true);
   camera->matrixWorldInverse = farm_Matrix4_invert(camera->f_matrixWorld);
@@ -1227,8 +1189,16 @@ static void fill_aux(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera
   int have_t = r->depthbuffer && r->width == rw && r->height == rh;
   int cam_moved = r->path_upscale_prev_vp_valid && !vp_close(vp, r->path_upscale_prev_vp);
 
+  for (int i = 0; i < np; i++) depth[i] = 1.0f;
+  if (cam_moved) {
+    for (int i = 0; i < np; i++) {
+      mv[i * 2 + 0] = 0.0f;
+      mv[i * 2 + 1] = 0.0f;
+    }
+  }
+
   float jx = 0.f, jy = 0.f;
-  farm_renderer_upscale_pixel_jitter(r, &jx, &jy);
+  if (cam_moved) farm_renderer_upscale_pixel_jitter(r, &jx, &jy);
   const double* e = camera->f_matrixWorld.elements;
   double ox = e[12], oy = e[13], oz = e[14];
   double tan_half = tan((3.14159265358979323846 / 180.0) * 0.5 * camera->f_fov);
@@ -1269,11 +1239,9 @@ static void fill_aux(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera
   r->path_upscale_prev_vp_valid = 1;
 }
 
-static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera,
-                    int rw, int rh, int dw, int dh) {
+static int xess_bringup(farm_Renderer* r, int rw, int rh, int dw, int dh) {
   if (!farm_upscale_probe_xess()) return 0;
   if (!ensure_vk()) return 0;
-
   if (!g_xess_ctx) {
     if (xessVKCreateContext_fn(g_inst, g_phys, g_dev, &g_xess_ctx) != XESS_RESULT_SUCCESS || !g_xess_ctx) {
       if (g_vk_borrowed) {
@@ -1297,7 +1265,6 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
     ip.visibleNodeMask = 1;
     ensure_xess_pso_cache((uint32_t)dw, (uint32_t)dh);
     ip.pipelineCache = g_xess_pso_cache;
-    /* 2x smoke (960x540->1080p / 32->64) maps to Balanced (~2.0). Retry nearby presets. */
     double sx = (double)dw / (double)rw, sy = (double)dh / (double)rh;
     double sc = sx < sy ? sx : sy;
     uint32_t quals[6];
@@ -1330,21 +1297,32 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
     g_xess_inited = 1;
     g_init_dw = dw;
     g_init_dh = dh;
-    r->path_upscale_hist_valid = 0;
-    save_xess_pso_cache((uint32_t)dw, (uint32_t)dh);
+    if (r) r->path_upscale_hist_valid = 0;
+    /* Do not vkGetPipelineCacheData here — it can stall the in-flight path GPU.
+       Cold processes save after execute. */
   }
+  return ensure_xess_res(rw, rh, dw, dh);
+}
 
-  if (!ensure_xess_res(rw, rh, dw, dh)) return 0;
+void farm_upscale_prepare_xess(farm_Renderer* r) {
+  int rw = 0, rh = 0, dw = 0, dh = 0;
+  if (!r || farm_renderer_upscale_mode(r) != 1) return;
+  farm_renderer_upscale_dims(r, &rw, &rh, &dw, &dh);
+  if (rw < 1 || rh < 1 || dw < rw || dh < rh) return;
+  xess_bringup(r, rw, rh, dw, dh);
+}
+
+static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera,
+                    int rw, int rh, int dw, int dh) {
+  if (!xess_bringup(r, rw, rh, dw, dh)) return 0;
 
   fill_aux(r, scene, camera, (float*)g_buf_depth.map, (float*)g_buf_vel.map, rw, rh);
   int np = rw * rh;
-  uint8_t* rgba = (uint8_t*)g_buf_color.map;
-  uint8_t* fb = r->framebuffer;
+  uint32_t* rgba32 = (uint32_t*)g_buf_color.map;
+  const uint8_t* fb = r->framebuffer;
   for (int i = 0; i < np; i++) {
-    rgba[i * 4 + 0] = fb[i * 3 + 0];
-    rgba[i * 4 + 1] = fb[i * 3 + 1];
-    rgba[i * 4 + 2] = fb[i * 3 + 2];
-    rgba[i * 4 + 3] = 255;
+    rgba32[i] = (uint32_t)fb[i * 3 + 0] | ((uint32_t)fb[i * 3 + 1] << 8) |
+                ((uint32_t)fb[i * 3 + 2] << 16) | 0xff000000u;
   }
 
   VkCommandBuffer cmd = NULL;

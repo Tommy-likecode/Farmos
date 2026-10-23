@@ -1068,6 +1068,7 @@ int farm_vk_render_path(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCam
   }
 #ifdef FARM_ENABLE_UPSCALE
   farm_upscale_prefetch_xess();
+  farm_upscale_prepare_xess(r);
 #endif
   if (vkQueueWaitIdle(g_queue) != VK_SUCCESS) {
     vkDestroyDescriptorPool(g_dev, pool, NULL);
