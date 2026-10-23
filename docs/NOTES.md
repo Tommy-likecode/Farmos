@@ -232,10 +232,12 @@ Implementation-owned glue in `runtime/farm_upscale.c`, called after denoise from
   ffx shared lib is loadable; execute is not stubbed with Enabler — missing dispatch
   soft-fails (STRICT → trap 122).
 - **DCE:** `program_uses_upscale` gates `-DFARM_ENABLE_UPSCALE` + `farm_upscale.c`.
-- **Arc:** helpers in `spec/tests/M12/bench/` (`PATH_GLOSSY_VNDF`). Last Arc
-  smoke is more-headroom `4f3ef56` (FAIL): AC-05 **1.149 / 1.196**, walls
-  ~3× `edeb845` under chrome/msedge; ROI L **190.98 / 191.14** (center still
-  ~106). Product `fd31e46` (more-optimize) restores SDK extras + init-during-
-  wait; Linux M12 8/8, M4 24/24, M11 4/4, M7 9/9, ELF B-11 **67792**. Two
-  independent Arc warm medians are poteto's job. Enabler not used.
+- **Arc:** helpers in `spec/tests/M12/bench/` (`PATH_GLOSSY_VNDF`). Glossy
+  CLAIM **PASS** under FINAL OQ-M12-12 A + OQ-M12-13 A at docs `7f0a080` /
+  product `fd31e46` (clean host, chrome/msedge absent): AC-05 Pass1 **1.052**
+  / Pass2 **1.162** (SHOULD ≥ **1.05×**; XeSS < native both); ROI L
+  **187.228 / 187.877** ∈ [80,200], \|ΔL\| **3.932**; PE B-11 **72704**.
+  Historical ≥1.2× / [80,140] superseded. Linux M12 8/8, M4 24/24, M11 4/4,
+  M7 9/9, ELF B-11 **67792**. Enabler not used. **No merge** until eggtooth
+  AUDIT PASS via PM.
 

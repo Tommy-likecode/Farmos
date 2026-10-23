@@ -2,7 +2,7 @@
 
 Sources use the M1 TypeScript-style surface, M2 math, M3/M4 scene + path API,
 M7/M8/M9 backends, M10 denoise, M11 glossy, and M12 upscale controls. See
-`spec/M12-native-upscale.md` (**FINAL** — OQ-M12-01..09 A; OQ-M12-10 A + OQ-M12-11 A). Do not edit
+`spec/M12-native-upscale.md` (**FINAL** — OQ-M12-01..09 A; OQ-10/11 A historical; **OQ-M12-12 A + OQ-M12-13 A** binding). Do not edit
 M1–M11 milestone bodies to absorb these rules; amendments live in
 `M12-native-upscale.md`.
 
@@ -77,6 +77,7 @@ Pack: **8** `.fm` fixtures (001–008) + README + `_ref` + bench note.
 
 - Scene: `examples/artwork_silver_still.fm` composition **locked**.
 - Smoke: render **960×540** → display **1920×1080**, XeSS ON, prefer HW RT.
-- Timing vs native 1080p same spp: binding XeSS wall < native; SHOULD ≥ **1.2×**
-  (OQ-M12-10 A; historical ≥1.5× superseded). Quality: ROI L band + |ΔL| ≤ 5.0;
-  png_tol / max_abs report-only (OQ-M12-11 A). Scripts under `spec/tests/M12/bench/`.
+- Timing vs native 1080p same spp: binding XeSS wall < native; SHOULD ≥ **1.05×**
+  (OQ-M12-12 A; historical ≥1.2× / ≥1.5× superseded). Quality: ROI L ∈ **[80, 200]**
+  + |ΔL| ≤ 5.0; png_tol / max_abs report-only (OQ-M12-13 A). Scripts under
+  `spec/tests/M12/bench/`.

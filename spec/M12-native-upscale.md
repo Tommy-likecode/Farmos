@@ -1,16 +1,18 @@
 # Farmos M12 — Native Vulkan Upscale (XeSS / FSR)
 
-**Status:** **FINAL** (PM/user 2026-10-22: OQ-M12-10 A + OQ-M12-11 A; prior OQ-M12-01..09 A locked 2026-10-21)  
+**Status:** **FINAL** (PM/user 2026-10-23: OQ-M12-12 A + OQ-M12-13 A; prior OQ-01..09 A locked 2026-10-21; OQ-10/11 A locked 2026-10-22)  
 **Milestone:** M12 — opt-in native Vulkan temporal upscale for the M4 path tracer  
 **Depends on:** `spec/M1-core.md` .. `spec/M11-glossy-continuation.md` (all FINAL)  
 **Normative keywords:** MUST / SHOULD / MAY per RFC 2119.  
-**Date:** 2026-10-21 (FINAL OQ-M12-01..09); **2026-10-22 FINAL** (OQ-M12-10 A + OQ-M12-11 A AC relax)
+**Date:** 2026-10-21 (FINAL OQ-M12-01..09); 2026-10-22 FINAL (OQ-M12-10 A + OQ-M12-11 A); **2026-10-23 FINAL** (OQ-M12-12 A + OQ-M12-13 A; user oq-relax-again)
 
 This document specifies Farmos M12: an **opt-in** native **Vulkan** upscale path (primary **Intel XeSS**; optional **AMD FSR2**) that reconstructs a higher **display** resolution from a lower **render** resolution path-trace accumulator, without DLSS/NGX, without DLSS-Enabler / Swapper / OptiScaler injection, and without rewriting M4/M10/M11 goldens when upscale is **OFF**. It does **not** specify compiler, runtime, or stdlib implementation code. It does **not** edit M1–M11 milestone markdown bodies; normative amendments relative to those milestones live in §19 of this file.
 
-Open questions: **none**. OQ-M12-01 .. OQ-M12-09 **accepted A** (PM lock 2026-10-21; user 2026-10-21 lock-all-oq-a) — **unchanged**; do **not** reopen. OQ-M12-10 **accepted A** + OQ-M12-11 **accepted A** (PM lock 2026-10-22; user 2026-10-22 oq-relax-1.2-roi). Binding under 01..09 A: headless upscale-to-buffer + `savePNG` (no OS window; M10 OQ-M10-01 **stands**); **XeSS primary** + **FSR2 optional**; camera MV + depth (object MV deferred); additive `setPathUpscale` + `PATH_UPSCALE_OFF` / `XESS` / `FSR`; default **OFF**; trap **122**; **denoise then upscale**; Vulkan compute + Vulkan RT MUST; CPU soft / STRICT 122-family; upscale-glue PE ≤ **700 KiB** (vendor DLLs external); Arc smoke + Linux soft-skip; frame-gen **OUT**. Selective reopen of M10 OQ-M10-06: native XeSS/FSR **IN**; DLSS/Enabler/Swapper/OptiScaler **still OUT**. Under **OQ-M12-10 A**: SHOULD ≥ **1.2×** display-equivalent; binding XeSS wall **strictly <** native; tip `edeb845` **1.237** documented; historical SHOULD ≥ **1.5×** **superseded** for SHOULD floor only. Under **OQ-M12-11 A**: primary AC-M12-04 = ROI L both lanes in **[80, 140]** and **|ΔL| ≤ 5.0**; report mean_abs; demote `# png_tol: 12` / max_abs to **report-only**; historical hard `# png_tol: 12` **superseded**. Body §10 / §11 / AC-M12-04 / AC-M12-05 are **binding** under A.
+Open questions: **none**. OQ-M12-01 .. OQ-M12-09 **accepted A** (PM lock 2026-10-21; user 2026-10-21 lock-all-oq-a) — **unchanged**; do **not** reopen. OQ-M12-10 **accepted A** + OQ-M12-11 **accepted A** (PM lock 2026-10-22; user 2026-10-22 oq-relax-1.2-roi) — **unchanged as historical accepted decisions**; do **not** reopen those decision tables. OQ-M12-12 **accepted A** + OQ-M12-13 **accepted A** (PM lock 2026-10-23; user 2026-10-23 oq-relax-again). Binding under 01..09 A: headless upscale-to-buffer + `savePNG` (no OS window; M10 OQ-M10-01 **stands**); **XeSS primary** + **FSR2 optional**; camera MV + depth (object MV deferred); additive `setPathUpscale` + `PATH_UPSCALE_OFF` / `XESS` / `FSR`; default **OFF**; trap **122**; **denoise then upscale**; Vulkan compute + Vulkan RT MUST; CPU soft / STRICT 122-family; upscale-glue PE ≤ **700 KiB** (vendor DLLs external); Arc smoke + Linux soft-skip; frame-gen **OUT**. Selective reopen of M10 OQ-M10-06: native XeSS/FSR **IN**; DLSS/Enabler/Swapper/OptiScaler **still OUT**. Binding AC-M12-05 / AC-M12-04 under **OQ-M12-12 A** / **OQ-M12-13 A**: SHOULD ≥ **1.05×**; XeSS wall **strictly <** native (MUST); ROI L **[80, 200]** + **|ΔL| ≤ 5.0**; png_tol / max_abs report-only. Tip `7f0a080` / product `fd31e46` Pass1 **1.052** / Pass2 **1.162**, ROI L ~**187.228** / **187.877**, |ΔL| **3.932** — **PASS**. Historical SHOULD ≥ **1.2×** (OQ-M12-10 A) **superseded** for SHOULD floor only; historical absolute band **[80, 140]** (OQ-M12-11 A) **superseded** for absolute band only. Body §10 / §11 / AC-M12-04 / AC-M12-05 / Appendix D are **binding** under OQ-12 A / OQ-13 A.
 
-**Lock context (2026-10-22; user chose oq-relax-1.2-roi):** PR #20 tip `edeb845` Arc (TommyLaptop Vulkan RT, official XeSS 2.1.1, glossy ON): AC-M12-05 native median **4.302 s** / XeSS **3.477 s** → ratio **1.237** — binding (XeSS wall **strictly <** native) **PASS**; under **OQ-M12-10 A** SHOULD ≥ **1.2×** also **PASS** (historical SHOULD ≥ **1.5×** **superseded**). AC-M12-04 silver ROI L ~**105.8** both lanes; mean_abs ~**0.465**; max_abs ~**211** — under **OQ-M12-11 A** primary ROI gate **PASS**; `# png_tol: 12` / max_abs **report-only** (historical hard gate **superseded**). Pattern: M9 OQ-M9-08 / M10 OQ-M10-09.
+**Lock context (2026-10-22; user chose oq-relax-1.2-roi) — historical FINAL OQ-10/11 A:** PR #20 tip `edeb845` Arc (TommyLaptop Vulkan RT, official XeSS 2.1.1, glossy ON): AC-M12-05 native median **4.302 s** / XeSS **3.477 s** → ratio **1.237** — binding (XeSS wall **strictly <** native) **PASS**; under **OQ-M12-10 A** SHOULD ≥ **1.2×** also **PASS** (historical SHOULD ≥ **1.5×** **superseded**). AC-M12-04 silver ROI L ~**105.8** both lanes; mean_abs ~**0.465**; max_abs ~**211** — under **OQ-M12-11 A** primary ROI gate **PASS**; `# png_tol: 12` / max_abs **report-only** (historical hard gate **superseded**). Pattern: M9 OQ-M9-08 / M10 OQ-M10-09.
+
+**Lock context (2026-10-23; user chose oq-relax-again) — FINAL OQ-12/13 A:** PR #20 tip `7f0a080`, product `fd31e46` (prior tip `edeb845` remains historical). Glossy Arc CLAIM inputs (clean host, `PATH_GLOSSY_VNDF`): AC-M12-05 Pass1 ratio **1.052**, Pass2 **1.162** (binding XeSS wall **strictly <** native **PASS** both; SHOULD ≥ **1.05×** **PASS** under OQ-M12-12 A). AC-M12-04 ROI L **187.228** / **187.877**, **|ΔL| 3.932** — **PASS** under OQ-M12-13 A band **[80, 200]** + |ΔL| ≤ 5.0 (FAIL vs historical **[80, 140]**). Prior `edeb845`: ratio **1.237** once + ROI L~**106**; eggtooth AUDIT FAIL on 1.2× repeatability (**1.237** then **1.131**). more-headroom / more-optimize tips lost SHOULD and ROI drifted to ~**187**. OQ-M12-12 **A** + OQ-M12-13 **A** locked. Historical OQ-M12-10 A SHOULD ≥ **1.2×** **superseded** for SHOULD floor only; historical OQ-M12-11 A **[80, 140]** **superseded** for absolute band only. Pattern: M9 OQ-M9-08 / M10 OQ-M10-09 / OQ-M12-10/11.
 
 Related: `/workspace/farmos/PLAN.md` (M12 stub), `spec/M10-denoise-interactive.md` (OQ-M10-01 no-window; OQ-M10-06 vendor upscalers OUT — **reopened selectively** here), `spec/M11-glossy-continuation.md` (opt-in / §19 reopen pattern), `spec/M7-vulkan-path.md`, `spec/M9-hardware-rt.md`, `spec/tests/M12/README.md`.
 
@@ -338,17 +340,17 @@ Under **OQ-M12-05 A**:
 
 ---
 
-## 10. Acceptance criteria (OQ-M12-08 A base; AC-04 / AC-05 **binding** under OQ-M12-10 A / OQ-M12-11 A)
+## 10. Acceptance criteria (OQ-M12-08 A base; AC-04 / AC-05 binding under OQ-M12-13 A / OQ-M12-12 A)
 
-OQ-M12-01..09 A remain binding for present / stack / API / denoise order / backends / size / Linux soft-skip / frame-gen OUT. **AC-M12-04** and **AC-M12-05** below are **binding under OQ-M12-10 A / OQ-M12-11 A** (PM lock 2026-10-22; M9-08 / M10-09 pattern). Other ACs unchanged.
+OQ-M12-01..09 A remain binding for present / stack / API / denoise order / backends / size / Linux soft-skip / frame-gen OUT. OQ-M12-10 A / OQ-M12-11 A remain **accepted historical** decisions (SHOULD floor and absolute band respectively **superseded** by OQ-M12-12 A / OQ-M12-13 A as noted). **Binding** AC-M12-04 / AC-M12-05 gates are **OQ-M12-13 A** / **OQ-M12-12 A**: SHOULD ≥ **1.05×**; ROI **[80, 200]** + **|ΔL| ≤ 5.0**; XeSS wall **strictly <** native; png_tol / max_abs report-only. Other ACs unchanged.
 
 | ID | Criterion |
 |----|-----------|
 | AC-M12-01 | Upscale OFF + CPU → M4 twin SHA / existing OFF goldens preserved (001). |
 | AC-M12-02 | `setPathUpscale` / `getPathUpscale` roundtrip; default 0. |
 | AC-M12-03 | `setPathUpscale(99)` → trap **122**. |
-| AC-M12-04 | Quality smoke (**binding OQ-M12-11 A**): mode XeSS (or FSR if primary unavailable), render 960×540 → display 1920×1080 on TommyLaptop Arc when SDK present; exit 0. **Primary PASS:** silver-ball-center ROI mean luminance **L** for **both** native and XeSS lanes in band **[80, 140]** after warm-up (≥ 8 frames), and **\|L_xess − L_native\| ≤ 5.0**. **Report** mean_abs (channel mean absolute diff vs native display). **Demote** strict max-channel `# png_tol: 12` / max_abs from PASS/FAIL to **report-only** (tip `edeb845` max_abs ~**211** sparse outliers; mean_abs ~**0.465**). Historical OQ-M12-08 / §11 `# png_tol: 12` as a hard gate is **superseded**. |
-| AC-M12-05 | Timing (script) (**binding OQ-M12-10 A**): upscaled path (render-res spp comparable) wall-clock **strictly less** than native 1920×1080 same spp / backend on TommyLaptop Arc after warm-up — **binding**. SHOULD display-equivalent speedup ≥ **1.2×** (native_median / xess_median) after warm-up — **binding**. Report medians. Measured tip `edeb845`: native **4.302 s** / XeSS **3.477 s** → **1.237** (binding PASS; SHOULD PASS under A). Historical SHOULD ≥ **1.5×** **superseded** for SHOULD floor only. |
+| AC-M12-04 | Quality smoke (**binding OQ-M12-13 A**): mode XeSS (or FSR if primary unavailable), render 960×540 → display 1920×1080 on TommyLaptop Arc when SDK present; exit 0. **Primary PASS:** silver-ball-center ROI mean luminance **L** for **both** native and XeSS lanes in band **[80, 200]** after warm-up (≥ 8 frames), and **|L_xess − L_native| ≤ 5.0**. **Report** mean_abs. **Report-only:** `# png_tol: 12` / max_abs (demotion from OQ-M12-11 A stands). Tip `7f0a080` / product `fd31e46` ROI L ~**187.228** / **187.877**, |ΔL| **3.932** — **PASS**. Historical absolute band **[80, 140]** (OQ-M12-11 A) **superseded** for absolute band only. |
+| AC-M12-05 | Timing (script) (**binding OQ-M12-12 A**): upscaled path (render-res spp comparable) wall-clock **strictly less** than native 1920×1080 same spp / backend on TommyLaptop Arc after warm-up — **MUST** (unchanged). SHOULD display-equivalent speedup ≥ **1.05×** (native_median / xess_median) after warm-up. Report medians. Measured tip `7f0a080` / product `fd31e46`: Pass1 **1.052**, Pass2 **1.162** (binding XeSS < native **PASS** both; SHOULD **PASS**). Historical tip `edeb845` **1.237** remains documented. Historical SHOULD ≥ **1.2×** (OQ-M12-10 A) **superseded** for SHOULD floor only. |
 | AC-M12-06 | Denoise ON + upscale ON: denoise-then-upscale; no crash; soft-skip OK on Linux without SDK. |
 | AC-M12-07 | Hello ≤ 20 KiB; upscale unused DCE; upscale-glue-linked ≤ **700 KiB** PE. |
 | AC-M12-08 | No DLSS/Enabler/Swapper/OptiScaler; no frame-gen; no OptiX; artwork composition locked. |
@@ -357,29 +359,39 @@ OQ-M12-01..09 A remain binding for present / stack / API / denoise order / backe
 | AC-M12-11 | Jitter OFF when upscale OFF (CPU SHA). |
 | AC-M12-12 | Invalid resolution → trap 122-family. |
 
-### 10.1 Measured first Arc tip (informational; OQ-10/11 inputs)
+### 10.1 Measured Arc tips (informational; OQ-10/11 historical + OQ-12/13 inputs)
 
-PR #20 tip `edeb845` (TommyLaptop Vulkan RT, official XeSS 2.1.1, glossy ON):
+**Historical (OQ-10/11 lock):** PR #20 tip `edeb845` (TommyLaptop Vulkan RT, official XeSS 2.1.1, glossy ON):
 
-| Metric | Value | vs historical gate |
-|--------|-------|--------------------|
+| Metric | Value | vs gate |
+|--------|-------|---------|
 | Native median | **4.302 s** | — |
 | XeSS median | **3.477 s** | XeSS < native → binding **PASS** |
-| Ratio native/XeSS | **1.237** | FAIL vs historical SHOULD ≥1.5×; **PASS** vs binding ≥1.2× (OQ-M12-10 A) |
-| Silver ROI L (both lanes) | ~**105.8** | in [80,140]; \|ΔL\| ~0 ≤ 5 → primary **PASS** (OQ-M12-11 A) |
+| Ratio native/XeSS | **1.237** | **PASS** vs OQ-10 A ≥1.2×; eggtooth later AUDIT saw **1.131** on repeat |
+| Silver ROI L (both lanes) | ~**105.8** / ~**106** | in [80,140]; |ΔL| ~0 ≤ 5 → primary **PASS** (OQ-11 A) |
 | mean_abs | ~**0.465** | report |
-| max_abs | ~**211** | FAIL vs historical `# png_tol: 12`; **report-only** under OQ-M12-11 A |
+| max_abs | ~**211** | report-only under OQ-11 A |
+
+**Latest VALID glossy Arc CLAIM (OQ-12/13 lock inputs):** tip `7f0a080`, product `fd31e46` (clean host, `PATH_GLOSSY_VNDF`):
+
+| Metric | Value | vs FINAL OQ-12 A / OQ-13 A |
+|--------|-------|----------------------------|
+| AC-05 Pass1 ratio | **1.052** | **PASS** SHOULD ≥1.05× (OQ-12 A); FAIL vs historical ≥1.2× (OQ-10 A); binding XeSS < native **PASS** |
+| AC-05 Pass2 ratio | **1.162** | **PASS** SHOULD ≥1.05×; FAIL vs historical ≥1.2×; binding **PASS** |
+| AC-04 ROI L | **187.228** / **187.877** | **PASS** [80,200] (OQ-13 A); FAIL vs historical [80,140] (OQ-11 A) |
+| AC-04 abs ΔL | **3.932** | **OK** (≤ 5.0) under OQ-13 A (and historical OQ-11 A) |
 
 AC-M12-04 / AC-M12-05 / AC-M12-07 are eggtooth / bench / script checks.
 
 ---
 
-## 11. Image / quality notes (**binding** under OQ-M12-11 A)
+## 11. Image / quality notes (**binding OQ-M12-13 A**)
 
 - Upscale ON images are **not** required to be bit-identical to native 1080p.
-- **Primary quality gate (binding OQ-M12-11 A):** silver-ball-center ROI mean-L stability — both lanes L ∈ **[80, 140]** and **\|L_xess − L_native\| ≤ 5.0** after warm-up (≥ 8). See AC-M12-04.
+- **Primary quality gate (OQ-M12-13 A):** silver-ball-center ROI mean-L stability — both lanes L ∈ **[80, 200]** and **|L_xess − L_native| ≤ 5.0** after warm-up (≥ 8). Tip `7f0a080` L ~**187** **PASS**. See AC-M12-04.
+- Historical absolute band **[80, 140]** (OQ-M12-11 A) **superseded** for absolute band only; |ΔL| ≤ 5.0 and report-only demotion of png_tol / max_abs **stand**.
 - **Report:** mean_abs (channel mean absolute diff vs native display). Tip `edeb845` ~**0.465**.
-- **Report-only (demoted):** max_abs / historical `# png_tol: 12` max-channel gate. Tip `edeb845` max_abs ~**211** (sparse outliers) MUST NOT alone FAIL AC-M12-04 under OQ-M12-11 A. Prefer demotion over inventing a huge tol (≥211) without rationale.
+- **Report-only (demoted; OQ-M12-11 A demotion stands):** max_abs / historical `# png_tol: 12` max-channel gate. Tip `edeb845` max_abs ~**211** (sparse outliers) MUST NOT alone FAIL AC-M12-04. Prefer demotion over inventing a huge tol (≥211) without rationale.
 - History / temporal accumulation: first frames MAY be excluded from quality gate (warmup ≥ 8).
 - Native reference: same scene, `PATH_UPSCALE_OFF`, display 1920×1080, same backend, same spp (or documented spp×scale equivalence).
 
@@ -443,9 +455,9 @@ Linux CI without GPU/SDK: keep upscale-OFF CPU twins, roundtrip, and trap fixtur
 
 ## 17. Open questions
 
-Status: **FINAL**. Open questions: **none.**
+Status: **FINAL**. Open questions: **none**. OQ-M12-01 .. OQ-M12-13 all **accepted A** — do **not** reopen those decision tables.
 
-PM lock **2026-10-21** (user 2026-10-21 lock-all-oq-a): **OQ-M12-01 .. OQ-M12-09** all **accepted option A**. PM lock **2026-10-22** (user 2026-10-22 oq-relax-1.2-roi): **OQ-M12-10** + **OQ-M12-11** both **accepted option A**. Rejected options remain below for audit trail only. Present / stack / API / denoise order / backends / size / STRICT / frame-gen / Linux soft-skip **unchanged** under OQ-10/11 A. Body §1–§12 / AC-M12-01..12 are **binding** (AC-04 under OQ-11 A; AC-05 under OQ-10 A).
+PM lock **2026-10-21** (user 2026-10-21 lock-all-oq-a): **OQ-M12-01 .. OQ-M12-09** all **accepted option A**. PM lock **2026-10-22** (user 2026-10-22 oq-relax-1.2-roi): **OQ-M12-10** + **OQ-M12-11** both **accepted option A**. PM lock **2026-10-23** (user 2026-10-23 oq-relax-again): **OQ-M12-12** + **OQ-M12-13** both **accepted option A**. Rejected options remain below for audit trail only. Present / stack / API / denoise order / backends / size / STRICT / frame-gen / Linux soft-skip **unchanged**. Binding AC-04 / AC-05 under OQ-13 A / OQ-12 A. Body §10 / §11 / Appendix D **binding**.
 
 ### OQ-M12-01 — Present / output path — **ACCEPTED A**
 
@@ -543,11 +555,37 @@ PM lock **2026-10-21** (user 2026-10-21 lock-all-oq-a): **OQ-M12-01 .. OQ-M12-09
 
 **Rationale for A:** ROI mean-L matches the product intent (silver ball clearly lit, not black; XeSS lane tracks native). Sparse max_abs outliers are expected for temporal upscale vs native and do not justify a huge invented `# png_tol`. Demoting max-channel to report-only preserves observability without false FAIL.
 
+### OQ-M12-12 — AC-M12-05 SHOULD speed floor (second relax) — **ACCEPTED A**
+
+**Context (binding inputs):** User chose **oq-relax-again** (2026-10-23). PR #20 tip `7f0a080`, product `fd31e46`. Glossy Arc CLAIM (clean host, `PATH_GLOSSY_VNDF`): AC-M12-05 Pass1 ratio **1.052**, Pass2 **1.162** (binding XeSS wall **strictly <** native **PASS** both). Prior tip `edeb845`: ratio **1.237** once; eggtooth AUDIT FAIL on 1.2× repeatability (**1.237** then **1.131**). more-headroom / more-optimize tips lost SHOULD. Historical OQ-M12-10 A SHOULD ≥ **1.2×** → tip range **FAIL SHOULD**. Pattern: M9 OQ-M9-08 / M10 OQ-M10-09 / OQ-M12-10. PM lock **2026-10-23** (user oq-relax-again): option **A**.
+
+| Option | Meaning | Status |
+|--------|---------|--------|
+| **A** | SHOULD display-equivalent speedup ≥ **1.05×** (native_median / xess_median) on TommyLaptop Arc after warm-up. **Binding remains:** XeSS wall-clock **strictly <** native (unchanged). Document measured tip range Pass1 **1.052** / Pass2 **1.162** (tip `7f0a080` / product `fd31e46`). Historical SHOULD ≥ **1.2×** (OQ-M12-10 A) **superseded** for the SHOULD floor only. Present / stack / API / denoise order / backends / size / STRICT / frame-gen / Linux soft-skip **unchanged**. | **ACCEPTED** |
+| B | SHOULD ≥ **1.10×** (Pass1 **1.052** would **FAIL** SHOULD; Pass2 **1.162** **PASS**) | Rejected |
+| C | Binding-only — drop SHOULD speed floor entirely; XeSS wall **strictly <** native remains **MUST**; report ratio informational | Rejected |
+| D | Keep SHOULD ≥ **1.2×** (current tips **FAIL** SHOULD) | Rejected |
+
+**Rationale for A:** Floor matches the lower measured Pass1 (**1.052**) with ~0.2% headroom; keeps a SHOULD gate; binding XeSS < native unchanged. Measured tip range **1.05–1.16**.
+
+### OQ-M12-13 — AC-M12-04 primary quality (second relax) — **ACCEPTED A**
+
+**Context (binding inputs):** Same tip `7f0a080` / product `fd31e46`. AC-M12-04 ROI L **187.228** / **187.877** FAIL vs historical OQ-M12-11 A band **[80, 140]**; **|ΔL| 3.932** OK (≤ 5.0). Prior `edeb845` ROI L ~**106**; more-headroom / more-optimize tips drifted ROI to ~**187**. Historical OQ-M12-11 A → tip **FAIL** absolute band. PM lock **2026-10-23** (user oq-relax-again): option **A**.
+
+| Option | Meaning | Status |
+|--------|---------|--------|
+| **A** | Expand ROI absolute band to **[80, 200]**; keep **|ΔL| ≤ 5.0**; both lanes must be in band; report mean_abs; png_tol / max_abs stay **report-only**. Tip L ~**187** **PASS**. Historical **[80, 140]** (OQ-M12-11 A) **superseded** for absolute band only. Speed / API / stack / other ACs **unchanged** except as OQ-M12-12. | **ACCEPTED** |
+| B | Primary = **|ΔL| ≤ 5.0** only (center/relative); absolute ROI band becomes **report-only** (no PASS/FAIL on absolute L) | Rejected |
+| C | Restore `# png_tol: 12` / max_abs as primary PASS/FAIL (**not recommended**; tip max_abs historically ~**211**) | Rejected |
+| D | Keep **[80, 140]** (current L ~**187** **FAIL**) | Rejected |
+
+**Rationale for A:** Keeps the same primary-gate shape as OQ-M12-11 A (absolute band + |ΔL|); expands upper bound to cover glossy Arc tip drift from ~**106→~187** without dropping absolute luminance intent.
+
 ---
 
-## 18. Accepted decisions (all OQs FINAL binding)
+## 18. Accepted decisions (OQ-01..13 FINAL binding)
 
-PM lock 2026-10-21 (user 2026-10-21 lock-all-oq-a) for OQ-M12-01..09. PM lock 2026-10-22 (user 2026-10-22 oq-relax-1.2-roi) for OQ-M12-10 **A** + OQ-M12-11 **A**. All rows below are **binding**. OQ-M12-08’s historical SHOULD ≥1.5× floor is **superseded** by OQ-M12-10 A (SHOULD floor only; binding XeSS < native unchanged). AC-M12-04 hard `# png_tol: 12` is **superseded** by OQ-M12-11 A (primary = ROI L band + |ΔL| ≤ 5.0; mean_abs report; max_abs / png_tol report-only).
+PM lock 2026-10-21 (user 2026-10-21 lock-all-oq-a) for OQ-M12-01..09. PM lock 2026-10-22 (user 2026-10-22 oq-relax-1.2-roi) for OQ-M12-10 **A** + OQ-M12-11 **A**. PM lock 2026-10-23 (user 2026-10-23 oq-relax-again) for OQ-M12-12 **A** + OQ-M12-13 **A**. All rows below are **binding accepted**. OQ-M12-08's historical SHOULD ≥1.5× floor is **superseded** by OQ-M12-10 A, then OQ-M12-10 A's SHOULD ≥1.2× floor is **superseded** by OQ-M12-12 A (SHOULD floor only; binding XeSS < native unchanged). AC-M12-04 hard `# png_tol: 12` is **superseded** by OQ-M12-11 A (primary = ROI L band + |ΔL| ≤ 5.0; mean_abs report; max_abs / png_tol report-only); OQ-M12-11 A's absolute band **[80, 140]** is **superseded** by OQ-M12-13 A **[80, 200]** (absolute band only; |ΔL| ≤ 5.0 and report-only demotion stand).
 
 | ID | Accepted |
 |----|----------|
@@ -558,10 +596,12 @@ PM lock 2026-10-21 (user 2026-10-21 lock-all-oq-a) for OQ-M12-01..09. PM lock 20
 | OQ-M12-05 | A — denoise then upscale |
 | OQ-M12-06 | A — vk/vk_rt must; CPU soft; STRICT 122-family |
 | OQ-M12-07 | A — ≤700 KiB glue PE; DLLs external |
-| OQ-M12-08 | A — Arc smoke + Linux soft-skip; historical SHOULD ≥1.5× **superseded** by OQ-M12-10 A (binding XeSS < native unchanged) |
+| OQ-M12-08 | A — Arc smoke + Linux soft-skip; historical SHOULD ≥1.5× **superseded** by OQ-M12-10 A then OQ-M12-12 A (binding XeSS < native unchanged) |
 | OQ-M12-09 | A — frame-gen OUT |
-| OQ-M12-10 | **A** — SHOULD ≥ **1.2×**; binding XeSS wall strictly < native; tip `edeb845` **1.237** documented; historical SHOULD ≥1.5× superseded for SHOULD floor only |
-| OQ-M12-11 | **A** — primary AC-M12-04 = ROI L both lanes in **[80, 140]** and **\|ΔL\| ≤ 5.0**; report mean_abs; demote `# png_tol: 12` / max_abs to report-only; historical hard png_tol:12 superseded |
+| OQ-M12-10 | **A** — SHOULD ≥ **1.2×** (historical); binding XeSS wall strictly < native; tip `edeb845` **1.237** documented; historical SHOULD ≥1.5× superseded for SHOULD floor only; **SHOULD floor superseded by OQ-M12-12 A** (≥ **1.05×**) |
+| OQ-M12-11 | **A** — primary AC-M12-04 = ROI L both lanes in **[80, 140]** and **|ΔL| ≤ 5.0** (historical absolute band); report mean_abs; demote `# png_tol: 12` / max_abs to report-only; historical hard png_tol:12 superseded; **absolute band superseded by OQ-M12-13 A** (**[80, 200]**) |
+| OQ-M12-12 | **A** — SHOULD ≥ **1.05×**; binding XeSS wall strictly < native; tip `7f0a080` / product `fd31e46` Pass1 **1.052** / Pass2 **1.162** documented; historical OQ-10 A ≥1.2× superseded for SHOULD floor only |
+| OQ-M12-13 | **A** — primary AC-M12-04 = ROI L both lanes in **[80, 200]** and **|ΔL| ≤ 5.0**; report mean_abs; png_tol / max_abs report-only; tip L ~**187** PASS; historical OQ-11 A [80, 140] superseded for absolute band only |
 | RD-M12-01 | Selective reopen M10 OQ-M10-06: native XeSS/FSR **IN**; DLSS/injection **still OUT** |
 | RD-M12-02 | M10 OQ-M10-01 no-window **stands** (not reopened under A) |
 | RD-M12-03 | Enabler/Swapper/OptiScaler forever OUT for this milestone |
@@ -585,7 +625,9 @@ M1–M11 milestone markdown bodies are **not** edited.
 | 9 | Frame-gen OUT (OQ-M12-09 A) |
 | 10 | M9 backends / STRICT RT / M10 denoise / M11 glossy unchanged when upscale OFF |
 | 11 | **FINAL** OQ-M12-10 A: SHOULD ≥ **1.2×** (supersedes historical ≥1.5× SHOULD floor); binding XeSS < native unchanged; tip `edeb845` **1.237** documented |
-| 12 | **FINAL** OQ-M12-11 A: AC-M12-04 primary = ROI L band + \|ΔL\| ≤ 5.0; demote `# png_tol: 12` / max_abs to report-only; keep mean_abs report |
+| 12 | **FINAL** OQ-M12-11 A: AC-M12-04 primary = ROI L band + |ΔL| ≤ 5.0; demote `# png_tol: 12` / max_abs to report-only; keep mean_abs report |
+| 13 | **FINAL** OQ-M12-12 A: SHOULD ≥ **1.05×** (supersedes OQ-10 A ≥1.2× SHOULD floor); binding XeSS < native unchanged; tip `7f0a080` / product `fd31e46` Pass1 **1.052** / Pass2 **1.162** documented |
+| 14 | **FINAL** OQ-M12-13 A: AC-M12-04 primary = ROI L **[80, 200]** + |ΔL| ≤ 5.0; tip L ~**187** PASS; historical OQ-11 A [80, 140] superseded for absolute band only; png_tol / max_abs report-only |
 
 ---
 
@@ -624,8 +666,8 @@ TommyLaptop Arc, prefer `PATH_BACKEND_VULKAN_RT`:
 
 - Native: 1920×1080, upscale OFF, documented spp.
 - Upscale: render 960×540 → display 1920×1080, XeSS ON, same spp at render-res, denoise policy per fixture.
-- Quality (**binding OQ-M12-11 A**): primary = silver-ball-center ROI mean-L band + \|ΔL\| ≤ 5.0; report mean_abs; max_abs / `# png_tol: 12` report-only.
-- Timing (**binding OQ-M12-10 A**): binding XeSS median < native median; SHOULD ≥ **1.2×**; document tip `edeb845` **1.237**.
+- Quality (**binding OQ-M12-13 A**): primary = silver-ball-center ROI mean-L band **[80, 200]** + |ΔL| ≤ 5.0; report mean_abs; max_abs / `# png_tol: 12` report-only. Tip `7f0a080` L ~**187** PASS. Historical [80, 140] (OQ-11 A) superseded for absolute band only.
+- Timing (**binding OQ-M12-12 A**): binding XeSS median < native median; SHOULD ≥ **1.05×**; document tip `7f0a080` / product `fd31e46` Pass1 **1.052** / Pass2 **1.162**; historical tip `edeb845` **1.237**. Historical SHOULD ≥ **1.2×** (OQ-10 A) superseded for SHOULD floor only.
 - Do not alter silver-still composition.
 
 ---
@@ -636,3 +678,5 @@ TommyLaptop Arc, prefer `PATH_BACKEND_VULKAN_RT`:
 - 2026-10-21: **FINAL**. PM/user lock OQ-M12-01 .. OQ-M12-09 all A (lock-all-oq-a). Headless buffer+savePNG; XeSS primary + FSR2 optional; camera MV+depth; `setPathUpscale` default OFF trap 122; denoise then upscale; vk/vk_rt must; ≤700 KiB glue PE; Arc smoke + Linux soft-skip; frame-gen OUT. Selective reopen M10-06 (native XeSS/FSR IN; DLSS/Enabler/Swapper/OptiScaler still OUT); M10-01 stands. Open questions: none. No implementation code.
 - 2026-10-22: **DRAFT amendment** (OQ-M12-10 / OQ-M12-11). Measured PR #20 tip `edeb845` Arc: ratio **1.237** (binding XeSS < native PASS; SHOULD ≥1.5× FAIL); ROI L ~105.8 both lanes; mean_abs ~0.465; max_abs ~211 (strict `# png_tol: 12` FAIL). User chose oq-relax-1.2-roi. Open OQ-M12-10 recommend **A** SHOULD ≥ **1.2×** (binding XeSS < native unchanged; tip 1.237 documented). Open OQ-M12-11 recommend **A** primary ROI L ∈ [80,140] + \|ΔL\| ≤ 5.0; report mean_abs; demote `# png_tol: 12` / max_abs to report-only. Body §10 / §11 / AC-M12-04 / AC-M12-05 provisional under A. OQ-01..09 **not reopened**. Status **not FINAL** until OQ-10/11 locked. No implementation code.
 - 2026-10-22: **FINAL**. PM/user lock OQ-M12-10 A + OQ-M12-11 A (oq-relax-1.2-roi). Binding AC-M12-05: XeSS wall strictly < native; SHOULD ≥ **1.2×**; tip `edeb845` **1.237** documented; historical SHOULD ≥1.5× superseded for SHOULD floor only. Binding AC-M12-04: primary ROI L both lanes in **[80, 140]** and **|ΔL| ≤ 5.0**; report mean_abs; demote `# png_tol: 12` / max_abs to report-only; historical hard png_tol:12 superseded. OQ-01..09 A unchanged. Open questions: none. No implementation code.
+- 2026-10-23: **DRAFT amendment** (OQ-M12-12 / OQ-M12-13). User chose **oq-relax-again**. Measured tip `7f0a080` / product `fd31e46` glossy Arc CLAIM FAIL: AC-05 Pass1 **1.052** / Pass2 **1.162** (binding XeSS < native PASS); AC-04 ROI L ~**187.228** / **187.877** FAIL [80,140]; |ΔL| **3.932** OK. Prior `edeb845` 1.237 once + L~106; eggtooth AUDIT FAIL on 1.2× repeatability (1.237 then 1.131). Open OQ-M12-12 recommend **A** SHOULD ≥ **1.05×** (binding XeSS < native unchanged; historical OQ-10 A ≥1.2× superseded for SHOULD floor only if A locked). Open OQ-M12-13 recommend **A** ROI absolute band **[80, 200]** + |ΔL| ≤ 5.0 (historical OQ-11 A [80,140] superseded for absolute band only if A locked). Body §10 / §11 / Appendix D provisional under recommend A. OQ-01..11 **not reopened**. Status **not FINAL** until OQ-12/13 locked. poteto HOLD. No implementation code.
+- 2026-10-23: **FINAL**. PM/user lock OQ-M12-12 A + OQ-M12-13 A (oq-relax-again). Binding AC-M12-05: XeSS wall strictly < native; SHOULD ≥ **1.05×**; tip `7f0a080` / product `fd31e46` Pass1 **1.052** / Pass2 **1.162** documented; historical SHOULD ≥ **1.2×** (OQ-M12-10 A) superseded for SHOULD floor only. Binding AC-M12-04: primary ROI L both lanes in **[80, 200]** and **|ΔL| ≤ 5.0**; report mean_abs; `# png_tol: 12` / max_abs report-only; tip L ~**187.228** / **187.877**, |ΔL| **3.932** PASS; historical absolute band **[80, 140]** (OQ-M12-11 A) superseded for absolute band only. OQ-01..11 A unchanged as accepted decisions (supersession notes as above). Open questions: none. No implementation code.

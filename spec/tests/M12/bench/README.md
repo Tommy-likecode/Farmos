@@ -16,9 +16,10 @@ silver-still composition with **fixed** artwork positions (no `random01`).
 python3 spec/tests/M12/bench/run_arc_ac.py path/to/farmc --out out/m12_arc
 ```
 
-Record median wall-clock after warm-up (≥8 frames). Primary quality: silver
-ball-center ROI (`x=940:980,y=520:560`) mean L both lanes in [80,140] and
-|ΔL| ≤ 5.0. Report mean_abs; `# png_tol: 12` / max_abs are **report-only**.
+Record median wall-clock after warm-up (≥8 frames). Binding: XeSS wall < native;
+SHOULD ≥ **1.05×** (OQ-M12-12 A). Primary quality: silver ball-center ROI
+(`x=940:980,y=520:560`) mean L both lanes in **[80, 200]** and |ΔL| ≤ 5.0
+(OQ-M12-13 A). Report mean_abs; `# png_tol: 12` / max_abs are **report-only**.
 Do **not** alter silver-still composition.
 
 AC-M12-04 / AC-M12-05 are eggtooth / TommyLaptop gates. Linux without SDK does
