@@ -218,30 +218,24 @@ Implementation-owned glue in `runtime/farm_upscale.c`, called after denoise from
 - **XeSS:** `dlopen` / `LoadLibrary` of `libxess` (`FARMOS_XESS_LIB` override).
   Headless `VkImage`s, no swapchain. Images/staging/cmd persist across frames.
   Disk `VkPipelineCache` at `%TEMP%/farmos_xess_pso_<dw>x<dh>.bin` passed to
-  `xessVKInit` (process-per-frame AC-05 warmup fills it). Warm processes that
-  already loaded that blob skip `vkGetPipelineCacheData` + rewrite (AUDIT FAIL
-  r1: second-pass XeSS 3.477→3.791). `isPathUpscaleAvailable` is file-present
-  only; `farm_upscale_prefetch_xess` maps the SDK after `vkQueueSubmit` while
-  the path GPU is running. Prefer the path-tracer Vk device: when upscale is
-  ON, RT/compute backends merge XeSS instance/device extras without mapping
-  libxess (Vulkan 1.2; `VK_EXT_mutable_descriptor_type` +
-  `shaderStorageImageWriteWithoutFormat` + float16/int8 + 16-bit storage per
-  Intel XeSS-SR 2.x). SDK query used if the lib is already mapped. Fall back
-  to a dedicated device if `xessVKCreateContext` rejects the borrow. Native
-  OFF does not load libxess at device create. Quality preset chosen from scale
-  (2× → Balanced) with nearby retries. Vendor DLLs are not linked into the
-  Farmos PE.
+  `xessVKInit`. Warm processes that already loaded that blob skip
+  `vkGetPipelineCacheData` + rewrite. `isPathUpscaleAvailable` is file-present
+  only. When upscale is ON, RT/compute backends query official
+  `xessVKGetRequired*` extras onto the path-tracer device (hardcoded extras
+  in more-headroom likely broke borrow). After path `vkQueueSubmit`,
+  `farm_upscale_prepare_xess` runs CreateContext + init + image alloc during
+  `vkQueueWaitIdle`. Fall back to a dedicated device if CreateContext
+  rejects the borrow. Native OFF does not load libxess at device create.
+  Quality preset from scale (2× → Balanced) with nearby retries. Vendor DLLs
+  are not linked into the Farmos PE.
 - **FSR2:** `isPathUpscaleAvailable(PATH_UPSCALE_FSR)` is true when the official
   ffx shared lib is loadable; execute is not stubbed with Enabler — missing dispatch
   soft-fails (STRICT → trap 122).
 - **DCE:** `program_uses_upscale` gates `-DFARM_ENABLE_UPSCALE` + `farm_upscale.c`.
 - **Arc:** helpers in `spec/tests/M12/bench/` (`PATH_GLOSSY_VNDF`). Last Arc
-  smoke is tip `edeb845` (not this product): AC-05 primary native **4.302 s** /
-  XeSS **3.477 s** → ratio **1.237**; independent second warm **4.288 / 3.791
-  → 1.131** (eggtooth AUDIT FAIL r1 on binding SHOULD ≥1.2× repeatability).
-  AC-04 ROI L **105.810 / 105.805** ∈ [80,140], \|ΔL\| **0.005**; mean_abs
-  **0.465** report; max_abs **211** **report-only**. PE B-11 **72704** at
-  `edeb845`. Product `4f3ef56` (more-headroom) Linux: M12 8/8, M4 24/24, M11
-  4/4, ELF B-11 **71888**. Two independent Arc warm medians are poteto's job.
-  Enabler not used. Do not invent Enabler workarounds.
+  smoke is more-headroom `4f3ef56` (FAIL): AC-05 **1.149 / 1.196**, walls
+  ~3× `edeb845` under chrome/msedge; ROI L **190.98 / 191.14** (center still
+  ~106). Product `fd31e46` (more-optimize) restores SDK extras + init-during-
+  wait; Linux M12 8/8, M4 24/24, M11 4/4, M7 9/9, ELF B-11 **67792**. Two
+  independent Arc warm medians are poteto's job. Enabler not used.
 
