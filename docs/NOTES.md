@@ -224,20 +224,27 @@ Implementation-owned glue in `runtime/farm_upscale.c`, called after denoise from
   `xessVKGetRequired*` extras onto the path-tracer device (hardcoded extras
   in more-headroom likely broke borrow). After path `vkQueueSubmit`,
   `farm_upscale_prepare_xess` runs CreateContext + init + image alloc during
-  `vkQueueWaitIdle`. Fall back to a dedicated device if CreateContext
-  rejects the borrow. Native OFF does not load libxess at device create.
+  `vkQueueWaitIdle`. **Prefer a dedicated XeSS VkDevice** so init / first-submit
+  PSO compile cannot `DeviceWaitIdle` the in-flight path-tracer queue (clear-m12-backlog
+  Pass1 residual-init hypothesis). Fall back to borrow if own create fails.
+  Native OFF does not load libxess at device create.
   Quality preset from scale (2× → Balanced) with nearby retries. Vendor DLLs
   are not linked into the Farmos PE.
 - **FSR2:** `isPathUpscaleAvailable(PATH_UPSCALE_FSR)` is true when the official
   ffx shared lib is loadable; execute is not stubbed with Enabler — missing dispatch
   soft-fails (STRICT → trap 122).
 - **DCE:** `program_uses_upscale` gates `-DFARM_ENABLE_UPSCALE` + `farm_upscale.c`.
-- **Arc:** helpers in `spec/tests/M12/bench/` (`PATH_GLOSSY_VNDF`). Glossy
-  CLAIM **PASS** under FINAL OQ-M12-12 A + OQ-M12-13 A at docs `7f0a080` /
-  product `fd31e46` (clean host, chrome/msedge absent): AC-05 Pass1 **1.052**
-  / Pass2 **1.162** (SHOULD ≥ **1.05×**; XeSS < native both); ROI L
-  **187.228 / 187.877** ∈ [80,200], \|ΔL\| **3.932**; PE B-11 **72704**.
-  Historical ≥1.2× / [80,140] superseded. Linux M12 8/8, M4 24/24, M11 4/4,
-  M7 9/9, ELF B-11 **67792**. Enabler not used. **No merge** until eggtooth
-  AUDIT PASS via PM.
+- **Harness (Windows):** `Test-HostVulkanDevice` writes a temp ctypes probe and
+  runs it via `System.Diagnostics.Process` (not `Start-Process -c`, which
+  mangled quotes and false-soft-skipped Arc). Soft-skip only after a completed
+  probe says no device; loader present + probe tooling fail → run / hard-fail.
+- **Arc / backlog:** helpers in `spec/tests/M12/bench/` (`PATH_GLOSSY_VNDF`).
+  Pinned AC-04 ROI `x=940:980,y=520:560` @1080p (40×40). Binding \|ΔL\| =
+  \|L_xess − L_native\| of **means**. Baseline merged glossy Arc (docs
+  `7f0a080` / product `fd31e46`): Pass1 **1.052** / Pass2 **1.162**; L
+  **187.228 / 187.877**; \|ΔL\| ≈ **0.650**; mean_abs_dL **3.932**
+  (report-only; was mislabeled \|ΔL\|); PE B-11 **72704**. Historical
+  ≥1.2× / [80,140] superseded. This tip does **not** claim Arc PASS —
+  TommyLaptop / poteto Arc-smoke is separate. Enabler not used. **No merge**
+  from the clear-m12-backlog CloudAgent run.
 

@@ -186,12 +186,12 @@ M11 — Opt-in GGX/VNDF glossy continuation (metal-black) [added 2026-10-20 by P
 
 M12 — Native Vulkan upscale (XeSS / FSR) [added 2026-10-21 by PM/user GO draft-native-upscale]
 - Goal: opt-in native Vulkan temporal upscale (Intel **XeSS** primary on Arc; optional **AMD FSR2**) after path (+ optional M10 denoise); default **OFF**.
-- Status: **FINAL** (PM/user 2026-10-21: OQ-M12-01 .. OQ-M12-09 all A).
+- Status: **FINAL** (PM/user 2026-10-23: OQ-M12-12 A + OQ-M12-13 A; prior OQ-01..09 A locked 2026-10-21; OQ-10/11 A locked 2026-10-22; **2026-10-25 clarification** clear-m12-backlog — ROI pin + |ΔL| vs mean_abs_dL; gates unchanged).
 - Why: user wanted DLSS-Enabler for Intel/AMD; survey = wrong tool (no NGX/DLSS; offline path + PATH_DENOISE_SPATIAL; no swapchain). User chose native XeSS/FSR milestone. Enabler/Swapper/OptiScaler **OUT forever** for this milestone.
 - **Reopens from M10 (explicit):**
   - OQ-M10-06 A (DLSS/vendor upscalers OUT) → **selective reopen**: native XeSS/FSR **IN**; DLSS/NGX, Enabler, Swapper, OptiScaler injection **still OUT**.
   - OQ-M10-01 A (no OS window/swapchain) → under **OQ-M12-01 A** (**headless** upscale-to-buffer + savePNG) **stands / not reopened**. OQ-M12-01 B rejected.
-- Binding (OQ-M12-01..09 A):
+- Binding (OQ-M12-01..09 A — **unchanged**):
   - OQ-M12-01 A: headless buffer + savePNG; **no** OS window; M10-01 stands.
   - OQ-M12-02 A: XeSS primary + FSR2 optional; DLSS/Enabler/Swapper/OptiScaler OUT.
   - OQ-M12-03 A: camera MV + depth; object MV deferred.
@@ -199,13 +199,20 @@ M12 — Native Vulkan upscale (XeSS / FSR) [added 2026-10-21 by PM/user GO draft
   - OQ-M12-05 A: denoise **then** upscale when both ON.
   - OQ-M12-06 A: Vulkan compute + Vulkan RT MUST; CPU soft; STRICT 122-family.
   - OQ-M12-07 A: upscale-glue PE ≤ **700 KiB** (vendor DLLs external); DCE when OFF.
-  - OQ-M12-08 A: TommyLaptop Arc smoke (960×540→1080p) + Linux soft-skip.
+  - OQ-M12-08 A: TommyLaptop Arc smoke (960×540→1080p) + Linux soft-skip; historical SHOULD ≥1.5× **superseded** by OQ-M12-10 A then OQ-M12-12 A (SHOULD floor only).
   - OQ-M12-09 A: frame-gen OUT.
+- Binding (OQ-M12-10 A / OQ-M12-11 A — PM/user 2026-10-22 oq-relax-1.2-roi; tip `edeb845` PR #20) — **accepted historical**; SHOULD floor / absolute band **superseded** by OQ-12/13 A:
+  - OQ-M12-10 **A**: historical SHOULD ≥ **1.2×**; binding XeSS wall **strictly <** native; document measured **1.237**; historical SHOULD ≥1.5× superseded for SHOULD floor only; **SHOULD floor superseded by OQ-M12-12 A**.
+  - OQ-M12-11 **A**: historical AC-M12-04 absolute band **[80, 140]** + **|ΔL| ≤ 5.0**; report mean_abs; demote `# png_tol: 12` / max_abs to **report-only**; historical hard png_tol:12 superseded; **absolute band superseded by OQ-M12-13 A**.
+- Binding (OQ-M12-12 A / OQ-M12-13 A — PM/user 2026-10-23 oq-relax-again; tip `7f0a080` / product `fd31e46`):
+  - OQ-M12-12 **A**: SHOULD speedup ≥ **1.05×** display-equivalent on TommyLaptop Arc after warm-up; binding XeSS wall **strictly <** native; document Pass1 **1.052** / Pass2 **1.162**; historical OQ-10 A ≥1.2× superseded for SHOULD floor only.
+  - OQ-M12-13 **A**: AC-M12-04 primary = silver ROI mean L both lanes in **[80, 200]** and **|ΔL| ≤ 5.0**; report mean_abs; `# png_tol: 12` / max_abs **report-only**; tip L ~**187** PASS; historical OQ-11 A [80,140] superseded for absolute band only.
+- **Clarification (2026-10-25; user clear-m12-backlog; post merge `f5b87f8f`):** AC-04 ROI **pinned** to M11 CLAIM box **`x=940:980,y=520:560`** @1920×1080 (**40×40**); **|ΔL| = |L_xess − L_native|** of ROI means (tip ≈ **0.650** PASS); tip **3.932** reclassified **mean_abs_dL** report-only (was mislabeled |ΔL|). OQ-12 A / OQ-13 A gate numbers **unchanged**. Status remains **FINAL**.
 - Out: DLSS/NGX; Enabler/Swapper/OptiScaler; frame-gen; OptiX; GPU raster; rewriting goldens under OFF; full game engine; OS window/swapchain.
-- AC: see AC-M12-01..12 in `spec/M12-native-upscale.md` (binding under A).
+- AC: see AC-M12-01..12 in `spec/M12-native-upscale.md` (all binding under OQ-01..13 A; AC-04/05 under OQ-13 A / OQ-12 A).
 - Open questions: **none**.
-- Spec: `spec/M12-native-upscale.md` (**FINAL**); fixtures: `spec/tests/M12/`.
-- Order: after M11; coding only after poteto assign by PM.
+- Spec: `spec/M12-native-upscale.md` (**FINAL**); fixtures: `spec/tests/M12/`. M1–M11 untouched.
+- Order: after M11.
 
 ## Team
 - Projects Manager: plan, priorities, handoffs, acceptance.
