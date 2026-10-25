@@ -5,7 +5,7 @@
 M12 backlog clear (post `f5b87f8f`; OQ-M12-12/13 A gates unchanged):
 
 - Spec/PLAN/README 2026-10-25 clarification: pinned AC-04 ROI `x=940:980,y=520:560` @1080p; binding \|ΔL\| is \|L_xess − L_native\| of means (baseline ≈0.650). 3.932 is mean_abs_dL report-only.
-- XeSS init prefers a dedicated VkDevice so CreateContext/init cannot DeviceWaitIdle the in-flight path queue (Pass1 headroom). Official SDK only; Enabler still OUT. Arc not re-measured on this tip.
+- XeSS init prefers a dedicated VkDevice so CreateContext/init cannot DeviceWaitIdle the in-flight path queue (Pass1 headroom). Official SDK only; Enabler still OUT. Glossy Arc CLAIM PASS at docs `f6c2285` / product `d23acfb`: Pass1 **1.264** / Pass2 **1.348**; ROI L **105.810 / 105.801**; \|ΔL\| of means **0.009**.
 - Windows `Test-HostVulkanDevice`: temp-file probe + Process ExitCode (no `Start-Process -c` false soft-skip on Arc).
 
 M12 — native Vulkan upscale (`spec/M12-native-upscale.md` FINAL):

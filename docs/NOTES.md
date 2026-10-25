@@ -240,12 +240,14 @@ Implementation-owned glue in `runtime/farm_upscale.c`, called after denoise from
   probe says no device; loader present + probe tooling fail → run / hard-fail.
 - **Arc / backlog:** helpers in `spec/tests/M12/bench/` (`PATH_GLOSSY_VNDF`).
   Pinned AC-04 ROI `x=940:980,y=520:560` @1080p (40×40). Binding \|ΔL\| =
-  \|L_xess − L_native\| of **means**. Baseline merged glossy Arc (docs
-  `7f0a080` / product `fd31e46`): Pass1 **1.052** / Pass2 **1.162**; L
-  **187.228 / 187.877**; \|ΔL\| ≈ **0.650**; mean_abs_dL **3.932**
-  (report-only; was mislabeled \|ΔL\|); PE B-11 **72704**. Historical
-  ≥1.2× / [80,140] superseded.   This tip does **not** claim Arc PASS —
-  TommyLaptop / poteto Arc-smoke is separate. Linux M12 8/8, M4 24/24,
-  M11 4/4, M7 9/9, ELF B-11 **68088**. Enabler not used. **No merge**
-  from the clear-m12-backlog CloudAgent run.
+  \|L_xess − L_native\| of **means**. Glossy CLAIM **PASS** under FINAL
+  OQ-M12-12 A + OQ-M12-13 A at docs `f6c2285` / product `d23acfb`
+  (TommyLaptop, dirty chrome/msedge): AC-05 Pass1 **1.264** (4.441 / 3.512)
+  / Pass2 **1.348** (4.712 / 3.497) (SHOULD ≥ **1.05×**; prefer ≥1.08–1.10
+  **YES**; XeSS < native both); ROI L **105.810 / 105.801** ∈ [80,200],
+  \|ΔL\| of means **0.009**; mean_abs_dL **0.440** report-only; max_abs
+  **212** report-only; PE B-11 **72704**. `Test-HostVulkanDevice=True`;
+  M7 `008_cornell_vulkan_tol` ran **PASS** (no false soft-skip). Historical
+  ≥1.2× / [80,140] superseded. Linux M12 8/8, M4 24/24, M11 4/4, M7 9/9,
+  ELF B-11 **68088**. Enabler not used. **No merge** from this CloudAgent run.
 
