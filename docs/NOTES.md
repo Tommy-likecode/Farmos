@@ -244,7 +244,8 @@ Implementation-owned glue in `runtime/farm_upscale.c`, called after denoise from
   `7f0a080` / product `fd31e46`): Pass1 **1.052** / Pass2 **1.162**; L
   **187.228 / 187.877**; \|ΔL\| ≈ **0.650**; mean_abs_dL **3.932**
   (report-only; was mislabeled \|ΔL\|); PE B-11 **72704**. Historical
-  ≥1.2× / [80,140] superseded. This tip does **not** claim Arc PASS —
-  TommyLaptop / poteto Arc-smoke is separate. Enabler not used. **No merge**
+  ≥1.2× / [80,140] superseded.   This tip does **not** claim Arc PASS —
+  TommyLaptop / poteto Arc-smoke is separate. Linux M12 8/8, M4 24/24,
+  M11 4/4, M7 9/9, ELF B-11 **68088**. Enabler not used. **No merge**
   from the clear-m12-backlog CloudAgent run.
 

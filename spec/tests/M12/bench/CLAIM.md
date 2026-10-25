@@ -39,6 +39,12 @@ Docs / product `7f0a080` / `fd31e46` (clean host):
 - XeSS CreateContext / init / first-submit PSO compile prefers a **dedicated** VkDevice so it cannot `DeviceWaitIdle` the in-flight path-tracer queue (Pass1 residual-init hypothesis). Borrow remains fallback. Official `xessVKGetRequired*` extras unchanged. Enabler still OUT.
 - Do **not** claim Pass1 ≥1.08 until TommyLaptop measures this tip.
 
-## Linux verification (this branch; no Vulkan/SDK on this host)
+## Linux verification (this tip; no Vulkan/SDK on this host)
 
-See the PR / run notes for exact suite commands and ELF B-11. Expected: M12 + M4 + M11 + M7 green (GPU fixtures soft-skip).
+| Command | Result |
+|---------|--------|
+| `bash scripts/run_suite_linux.sh build/farmc spec/tests/M12` | **8/8** (004/006 soft-skip `requires_vulkan`) |
+| `bash scripts/run_suite_linux.sh build/farmc spec/tests/M4` | **24/24 PASS** |
+| `bash scripts/run_suite_linux.sh build/farmc spec/tests/M11` | **4/4 PASS** |
+| `bash scripts/run_suite_linux.sh build/farmc spec/tests/M7` | **9/9** (008 soft-skip `requires_vulkan`) |
+| `python3 scripts/check_size_budgets.py build/farmc .` | **PASS** — ELF B-11 **68088** / 716800 |
