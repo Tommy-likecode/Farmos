@@ -22,7 +22,9 @@ int farm_upscale_xess_required_device(void* inst, void* phys, unsigned* count,
                                      const char* const** names, void** features);
 
 /* Map libxess; then CreateContext + xessVKInit + persistent images while the
-   path GPU is in flight (after vkQueueSubmit, before wait). */
+   path GPU is in flight (after vkQueueSubmit, before wait). Prefer a
+   dedicated XeSS VkDevice so init/PSO compile cannot DeviceWaitIdle the
+   in-flight path queue; borrow the path device only if own create fails. */
 void farm_upscale_prefetch_xess(void);
 void farm_upscale_prepare_xess(farm_Renderer* r);
 

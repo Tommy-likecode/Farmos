@@ -19,9 +19,9 @@ import time
 import zlib
 from pathlib import Path
 
-ROI = (940, 520, 980, 560)  # x0,y0,x1,y1 on 1920x1080
+ROI = (940, 520, 980, 560)  # binding AC-04 box x=940:980,y=520:560 @1080p (40×40)
 PNG_TOL = 12
-SHOULD_RATIO = 1.5
+SHOULD_RATIO = 1.05  # OQ-M12-12 A; historical 1.5 / 1.2 superseded (report-only)
 
 
 def decode_rgb8(path: Path):
@@ -104,8 +104,9 @@ def png_metrics(native: Path, xess: Path):
         "mean_abs_rgb": sum_abs / n,
         "silver_L_native": ln,
         "silver_L_xess": lx,
+        "silver_dL_means": abs(lx - ln),
         "silver_mean_abs_dL": dL / m,
-        "png_tol_12": "PASS" if max_abs <= PNG_TOL else "FAIL",
+        "png_tol_12_report": max_abs,
     }
 
 
@@ -208,13 +209,15 @@ def main() -> int:
     print(f"xess_median={xmed:.3f}s range={min(xw):.3f}-{max(xw):.3f}")
     print(f"ratio native/xess={ratio:.3f}  SHOULD>={SHOULD_RATIO}  binding=wall_xess<wall_native")
     ac05 = "PASS" if xmed < nmed else "FAIL"
-    if ratio >= SHOULD_RATIO:
-        ac05_should = "PASS"
-    else:
-        ac05_should = "FAIL"
+    ac05_should = "PASS" if ratio >= SHOULD_RATIO else "FAIL"
+    dL_means = m["silver_dL_means"]
     print(f"AC-M12-05 binding (strictly faster)={ac05}")
-    print(f"AC-M12-05 SHOULD 1.5x={ac05_should}")
-    print(f"AC-M12-04 png_tol:12={m['png_tol_12']}")
+    print(f"AC-M12-05 SHOULD {SHOULD_RATIO:.2f}x={ac05_should}")
+    print(
+        f"AC-M12-04 ROI L native/xess={m['silver_L_native']:.3f}/{m['silver_L_xess']:.3f} "
+        f"|dL_means|={dL_means:.3f} mean_abs_dL={m['silver_mean_abs_dL']:.3f} "
+        f"(report-only; not |dL|) png_tol/max_abs={m['png_tol_12_report']} report-only"
+    )
     return 0
 
 

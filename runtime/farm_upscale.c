@@ -791,9 +791,17 @@ static int ensure_vk_own(void) {
 
 static int ensure_vk(void) {
   if (g_vk_ready) return 1;
+  /* Prefer a dedicated XeSS device. Borrow shares the path-tracer queue;
+     xessVKCreateContext/xessVKInit (and first-submit PSO compile) can
+     DeviceWaitIdle that queue and serialize onto the in-flight path CB.
+     That residual shows up on the first warm AC-05 median (Pass1). Own
+     device compiles during path wait without touching the path queue.
+     Borrow remains the fallback if own create fails (path device still
+     carries official xessVKGetRequired* extras). */
+  if (ensure_vk_own()) return 1;
   if (!g_borrow_failed && try_borrow_path_vk()) return 1;
   g_borrow_failed = 1;
-  return ensure_vk_own();
+  return 0;
 }
 
 typedef struct {
@@ -1190,11 +1198,8 @@ static void fill_aux(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera
   int cam_moved = r->path_upscale_prev_vp_valid && !vp_close(vp, r->path_upscale_prev_vp);
 
   for (int i = 0; i < np; i++) depth[i] = 1.0f;
-  if (cam_moved) {
-    for (int i = 0; i < np; i++) {
-      mv[i * 2 + 0] = 0.0f;
-      mv[i * 2 + 1] = 0.0f;
-    }
+  if (cam_moved && mv) {
+    memset(mv, 0, (size_t)np * 2u * sizeof(float));
   }
 
   float jx = 0.f, jy = 0.f;

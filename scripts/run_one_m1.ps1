@@ -444,56 +444,69 @@ function Assert-CompileDiags($got, $want, [bool]$exact, [string]$errText) {
   }
 }
 
-function Test-HostVulkanDevice {
-  try {
-    $python = Get-Command python3 -ErrorAction SilentlyContinue
-    if ($null -eq $python) { $python = Get-Command python -ErrorAction SilentlyContinue }
-    if ($null -ne $python) {
-      $py = @'
-import ctypes, sys
-lib=None
-for n in ("vulkan-1.dll","libvulkan.so.1"):
-    try:
-        lib=ctypes.CDLL(n); break
-    except OSError:
-        pass
-if not lib:
-    sys.exit(2)
-VK_SUCCESS=0
-class App(ctypes.Structure):
-    _fields_=[("sType",ctypes.c_uint32),("pNext",ctypes.c_void_p),("pApplicationName",ctypes.c_char_p),("applicationVersion",ctypes.c_uint32),("pEngineName",ctypes.c_char_p),("engineVersion",ctypes.c_uint32),("apiVersion",ctypes.c_uint32)]
-class InstCI(ctypes.Structure):
-    _fields_=[("sType",ctypes.c_uint32),("pNext",ctypes.c_void_p),("flags",ctypes.c_uint32),("pApplicationInfo",ctypes.POINTER(App)),("enabledLayerCount",ctypes.c_uint32),("ppEnabledLayerNames",ctypes.c_void_p),("enabledExtensionCount",ctypes.c_uint32),("ppEnabledExtensionNames",ctypes.c_void_p)]
-create=lib.vkCreateInstance; create.restype=ctypes.c_int32
-enumd=lib.vkEnumeratePhysicalDevices; enumd.restype=ctypes.c_int32
-destroy=lib.vkDestroyInstance
-app=App(0,None,b"farmos-harness",0,None,0,(1<<22)|(1<<12))
-ci=InstCI(1,None,0,ctypes.pointer(app),0,None,0,None)
-inst=ctypes.c_void_p()
-create.argtypes=[ctypes.POINTER(InstCI),ctypes.c_void_p,ctypes.POINTER(ctypes.c_void_p)]
-if create(ctypes.byref(ci),None,ctypes.byref(inst))!=VK_SUCCESS or not inst.value:
-    sys.exit(2)
-count=ctypes.c_uint32(0)
-enumd.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_uint32),ctypes.c_void_p]
-rc=enumd(inst,ctypes.byref(count),None)
-destroy.argtypes=[ctypes.c_void_p,ctypes.c_void_p]
-destroy(inst,None)
-sys.exit(0 if rc==VK_SUCCESS and count.value>0 else 2)
-'@
-      $p = Start-Process -FilePath $python.Source -ArgumentList @("-c", $py) -Wait -PassThru -NoNewWindow
-      return ($p.ExitCode -eq 0)
-    }
-  } catch { }
+# Windows Arc false soft-skip (M7/M12 harness backlog):
+# 1) Start-Process -ArgumentList @("-c", $multilinePy) mangles embedded quotes
+#    (b"farmos-harness") so the probe exits non-zero on hosts that have Vulkan.
+# 2) Start-Process ExitCode is unreliable (see test_parallel_builds.ps1).
+# 3) Missing / Store-stub python used to return $false → skip even when
+#    vulkan-1.dll enumerates an Arc device.
+# Soft-skip only after a real probe says "no device". If the loader is
+# present and the probe cannot run, run the fixture (hard-fail honestly).
+$script:HostVulkanDeviceCache = $null
+$script:HostVulkanRtDeviceCache = $null
+
+function Get-HarnessPython {
+  foreach ($n in @('python3', 'python')) {
+    $cmd = Get-Command $n -ErrorAction SilentlyContinue
+    if ($null -eq $cmd) { continue }
+    $src = $cmd.Source
+    if ([string]::IsNullOrEmpty($src) -or -not (Test-Path -LiteralPath $src)) { continue }
+    $item = Get-Item -LiteralPath $src -ErrorAction SilentlyContinue
+    # WindowsApps python.exe / python3.exe stubs are 0 bytes and exit 9009.
+    if ($null -ne $item -and $item.Length -eq 0) { continue }
+    if ($src -match '\\WindowsApps\\') { continue }
+    return $cmd
+  }
+  return $null
+}
+
+function Test-VulkanLoaderPresent {
+  foreach ($n in @('vulkan-1.dll', 'libvulkan.so.1')) {
+    $sys32 = Join-Path $env:WINDIR ("System32\" + $n)
+    if ($env:WINDIR -and (Test-Path -LiteralPath $sys32)) { return $true }
+    try {
+      $cmd = Get-Command $n -ErrorAction SilentlyContinue
+      if ($null -ne $cmd) { return $true }
+    } catch { }
+  }
+  if (-not ([System.Management.Automation.PSTypeName]'FarmcHarness.VkLoad').Type) {
+    try {
+      Add-Type -Namespace FarmcHarness -Name VkLoad -MemberDefinition @"
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError=true, CharSet=System.Runtime.InteropServices.CharSet.Ansi)]
+        public static extern System.IntPtr LoadLibraryA(string name);
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError=true)]
+        public static extern bool FreeLibrary(System.IntPtr h);
+"@
+    } catch { }
+  }
+  if (([System.Management.Automation.PSTypeName]'FarmcHarness.VkLoad').Type) {
+    try {
+      $h = [FarmcHarness.VkLoad]::LoadLibraryA('vulkan-1.dll')
+      if ($h -ne [IntPtr]::Zero) {
+        [void][FarmcHarness.VkLoad]::FreeLibrary($h)
+        return $true
+      }
+    } catch { }
+  }
   return $false
 }
 
-function Test-HostVulkanRtDevice {
-  try {
-    $python = Get-Command python3 -ErrorAction SilentlyContinue
-    if ($null -eq $python) { $python = Get-Command python -ErrorAction SilentlyContinue }
-    if ($null -ne $python) {
-      $py = @'
+function Invoke-VulkanCtypesProbe([bool]$NeedRt) {
+  $python = Get-HarnessPython
+  if ($null -eq $python) { return -1 }
+  $py = @'
 import ctypes, sys
+need_rt = sys.argv[1] == "rt"
 lib=None
 for n in ("vulkan-1.dll","libvulkan.so.1"):
     try:
@@ -507,13 +520,11 @@ class App(ctypes.Structure):
     _fields_=[("sType",ctypes.c_uint32),("pNext",ctypes.c_void_p),("pApplicationName",ctypes.c_char_p),("applicationVersion",ctypes.c_uint32),("pEngineName",ctypes.c_char_p),("engineVersion",ctypes.c_uint32),("apiVersion",ctypes.c_uint32)]
 class InstCI(ctypes.Structure):
     _fields_=[("sType",ctypes.c_uint32),("pNext",ctypes.c_void_p),("flags",ctypes.c_uint32),("pApplicationInfo",ctypes.POINTER(App)),("enabledLayerCount",ctypes.c_uint32),("ppEnabledLayerNames",ctypes.c_void_p),("enabledExtensionCount",ctypes.c_uint32),("ppEnabledExtensionNames",ctypes.c_void_p)]
-class Ext(ctypes.Structure):
-    _fields_=[("extensionName",ctypes.c_char*256),("specVersion",ctypes.c_uint32)]
 create=lib.vkCreateInstance; create.restype=ctypes.c_int32
 enumd=lib.vkEnumeratePhysicalDevices; enumd.restype=ctypes.c_int32
-enumext=lib.vkEnumerateDeviceExtensionProperties; enumext.restype=ctypes.c_int32
 destroy=lib.vkDestroyInstance
-app=App(0,None,b"farmos-harness-rt",0,None,0,(1<<22)|(2<<12))
+api=(1<<22)|(2<<12) if need_rt else (1<<22)|(1<<12)
+app=App(0,None,b"farmos-harness",0,None,0,api)
 ci=InstCI(1,None,0,ctypes.pointer(app),0,None,0,None)
 inst=ctypes.c_void_p()
 create.argtypes=[ctypes.POINTER(InstCI),ctypes.c_void_p,ctypes.POINTER(ctypes.c_void_p)]
@@ -522,11 +533,17 @@ if create(ctypes.byref(ci),None,ctypes.byref(inst))!=VK_SUCCESS or not inst.valu
 count=ctypes.c_uint32(0)
 enumd.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_uint32),ctypes.c_void_p]
 rc=enumd(inst,ctypes.byref(count),None)
+if (not need_rt):
+    destroy.argtypes=[ctypes.c_void_p,ctypes.c_void_p]; destroy(inst,None)
+    sys.exit(0 if rc==VK_SUCCESS and count.value>0 else 2)
 if rc!=VK_SUCCESS or count.value==0:
     destroy.argtypes=[ctypes.c_void_p,ctypes.c_void_p]; destroy(inst,None); sys.exit(2)
 devices=(ctypes.c_void_p*count.value)()
 if enumd(inst,ctypes.byref(count),devices)!=VK_SUCCESS:
     destroy.argtypes=[ctypes.c_void_p,ctypes.c_void_p]; destroy(inst,None); sys.exit(2)
+class Ext(ctypes.Structure):
+    _fields_=[("extensionName",ctypes.c_char*256),("specVersion",ctypes.c_uint32)]
+enumext=lib.vkEnumerateDeviceExtensionProperties; enumext.restype=ctypes.c_int32
 enumext.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.POINTER(ctypes.c_uint32),ctypes.c_void_p]
 need=(b"VK_KHR_acceleration_structure", b"VK_KHR_ray_query")
 ok=False
@@ -544,11 +561,66 @@ destroy.argtypes=[ctypes.c_void_p,ctypes.c_void_p]
 destroy(inst,None)
 sys.exit(0 if ok else 2)
 '@
-      $p = Start-Process -FilePath $python.Source -ArgumentList @("-c", $py) -Wait -PassThru -NoNewWindow
-      return ($p.ExitCode -eq 0)
+  $tmp = Join-Path $env:TEMP ("farmc_vkprobe_" + [guid]::NewGuid().ToString("N") + ".py")
+  try {
+    Set-Content -Encoding ASCII -LiteralPath $tmp $py
+    $mode = "device"
+    if ($NeedRt) { $mode = "rt" }
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $python.Source
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+    $argTmp = '"' + ($tmp.Replace('\','\\').Replace('"','\"')) + '"'
+    $psi.Arguments = $argTmp + " " + $mode
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    [void]$p.Start()
+    [void]$p.StandardOutput.ReadToEnd()
+    [void]$p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+    return [int]$p.ExitCode
+  } finally {
+    Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+  }
+}
+
+function Test-HostVulkanDevice {
+  if ($null -ne $script:HostVulkanDeviceCache) { return $script:HostVulkanDeviceCache }
+  $probed = $false
+  $ok = $false
+  try {
+    $rc = Invoke-VulkanCtypesProbe $false
+    if ($rc -ge 0) {
+      $probed = $true
+      $ok = ($rc -eq 0)
     }
   } catch { }
-  return $false
+  if (-not $probed) {
+    # Tooling failed. Loader present → run (or hard-fail); absent → skip.
+    $ok = [bool](Test-VulkanLoaderPresent)
+  }
+  $script:HostVulkanDeviceCache = $ok
+  return $ok
+}
+
+function Test-HostVulkanRtDevice {
+  if ($null -ne $script:HostVulkanRtDeviceCache) { return $script:HostVulkanRtDeviceCache }
+  $probed = $false
+  $ok = $false
+  try {
+    $rc = Invoke-VulkanCtypesProbe $true
+    if ($rc -ge 0) {
+      $probed = $true
+      $ok = ($rc -eq 0)
+    }
+  } catch { }
+  if (-not $probed) {
+    $ok = [bool](Test-VulkanLoaderPresent)
+  }
+  $script:HostVulkanRtDeviceCache = $ok
+  return $ok
 }
 
 if ($exp.requiresVulkan -and -not (Test-HostVulkanDevice)) {
