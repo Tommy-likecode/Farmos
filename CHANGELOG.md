@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+M13 — performance / more speed (`spec/M13-performance.md` FINAL):
+
+- SHOULD display-equivalent ≥ **1.20×** on TommyLaptop Arc after warm-up for **both** Pass1 and Pass2 (OQ-M13-01 A / OQ-M13-02 A). M12 ≥ **1.05×** remains the floor. Baseline product `d23acfb3` Pass1 **1.264** / Pass2 **1.348**. Arc PASS/FAIL filled after TommyLaptop CLAIM.
+- Host amortization: in-process multi-frame Arc timing via internal `FARMOS_PATH_FRAME_MS=1` (`frame_ms=` lines). No new public `.fm` API. Dedicated XeSS `VkDevice` kept. Process-per-frame AC-05 still reports the M12 floor.
+- OUT unchanged: frame-gen, OS window, DLSS/Enabler/Swapper/OptiScaler, lower render-res, lower spp as the speed strategy.
+- Fixtures: `spec/tests/M13/`. Linux `# requires_xess` soft-skip; OFF twins + trap 122 + size glue ≤700 KiB remain.
+
 M12 backlog clear (post `f5b87f8f`; OQ-M12-12/13 A gates unchanged):
 
 - Spec/PLAN/README 2026-10-25 clarification: pinned AC-04 ROI `x=940:980,y=520:560` @1080p; binding \|ΔL\| is \|L_xess − L_native\| of means (baseline ≈0.650). 3.932 is mean_abs_dL report-only.
