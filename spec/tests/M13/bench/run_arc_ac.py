@@ -59,6 +59,7 @@ def main() -> int:
         native5 = native5.with_suffix(".exe")
         xess5 = xess5.with_suffix(".exe")
 
+    os.environ.setdefault("FARM_RUNTIME", str(Path(__file__).resolve().parents[4] / "runtime"))
     print("building M12 AC-04/05 sources…")
     m12.build(farmc, bench / "ac04_native_1080.fm", native4)
     m12.build(farmc, bench / "ac04_xess_960.fm", xess4)

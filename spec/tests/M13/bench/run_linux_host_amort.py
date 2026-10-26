@@ -42,10 +42,16 @@ function main(): int {{
 FRAME_RE = re.compile(r"^frame_ms=([0-9.]+)\s*$", re.M)
 
 
+def repo_runtime() -> Path:
+    return Path(__file__).resolve().parents[4] / "runtime"
+
+
 def build(farmc: Path, src: Path, out_exe: Path) -> None:
     out_exe.parent.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env.setdefault("FARM_RUNTIME", str(repo_runtime()))
     p = subprocess.run([str(farmc), "build", str(src), "-o", str(out_exe)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, env=env)
     if p.returncode != 0:
         sys.stderr.write(p.stdout or "")
         sys.stderr.write(p.stderr or "")
@@ -54,6 +60,7 @@ def build(farmc: Path, src: Path, out_exe: Path) -> None:
 
 def run_exe(exe: Path, cwd: Path) -> tuple[int, float, str]:
     env = os.environ.copy()
+    env.setdefault("FARM_RUNTIME", str(repo_runtime()))
     env["FARMOS_PATH_FRAME_MS"] = "1"
     t0 = time.perf_counter()
     p = subprocess.run([str(exe)], cwd=str(cwd), env=env, capture_output=True, text=True)
@@ -111,9 +118,14 @@ def run_case(farmc: Path, out: Path, tag: str, w: int, h: int, spp: int,
     proc_med = median(proc_walls)
     in_med = median(timed_in)
     ratio = (proc_med / in_med) if in_med > 0 else 0.0
+    def rng(xs: list[float]) -> str:
+        if not xs:
+            return "n/a"
+        return f"{min(xs):.3f}-{max(xs):.3f}"
+
     print(f"{tag} {w}x{h} spp={spp} errors={errors} frames_done={frames_done}")
-    print(f"  process_per_frame_median_ms={proc_med:.3f} n={len(proc_walls)}")
-    print(f"  inproc_frame_median_ms={in_med:.3f} n={len(timed_in)}")
+    print(f"  process_per_frame_median_ms={proc_med:.3f} n={len(proc_walls)} range={rng(proc_walls)}")
+    print(f"  inproc_frame_median_ms={in_med:.3f} n={len(timed_in)} range={rng(timed_in)}")
     print(f"  proc/inproc={ratio:.3f}")
     print(f"  inproc_process_wall_ms={in_wall*1000.0:.3f}")
     return {
