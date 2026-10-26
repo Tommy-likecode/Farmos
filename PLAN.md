@@ -214,6 +214,28 @@ M12 — Native Vulkan upscale (XeSS / FSR) [added 2026-10-21 by PM/user GO draft
 - Spec: `spec/M12-native-upscale.md` (**FINAL**); fixtures: `spec/tests/M12/`. M1–M11 untouched.
 - Order: after M11.
 
+
+M13 — Performance / more speed (post-M12) [added 2026-10-26 by PM/user GO draft-m13-perf]
+- Goal: raise display-equivalent speed on TommyLaptop Arc (XeSS path) after M12 without regressing M12 binding ACs; engine + host amortization first.
+- Status: **FINAL** (PM/user 2026-10-26: OQ-M13-01..08 all **accepted A**; poteto **HOLD** until PM assigns coding).
+- Baseline: master tip `affc63ea` (PR #21 clear-m12-backlog; eggtooth AUDIT PASS); Arc CLAIM product `d23acfb3` Pass1 **1.264** / Pass2 **1.348** under M12 OQ-12 A.
+- M12 floor (MUST NOT regress): OQ-12 A SHOULD ≥ **1.05×**; XeSS wall strictly < native; OQ-13 A ROI L **[80, 200]** + |ΔL| of means ≤ 5.0; ROI pinned `x=940:980,y=520:560` @1080p 40×40; OFF twins; trap 122; ≤700 KiB glue; frame-gen OUT; no window.
+- Soft backlog (stale tip L~187/3.932 labels; LF drift): non-blocking notes only — do not block M13.
+- Binding (OQ-M13-01..08 A — PM/user 2026-10-26):
+  - OQ-M13-01 **A**: SHOULD ≥ **1.20×** (reclaim historical M12 OQ-10 A as M13 SHOULD); M12 ≥1.05× remains floor; document `d23acfb3` 1.264/1.348.
+  - OQ-M13-02 **A**: both Pass1 and Pass2 ≥ **1.20×**; report ms; no hard ms cap yet.
+  - OQ-M13-03 **A**: host + path/RT engine + aux/PSO; keep 960×540→1080p default; XeSS quality-mode OK if AC-04 holds.
+  - OQ-M13-04 **A**: no new public `.fm` API; MAY env/internal hooks.
+  - OQ-M13-05 **A**: MUST NOT regress M12 binding quality / OFF / size / OUT list.
+  - OQ-M13-06 **A**: no new PE ceiling; keep ≤700 KiB glue; hello ≤20; prior caps.
+  - OQ-M13-07 **A**: frame-gen / window / DLSS/Enabler/Swapper remain OUT.
+  - OQ-M13-08 **A**: TommyLaptop Arc primary; Linux `# requires_xess` soft-skip; CPU OFF twins green.
+- Out (locked): frame-gen; OS window; DLSS/Enabler; lower render-res default; lowering spp as speed strategy; artwork change; quality band widen.
+- AC: AC-M13-01..09 in `spec/M13-performance.md` (binding under OQ-01..08 A).
+- Spec: `spec/M13-performance.md` (**FINAL**); fixtures: `spec/tests/M13/`.
+- Order: after M12.
+- Open questions: **none**.
+
 ## Team
 - Projects Manager: plan, priorities, handoffs, acceptance.
 - poteto: all coding (via Cursor cloud agents), per milestone, reports status/blockers.
