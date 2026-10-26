@@ -48,6 +48,10 @@ def main() -> int:
     print(f"out={out}")
     print(f"FARMOS_XESS_LIB={os.environ.get('FARMOS_XESS_LIB', '')}")
     print(f"M13 SHOULD>={SHOULD_RATIO:.2f}  M12 floor>={FLOOR_RATIO:.2f}")
+    print("This process is one pass. Pass1: delete PSO caches, then run this script.")
+    print("Pass2: leave warm PSO caches, run this script again.")
+    print("In-process ratio is the M13 SHOULD. Process-per-frame ratio is the M12 floor.")
+    print("Do not compare in-process ms to d23acfb3 process-per-frame seconds.")
 
     native4 = out / "ac04_native"
     xess4 = out / "ac04_xess"

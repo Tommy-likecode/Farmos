@@ -1456,8 +1456,7 @@ int64_t farm_Renderer_getPathPreviewSpp(farm_Renderer* self) {
 }
 
 void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_PerspectiveCamera* camera) {
-  static int timed_env = -1;
-  if (timed_env < 0) timed_env = farm_env_is_1("FARMOS_PATH_FRAME_MS");
+  int timed_env = farm_env_is_1("FARMOS_PATH_FRAME_MS");
   uint64_t t0 = 0;
   if (timed_env) t0 = farm_now_ns();
 
