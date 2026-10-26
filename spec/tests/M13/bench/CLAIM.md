@@ -7,6 +7,7 @@
 |-------|--------|
 | PR | #22 (draft) https://github.com/Tommy-likecode/Farmos/pull/22 |
 | Branch | `cursor/m13-performance-a23d` |
+| Docs HEAD | `1579b5401e1f7e453361c5ede08f896b6e30db22` |
 | Product SHA | `945c13aeaf7fb086bfc718c7d869358441706a17` (`FARMOS_PATH_FRAME_MS`) |
 | Master baseline | `affc63ea00f147f9ad09a0d559d0650e4543287a` (PR #21) |
 | Product baseline (Arc CLAIM) | `d23acfb3d8efde48698f210a9f7666c377bfb9f2` Pass1 **1.264** / Pass2 **1.348** |
