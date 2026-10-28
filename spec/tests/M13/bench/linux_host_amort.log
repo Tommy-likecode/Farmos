@@ -1,0 +1,19 @@
+# Frozen Linux host-amort run. Recreate with:
+#   python3 spec/tests/M13/bench/run_linux_host_amort.py build/farmc --out out/m13_linux
+# Host: 4 cores, load 0.45, 2026-10-26T10:44:16Z, product 945c13ae + FARM_RUNTIME pin.
+farmc=/workspace/build/farmc
+out=/tmp/m13_linux4
+load=10:44:16 up 13 min,  0 user,  load average: 0.45, 0.25, 0.14
+easy 8x8 spp=1 errors=0 frames_done=10
+  process_per_frame_median_ms=0.544 n=5 range=0.535-0.592
+  inproc_frame_median_ms=0.010 n=5 range=0.010-0.010
+  proc/inproc=54.351
+  inproc_process_wall_ms=0.606
+target 32x32 spp=1 errors=0 frames_done=10
+  process_per_frame_median_ms=0.927 n=5 range=0.812-1.300
+  inproc_frame_median_ms=0.153 n=5 range=0.151-0.155
+  proc/inproc=6.059
+  inproc_process_wall_ms=1.809
+error_count=0
+frames_done=20
+PASS host_amort

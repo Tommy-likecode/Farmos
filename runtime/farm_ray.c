@@ -19,6 +19,7 @@
 #include <windows.h>
 #else
 #include <pthread.h>
+#include <time.h>
 #endif
 
 #ifndef M_PI
@@ -1336,6 +1337,26 @@ static int farm_env_is_1(const char* name) {
   return e && e[0] == '1' && e[1] == '\0';
 }
 
+static uint64_t farm_now_ns(void) {
+#ifdef _WIN32
+  static LARGE_INTEGER freq;
+  static int init;
+  LARGE_INTEGER c;
+  if (!init) {
+    QueryPerformanceFrequency(&freq);
+    init = 1;
+  }
+  QueryPerformanceCounter(&c);
+  if (freq.QuadPart <= 0) return 0;
+  return (uint64_t)((double)c.QuadPart * 1000000000.0 / (double)freq.QuadPart);
+#else
+  struct timespec ts;
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+    clock_gettime(CLOCK_REALTIME, &ts);
+  return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+#endif
+}
+
 static void farm_renderer_maybe_denoise(farm_Renderer* self) {
 #ifdef FARM_ENABLE_DENOISE
   farm_renderer_apply_path_denoise(self);
@@ -1435,6 +1456,10 @@ int64_t farm_Renderer_getPathPreviewSpp(farm_Renderer* self) {
 }
 
 void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_PerspectiveCamera* camera) {
+  int timed_env = farm_env_is_1("FARMOS_PATH_FRAME_MS");
+  uint64_t t0 = 0;
+  if (timed_env) t0 = farm_now_ns();
+
   if (self->disposed) farm_trap(105, "use after dispose");
   if (self->width <= 0 || self->height <= 0) farm_trap(107, "invalid renderer size");
   if (self->samples < 1) farm_trap(112, "invalid sample count");
@@ -1473,7 +1498,7 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
     if (rt_ok) {
       farm_renderer_maybe_denoise(self);
       farm_renderer_maybe_upscale(self, scene, camera);
-      return;
+      goto path_done;
     }
     if (farm_env_is_1("FARMOS_PATH_GPU_STRICT"))
       farm_trap(117, "vulkan path failed");
@@ -1483,7 +1508,7 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
     if (gpu_ok) {
       farm_renderer_maybe_denoise(self);
       farm_renderer_maybe_upscale(self, scene, camera);
-      return;
+      goto path_done;
     }
   } else if (self->path_backend == 1) {
     int gpu_ok = 0;
@@ -1492,13 +1517,14 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
     if (gpu_ok) {
       farm_renderer_maybe_denoise(self);
       farm_renderer_maybe_upscale(self, scene, camera);
-      return;
+      goto path_done;
     }
     if (farm_env_is_1("FARMOS_PATH_GPU_STRICT"))
       farm_trap(117, "vulkan path failed");
   }
 #endif
 
+  {
   PathWorld world;
   memset(&world, 0, sizeof(world));
   world.scene = scene;
@@ -1575,4 +1601,11 @@ void farm_Renderer_renderPath(farm_Renderer* self, farm_Scene* scene, farm_Persp
   }
   farm_renderer_maybe_denoise(self);
   farm_renderer_maybe_upscale(self, scene, camera);
+  }
+path_done:
+  if (timed_env) {
+    uint64_t dt = farm_now_ns() - t0;
+    printf("frame_ms=%.3f\n", (double)dt / 1000000.0);
+    fflush(stdout);
+  }
 }

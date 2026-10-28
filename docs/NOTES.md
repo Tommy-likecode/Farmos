@@ -251,3 +251,25 @@ Implementation-owned glue in `runtime/farm_upscale.c`, called after denoise from
   ≥1.2× / [80,140] superseded. Linux M12 8/8, M4 24/24, M11 4/4, M7 9/9,
   ELF B-11 **68088**. Enabler not used. **No merge** from this CloudAgent run.
 
+## M13 performance / more speed
+
+Spec: `spec/M13-performance.md` FINAL (OQ-M13-01..08 A). Arc SHOULD ≥ **1.20×**
+both Pass1 and Pass2 after warm-up. M12 ≥ **1.05×** floor unchanged. Baseline
+product `d23acfb3` Pass1 **1.264** / Pass2 **1.348**. Master tip `affc63ea`.
+
+- **API:** no new `.fm` public API. Internal `FARMOS_PATH_FRAME_MS=1` prints
+  `frame_ms=<ms>` per `renderPath` for in-process benches.
+- **Harness:** `spec/tests/M13/bench/run_arc_ac.py` reuses M12 `ac04_*` /
+  `ac05_*` sources. Primary ratio is in-process frame samples after dropping
+  3 warmup frames. Process-per-frame AC-05 still reports the M12 floor.
+  Linux host-amort check: `run_linux_host_amort.py` (CPU, no SDK).
+- **Device:** dedicated XeSS VkDevice kept. Enabler / Swapper / OptiScaler OUT.
+- Arc CLAIM **PASS** 2026-10-28 (TommyLaptop, dirty chrome/msedge informational)
+  at measured tip `e4978668` / product `945c13ae`. In-process SHOULD Pass1
+  **1.455×** (2570.275 / 1766.219 ms) / Pass2 **1.607×** (2575.415 / 1602.777 ms).
+  Process-per-frame M12 floor Pass1 **1.288×** (4.729 / 3.671 s) / Pass2
+  **1.288×** (4.608 / 3.578 s). XeSS < native both protocols. ROI L
+  **105.810 / 105.801**, \|ΔL\| of means **0.009**, mean_abs_dL **0.440**
+  report-only. PE ac05_xess **324096**. Do not compare in-process ms to
+  `d23acfb3` process-per-frame **1.264 / 1.348**. **No merge.**
+
