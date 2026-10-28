@@ -264,5 +264,12 @@ product `d23acfb3` Pass1 **1.264** / Pass2 **1.348**. Master tip `affc63ea`.
   3 warmup frames. Process-per-frame AC-05 still reports the M12 floor.
   Linux host-amort check: `run_linux_host_amort.py` (CPU, no SDK).
 - **Device:** dedicated XeSS VkDevice kept. Enabler / Swapper / OptiScaler OUT.
-- Arc CLAIM PASS/FAIL is filled on TommyLaptop. Do not invent ms.
+- Arc CLAIM **PASS** 2026-10-28 (TommyLaptop, dirty chrome/msedge informational)
+  at measured tip `e4978668` / product `945c13ae`. In-process SHOULD Pass1
+  **1.455×** (2570.275 / 1766.219 ms) / Pass2 **1.607×** (2575.415 / 1602.777 ms).
+  Process-per-frame M12 floor Pass1 **1.288×** (4.729 / 3.671 s) / Pass2
+  **1.288×** (4.608 / 3.578 s). XeSS < native both protocols. ROI L
+  **105.810 / 105.801**, \|ΔL\| of means **0.009**, mean_abs_dL **0.440**
+  report-only. PE ac05_xess **324096**. Do not compare in-process ms to
+  `d23acfb3` process-per-frame **1.264 / 1.348**. **No merge.**
 
