@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+M14 — performance / more speed (`spec/M14-performance.md` FINAL):
+
+- SHOULD display-equivalent ≥ **1.50×** on TommyLaptop Arc after warm-up for **both** Pass1 and Pass2 (OQ-M14-01 A / OQ-M14-02 A), in-process `FARMOS_PATH_FRAME_MS`. M13 ≥ **1.20×** inproc and M12 ≥ **1.05×** process-per-frame remain floors. Baseline product `945c13ae` Pass1 **1.455** / Pass2 **1.607** (inproc). Do **not** compare in-process ms to `d23acfb3` process-per-frame.
+- Engine / host-RT / PSO (one hypothesis each): persist static AS `PREFER_FAST_TRACE`; defer XeSS 1080p host download until `savePNG`; dummy XeSS execute during `prepare_xess` on the dedicated device while path GPU is in flight. No new public `.fm` API. `FARMOS_PATH_FRAME_MS` kept.
+- Arc CLAIM **PENDING Arc** until poteto fills TommyLaptop numbers. Official SDK only. Enabler still OUT.
+- OUT unchanged: frame-gen, OS window, DLSS/Enabler/Swapper/OptiScaler, lower render-res, lower spp as the speed strategy.
+- Fixtures: `spec/tests/M14/`. Linux `# requires_xess` soft-skip; OFF twins + trap 122 + size glue ≤700 KiB remain.
+
 M13 — performance / more speed (`spec/M13-performance.md` FINAL):
 
 - SHOULD display-equivalent ≥ **1.20×** on TommyLaptop Arc after warm-up for **both** Pass1 and Pass2 (OQ-M13-01 A / OQ-M13-02 A). M12 ≥ **1.05×** remains the floor. Baseline product `d23acfb3` Pass1 **1.264** / Pass2 **1.348** is **process-per-frame** (do not compare to in-process ms).

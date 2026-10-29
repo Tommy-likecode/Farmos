@@ -1,5 +1,17 @@
 # Farmos
 
+## M14 — performance / more speed (post-M13)
+
+Spec: `spec/M14-performance.md` (FINAL). Fixtures: `spec/tests/M14/`.
+
+- In-process `FARMOS_PATH_FRAME_MS` SHOULD ≥ **1.50×** both Pass1 and Pass2 on TommyLaptop Arc (960×540→1080p). M13 ≥ **1.20×** inproc and M12 ≥ **1.05×** process-per-frame remain floors.
+- Levers: persist AS `PREFER_FAST_TRACE`; defer XeSS display host readback to `savePNG`; dummy XeSS PSO execute during path wait. No new public `.fm` API.
+- **OUT:** frame-gen, OS window, DLSS/Enabler/Swapper/OptiScaler. Official XeSS only. Arc CLAIM **PENDING Arc**.
+
+Linux: `bash scripts/run_suite_linux.sh build/farmc spec/tests/M14`
+
+---
+
 ## M12 — native Vulkan upscale (XeSS / FSR)
 
 Spec: `spec/M12-native-upscale.md` (FINAL). Fixtures: `spec/tests/M12/` (ctest `m12_*`).

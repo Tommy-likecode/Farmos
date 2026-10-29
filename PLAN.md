@@ -236,6 +236,28 @@ M13 — Performance / more speed (post-M12) [added 2026-10-26 by PM/user GO draf
 - Order: after M12.
 - Open questions: **none**.
 
+
+M14 — Performance / more speed (post-M13) [added 2026-10-29 by PM/user GO draft-m14 more-perf]
+- Goal: raise display-equivalent speed on TommyLaptop Arc (XeSS path) beyond M13 host amort without regressing M12/M13 binding meters; path/RT engine + aux/PSO first.
+- Status: **FINAL** (PM/user 2026-10-29: OQ-M14-01..08 all **accepted A**; poteto **HOLD** until PM assigns coding).
+- Baseline: master tip `47949c82` (PR #22 M13 squash; eggtooth AUDIT PASS); product `945c13ae` inproc Pass1 **1.455** / Pass2 **1.607**.
+- Floors (MUST NOT regress / weaken): M12 process-per-frame ≥ **1.05×**; XeSS < native; ROI [80,200] + |ΔL|≤5 pinned `x=940:980,y=520:560`; OFF; trap 122; ≤700 KiB; frame-gen OUT; M13 inproc `FARMOS_PATH_FRAME_MS` ≥ **1.20×** both Pass1+Pass2.
+- Soft backlog (AC-M13-04 text omits FARMOS_PATH_FRAME_MS; OQ-01 old p-p-f rationale): notes only — do not block M14; do not reopen M13 OQs.
+- Binding (OQ-M14-01..08 A — PM/user 2026-10-29):
+  - OQ-M14-01 **A**: SHOULD ≥ **1.50×** both Pass1+Pass2 inproc `FARMOS_PATH_FRAME_MS`; document `945c13ae` 1.455/1.607; M13 ≥1.20× + M12 ≥1.05× floors stand.
+  - OQ-M14-02 **A**: both Pass1+Pass2 ≥ **1.50×**; report ms; no hard ms cap yet.
+  - OQ-M14-03 **A**: path/RT engine + aux/PSO primary; keep 960×540→1080p; XeSS quality OK if AC-04 holds.
+  - OQ-M14-04 **A**: no new public `.fm` API; MAY env/internal hooks; keep `FARMOS_PATH_FRAME_MS`.
+  - OQ-M14-05 **A**: MUST NOT regress M12 binding or weaken M13 ≥1.20×.
+  - OQ-M14-06 **A**: no new PE ceiling; keep ≤700 KiB glue; hello ≤20; prior caps.
+  - OQ-M14-07 **A**: frame-gen / window / DLSS/Enabler/Swapper remain OUT.
+  - OQ-M14-08 **A**: TommyLaptop Arc primary; Linux `# requires_xess` soft-skip; CPU OFF twins green.
+- Out (locked): frame-gen; OS window; DLSS/Enabler; lower render-res default; lowering spp as speed strategy; artwork change; quality band widen.
+- AC: AC-M14-01..10 in `spec/M14-performance.md` (binding under OQ-01..08 A).
+- Spec: `spec/M14-performance.md` (**FINAL**); fixtures: `spec/tests/M14/`.
+- Order: after M13.
+- Open questions: **none**.
+
 ## Team
 - Projects Manager: plan, priorities, handoffs, acceptance.
 - poteto: all coding (via Cursor cloud agents), per milestone, reports status/blockers.

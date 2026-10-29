@@ -273,3 +273,27 @@ product `d23acfb3` Pass1 **1.264** / Pass2 **1.348**. Master tip `affc63ea`.
   report-only. PE ac05_xess **324096**. Do not compare in-process ms to
   `d23acfb3` process-per-frame **1.264 / 1.348**. **No merge.**
 
+## M14 performance / more speed
+
+Spec: `spec/M14-performance.md` FINAL (OQ-M14-01..08 A). Arc SHOULD ≥ **1.50×**
+both Pass1 and Pass2 after warm-up under in-process `FARMOS_PATH_FRAME_MS`.
+M13 ≥ **1.20×** inproc and M12 ≥ **1.05×** process-per-frame remain floors.
+Baseline product `945c13ae` Pass1 **1.455** / Pass2 **1.607**. Master tip
+`47949c82`. Do not compare in-process ms to `d23acfb3`.
+
+- **API:** no new `.fm` public API. Keep `FARMOS_PATH_FRAME_MS=1`.
+- **H1 (kept):** persisted static BLAS/TLAS built with
+  `VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR` (was FAST_BUILD).
+  First-frame AS build stays warmup.
+- **H2 (kept):** XeSS display `vkCmdCopyImageToBuffer` + RGB unpack deferred to
+  `savePNG` via `Renderer.path_upscale_flush` (NULL when upscale is DCE'd).
+  Timed inproc `frame_ms` no longer includes the 1080p host download. Preview
+  still unpacks immediately. Process-per-frame AC-05 still includes `savePNG`.
+- **H3 (kept):** dummy XeSS execute during `farm_upscale_prepare_xess` on the
+  dedicated XeSS device while the path queue is in flight (Pass1 PSO overlap).
+- **Not applied:** fill_aux one-pass (M13 ~0.06 ms); XeSS quality-mode; GPU
+  export/import skip of color/depth host round-trip.
+- **Harness:** `spec/tests/M14/bench/run_arc_ac.py` reuses M12 `ac04_*` /
+  `ac05_*`. Linux: `run_linux_host_amort.py`.
+- Arc CLAIM **PENDING Arc**. Enabler / Swapper / OptiScaler OUT. **No merge.**
+
