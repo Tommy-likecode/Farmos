@@ -316,6 +316,7 @@ struct farm_Renderer {
   int32_t path_upscale_rw, path_upscale_rh, path_upscale_dw, path_upscale_dh;
   int32_t path_upscale_base_w, path_upscale_base_h;
   int32_t fb_width, fb_height; /* savePNG size after upscale; 0 = use width/height */
+  void (*path_upscale_flush)(struct farm_Renderer*); /* XeSS GPU display → host; DCE-safe */
   int32_t path_upscale_frame;
   int8_t path_upscale_hist_valid;
   int8_t path_upscale_prev_vp_valid;

@@ -1008,7 +1008,9 @@ static void fill_build_info(uint8_t* inf80, uint32_t type, VkAccelerationStructu
   memset(inf80, 0, 80);
   *(uint32_t*)inf80 = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
   *(uint32_t*)(inf80 + 16) = type;
-  *(uint32_t*)(inf80 + 20) = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR;
+  /* H1: static artwork + persist reuse → FAST_TRACE. FAST_BUILD was for
+     interactive rebuilds; first-frame build is warmup (dropped from inproc). */
+  *(uint32_t*)(inf80 + 20) = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
   *(uint32_t*)(inf80 + 24) = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
   memcpy(inf80 + 40, &dst, 8);
   *(uint32_t*)(inf80 + 48) = geom_count;

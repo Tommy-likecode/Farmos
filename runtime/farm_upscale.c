@@ -333,6 +333,9 @@ static VkPipelineCache g_xess_pso_cache;
 static uint32_t g_xess_pso_dw, g_xess_pso_dh;
 static int g_xess_pso_saved_exec;
 static size_t g_xess_pso_loaded_sz;
+static int g_xess_out_pending;
+static int g_xess_out_dw, g_xess_out_dh;
+static int g_xess_pso_dummy_done;
 
 static int env1(const char* n) {
   const char* e = getenv(n);
@@ -940,6 +943,7 @@ static void destroy_xess_res(void) {
   destroy_img(&g_img_depth);
   destroy_img(&g_img_out);
   g_res_ok = 0;
+  g_xess_out_pending = 0;
 }
 
 static int ensure_xess_res(int rw, int rh, int dw, int dh) {
@@ -1060,6 +1064,7 @@ static void ensure_xess_pso_cache(uint32_t dw, uint32_t dh) {
 static void abandon_borrowed_vk(void) {
   destroy_xess_res();
   destroy_xess_pso_cache();
+  g_xess_pso_dummy_done = 0;
   g_xess_cmd = NULL;
   if (g_cpool && vkDestroyCommandPool && g_dev)
     vkDestroyCommandPool(g_dev, g_cpool, NULL);
@@ -1309,36 +1314,13 @@ static int xess_bringup(farm_Renderer* r, int rw, int rh, int dw, int dh) {
   return ensure_xess_res(rw, rh, dw, dh);
 }
 
-void farm_upscale_prepare_xess(farm_Renderer* r) {
-  int rw = 0, rh = 0, dw = 0, dh = 0;
-  if (!r || farm_renderer_upscale_mode(r) != 1) return;
-  farm_renderer_upscale_dims(r, &rw, &rh, &dw, &dh);
-  if (rw < 1 || rh < 1 || dw < rw || dh < rh) return;
-  xess_bringup(r, rw, rh, dw, dh);
-}
-
-static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera,
-                    int rw, int rh, int dw, int dh) {
-  if (!xess_bringup(r, rw, rh, dw, dh)) return 0;
-
-  fill_aux(r, scene, camera, (float*)g_buf_depth.map, (float*)g_buf_vel.map, rw, rh);
-  int np = rw * rh;
-  uint32_t* rgba32 = (uint32_t*)g_buf_color.map;
-  const uint8_t* fb = r->framebuffer;
-  for (int i = 0; i < np; i++) {
-    rgba32[i] = (uint32_t)fb[i * 3 + 0] | ((uint32_t)fb[i * 3 + 1] << 8) |
-                ((uint32_t)fb[i * 3 + 2] << 16) | 0xff000000u;
-  }
-
-  VkCommandBuffer cmd = NULL;
-  if (!begin_cmd(&cmd)) return 0;
-
+static int xess_record_inputs_and_execute(VkCommandBuffer cmd, farm_Renderer* r,
+                                          int rw, int rh, unsigned reset_hist) {
   VkBufferImageCopy cpy;
   memset(&cpy, 0, sizeof(cpy));
   cpy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
   cpy.imageSubresource.layerCount = 1;
   cpy.imageExtent.depth = 1;
-
   {
     VkImage ins[3] = { g_img_color.image, g_img_vel.image, g_img_depth.image };
     img_barriers_n(cmd, ins, 3, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -1364,22 +1346,52 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
   fill_view_info(&ex.depthTexture, &g_img_depth);
   fill_view_info(&ex.outputTexture, &g_img_out);
   float jx = 0.f, jy = 0.f;
-  farm_renderer_upscale_pixel_jitter(r, &jx, &jy);
+  if (r) farm_renderer_upscale_pixel_jitter(r, &jx, &jy);
   ex.jitterOffsetX = jx;
   ex.jitterOffsetY = jy;
   ex.exposureScale = 1.0f;
-  ex.resetHistory = r->path_upscale_hist_valid ? 0u : 1u;
+  ex.resetHistory = reset_hist;
   ex.inputWidth = (uint32_t)rw;
   ex.inputHeight = (uint32_t)rh;
-  int32_t xrc = xessVKExecute_fn(g_xess_ctx, cmd, &ex);
-  if (xrc != XESS_RESULT_SUCCESS) {
+  return xessVKExecute_fn(g_xess_ctx, cmd, &ex) == XESS_RESULT_SUCCESS;
+}
+
+/* H3: compile XeSS PSOs on the dedicated device while the path queue is in
+   flight (first prepare). Timed inproc frames then skip cold compile. */
+static int xess_pso_dummy_warmup(int rw, int rh, int dw, int dh) {
+  if (g_xess_pso_dummy_done) return 1;
+  if (!g_xess_ctx || !g_res_ok || !g_buf_color.map) return 0;
+  int np = rw * rh;
+  memset(g_buf_color.map, 0, (size_t)np * 4u);
+  if (g_buf_depth.map) {
+    float* d = (float*)g_buf_depth.map;
+    for (int i = 0; i < np; i++) d[i] = 1.0f;
+  }
+  VkCommandBuffer cmd = NULL;
+  if (!begin_cmd(&cmd)) return 0;
+  if (!xess_record_inputs_and_execute(cmd, NULL, rw, rh, 1u)) {
     submit_wait(cmd);
     return 0;
   }
-
   img_barrier(cmd, g_img_out.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
               VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  if (!submit_wait(cmd)) return 0;
+  g_xess_pso_dummy_done = 1;
+  if (!g_xess_pso_saved_exec) {
+    save_xess_pso_cache((uint32_t)dw, (uint32_t)dh);
+    g_xess_pso_saved_exec = 1;
+  }
+  return 1;
+}
+
+static void farm_upscale_flush_display(farm_Renderer* r) {
+  if (!r || !g_xess_out_pending) return;
+  g_xess_out_pending = 0;
+  int dw = g_xess_out_dw, dh = g_xess_out_dh;
+  if (dw < 1 || dh < 1 || !g_res_ok || !g_buf_out.map || !g_img_out.image) return;
+  VkCommandBuffer cmd = NULL;
+  if (!begin_cmd(&cmd)) return;
   VkBufferImageCopy oc;
   memset(&oc, 0, sizeof(oc));
   oc.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1388,15 +1400,10 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
   oc.imageExtent.height = (uint32_t)dh;
   oc.imageExtent.depth = 1;
   vkCmdCopyImageToBuffer(cmd, g_img_out.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, g_buf_out.buf, 1, &oc);
-  if (!submit_wait(cmd)) return 0;
-  if (!g_xess_pso_saved_exec) {
-    save_xess_pso_cache((uint32_t)dw, (uint32_t)dh);
-    g_xess_pso_saved_exec = 1;
-  }
-
+  if (!submit_wait(cmd)) return;
   uint8_t* src = (uint8_t*)g_buf_out.map;
   uint8_t* dst = (uint8_t*)farm_arena_alloc((size_t)dw * (size_t)dh * 3);
-  if (!dst) return 0;
+  if (!dst) return;
   int nout = dw * dh;
   for (int i = 0; i < nout; i++) {
     dst[i * 3 + 0] = src[i * 4 + 0];
@@ -1406,6 +1413,80 @@ static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera*
   r->framebuffer = dst;
   r->fb_width = dw;
   r->fb_height = dh;
+}
+
+void farm_upscale_prepare_xess(farm_Renderer* r) {
+  int rw = 0, rh = 0, dw = 0, dh = 0;
+  if (!r || farm_renderer_upscale_mode(r) != 1) return;
+  farm_renderer_upscale_dims(r, &rw, &rh, &dw, &dh);
+  if (rw < 1 || rh < 1 || dw < rw || dh < rh) return;
+  if (!xess_bringup(r, rw, rh, dw, dh)) return;
+  (void)xess_pso_dummy_warmup(rw, rh, dw, dh);
+}
+
+static int run_xess(farm_Renderer* r, farm_Scene* scene, farm_PerspectiveCamera* camera,
+                    int rw, int rh, int dw, int dh) {
+  if (!xess_bringup(r, rw, rh, dw, dh)) return 0;
+
+  fill_aux(r, scene, camera, (float*)g_buf_depth.map, (float*)g_buf_vel.map, rw, rh);
+  int np = rw * rh;
+  uint32_t* rgba32 = (uint32_t*)g_buf_color.map;
+  const uint8_t* fb = r->framebuffer;
+  for (int i = 0; i < np; i++) {
+    rgba32[i] = (uint32_t)fb[i * 3 + 0] | ((uint32_t)fb[i * 3 + 1] << 8) |
+                ((uint32_t)fb[i * 3 + 2] << 16) | 0xff000000u;
+  }
+
+  VkCommandBuffer cmd = NULL;
+  if (!begin_cmd(&cmd)) return 0;
+  unsigned reset_hist = r->path_upscale_hist_valid ? 0u : 1u;
+  if (!xess_record_inputs_and_execute(cmd, r, rw, rh, reset_hist)) {
+    submit_wait(cmd);
+    return 0;
+  }
+
+  img_barrier(cmd, g_img_out.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+              VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  /* H2: skip 1080p host download in timed renderPath. savePNG flushes.
+     Preview still unpacks immediately (framebuffer is the preview contract). */
+  int defer = !r->preview_active;
+  if (!defer) {
+    VkBufferImageCopy oc;
+    memset(&oc, 0, sizeof(oc));
+    oc.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    oc.imageSubresource.layerCount = 1;
+    oc.imageExtent.width = (uint32_t)dw;
+    oc.imageExtent.height = (uint32_t)dh;
+    oc.imageExtent.depth = 1;
+    vkCmdCopyImageToBuffer(cmd, g_img_out.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, g_buf_out.buf, 1, &oc);
+  }
+  if (!submit_wait(cmd)) return 0;
+  if (!g_xess_pso_saved_exec) {
+    save_xess_pso_cache((uint32_t)dw, (uint32_t)dh);
+    g_xess_pso_saved_exec = 1;
+  }
+
+  r->path_upscale_flush = farm_upscale_flush_display;
+  if (defer) {
+    g_xess_out_pending = 1;
+    g_xess_out_dw = dw;
+    g_xess_out_dh = dh;
+  } else {
+    g_xess_out_pending = 0;
+    uint8_t* src = (uint8_t*)g_buf_out.map;
+    uint8_t* dst = (uint8_t*)farm_arena_alloc((size_t)dw * (size_t)dh * 3);
+    if (!dst) return 0;
+    int nout = dw * dh;
+    for (int i = 0; i < nout; i++) {
+      dst[i * 3 + 0] = src[i * 4 + 0];
+      dst[i * 3 + 1] = src[i * 4 + 1];
+      dst[i * 3 + 2] = src[i * 4 + 2];
+    }
+    r->framebuffer = dst;
+    r->fb_width = dw;
+    r->fb_height = dh;
+  }
   r->path_upscale_hist_valid = 1;
   r->path_upscale_frame += 1;
   return 1;
