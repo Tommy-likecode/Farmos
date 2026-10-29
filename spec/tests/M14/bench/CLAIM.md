@@ -5,7 +5,7 @@
 
 | Field | Value |
 |-------|--------|
-| PR | draft (clear-m14-backlog after squash-merge #23) |
+| PR | #24 draft https://github.com/Tommy-likecode/Farmos/pull/24 |
 | Branch | `cursor/clear-m14-backlog-782e` |
 | Tip (measured Arc) | `d409152e667155ac4d520482e0a7c9848508bdb0` |
 | Master tip | `218f6ef1` (M14 squash-merge PR #23; docs lineage `6d1d9c81`; product `4d7523ec`) |
