@@ -6,7 +6,7 @@
 |-------|--------|
 | PR | draft (this branch) |
 | Branch | `cursor/m14-performance-d296` |
-| Tip (docs / Linux) | `3c477a931ffc093049e6db6d2eb261c65c9d69c9` |
+| Tip (docs / Linux) | PR HEAD on `cursor/m14-performance-d296` (docs `d239f039`) |
 | Product | `4d7523ec` (`FARMOS_PATH_FRAME_MS` + FAST_TRACE + deferred XeSS readback + PSO dummy) |
 | Master baseline | `47949c82` (M13 squash-merge PR #22; eggtooth AUDIT PASS) |
 | Product baseline Arc | `945c13ae` inproc Pass1 **1.455** / Pass2 **1.607** (`FARMOS_PATH_FRAME_MS`) |
