@@ -1,0 +1,19 @@
+# Frozen Linux host-amort run. Recreate with:
+#   python3 spec/tests/M14/bench/run_linux_host_amort.py build/farmc --out out/m14_linux
+# Host: Linux CloudAgent, no XeSS/Vulkan, 2026-10-29.
+farmc=/workspace/build/farmc
+out=/tmp/m14_linux
+load=10:06:26 up 9 min,  0 user,  load average: 0.93, 0.32, 0.11
+easy 8x8 spp=1 errors=0 frames_done=10
+  process_per_frame_median_ms=0.719 n=5 range=0.468-0.834
+  inproc_frame_median_ms=0.008 n=5 range=0.007-0.008
+  proc/inproc=89.893
+  inproc_process_wall_ms=0.506
+target 32x32 spp=1 errors=0 frames_done=10
+  process_per_frame_median_ms=0.647 n=5 range=0.566-0.856
+  inproc_frame_median_ms=0.090 n=5 range=0.090-0.092
+  proc/inproc=7.184
+  inproc_process_wall_ms=1.456
+error_count=0
+frames_done=20
+PASS host_amort

@@ -1152,6 +1152,7 @@ farm_Renderer* farm_Renderer_new() {
   r->path_upscale_rw = r->path_upscale_rh = r->path_upscale_dw = r->path_upscale_dh = 0;
   r->path_upscale_base_w = r->path_upscale_base_h = 0;
   r->fb_width = r->fb_height = 0;
+  r->path_upscale_flush = NULL;
   r->path_upscale_frame = 0;
   r->path_upscale_hist_valid = 0;
   r->path_upscale_prev_vp_valid = 0;
@@ -1937,6 +1938,8 @@ void farm_Renderer_savePNG(farm_Renderer* self, FarmString path) {
   if (self->disposed) {
     farm_trap(105, "use after dispose");
   }
+  /* M14: deferred XeSS display readback lands here (not in timed renderPath). */
+  if (self->path_upscale_flush) self->path_upscale_flush(self);
   
   // Convert FarmString to C string
   char* path_cstr = (char*)farm_arena_alloc(path.len + 1);
