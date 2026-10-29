@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|--------|
-| PR | draft (this branch) |
+| PR | #23 draft https://github.com/Tommy-likecode/Farmos/pull/23 |
 | Branch | `cursor/m14-performance-d296` |
 | Tip (docs / Linux) | PR HEAD on `cursor/m14-performance-d296` (docs `d239f039`) |
 | Product | `4d7523ec` (`FARMOS_PATH_FRAME_MS` + FAST_TRACE + deferred XeSS readback + PSO dummy) |
