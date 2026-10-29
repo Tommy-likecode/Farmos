@@ -80,5 +80,5 @@ soft-skip XeSS Arc benches.
 ## poteto HOLD
 
 FINAL docs copied as-is from PM lock. Coding for this draft PR is assigned
-(M14 IMPLEMENT). Arc CLAIM numbers stay **PENDING Arc** until TommyLaptop
-fills them. Do not merge from this CloudAgent run.
+(M14 IMPLEMENT). Arc CLAIM **PASS** at measured tip `d409152e` / product
+`4d7523ec` (this docs sync). Do not merge from this CloudAgent run.

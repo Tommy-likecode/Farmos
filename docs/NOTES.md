@@ -295,5 +295,13 @@ Baseline product `945c13ae` Pass1 **1.455** / Pass2 **1.607**. Master tip
   export/import skip of color/depth host round-trip.
 - **Harness:** `spec/tests/M14/bench/run_arc_ac.py` reuses M12 `ac04_*` /
   `ac05_*`. Linux: `run_linux_host_amort.py`.
-- Arc CLAIM **PENDING Arc**. Enabler / Swapper / OptiScaler OUT. **No merge.**
+- Arc CLAIM **PASS** 2026-10-29 (TommyLaptop, dirty chrome/msedge informational)
+  at measured tip `d409152e` / product `4d7523ec`. In-process SHOULD Pass1
+  **3.184×** (2552.985 / 801.892 ms) / Pass2 **3.913×** (2743.773 / 701.114 ms).
+  Process-per-frame M12 floor Pass1 **1.235×** (4.794 / 3.883 s) / Pass2
+  **1.139×** (4.251 / 3.732 s). XeSS < native both protocols. ROI L
+  **105.810 / 105.801**, \|ΔL\| of means **0.009**, mean_abs_dL **0.440**
+  report-only. PE ac05_xess **325120**. Do not compare in-process ms to
+  `d23acfb3` process-per-frame **1.264 / 1.348**. Product **unchanged**.
+  Enabler / Swapper / OptiScaler OUT. **No merge.**
 

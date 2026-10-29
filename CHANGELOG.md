@@ -6,7 +6,7 @@ M14 — performance / more speed (`spec/M14-performance.md` FINAL):
 
 - SHOULD display-equivalent ≥ **1.50×** on TommyLaptop Arc after warm-up for **both** Pass1 and Pass2 (OQ-M14-01 A / OQ-M14-02 A), in-process `FARMOS_PATH_FRAME_MS`. M13 ≥ **1.20×** inproc and M12 ≥ **1.05×** process-per-frame remain floors. Baseline product `945c13ae` Pass1 **1.455** / Pass2 **1.607** (inproc). Do **not** compare in-process ms to `d23acfb3` process-per-frame.
 - Engine / host-RT / PSO (one hypothesis each): persist static AS `PREFER_FAST_TRACE`; defer XeSS 1080p host download until `savePNG`; dummy XeSS execute during `prepare_xess` on the dedicated device while path GPU is in flight. No new public `.fm` API. `FARMOS_PATH_FRAME_MS` kept.
-- Arc CLAIM **PENDING Arc** until poteto fills TommyLaptop numbers. Official SDK only. Enabler still OUT.
+- Arc CLAIM **PASS** 2026-10-29 (dirty chrome/msedge informational) at measured tip `d409152e` / product `4d7523ec`: inproc Pass1 **3.184×** (2552.985 / 801.892 ms) / Pass2 **3.913×** (2743.773 / 701.114 ms); proc floor Pass1 **1.235×** (4.794 / 3.883 s) / Pass2 **1.139×** (4.251 / 3.732 s); ROI L **105.810 / 105.801**, \|ΔL\| of means **0.009**; PE ac05_xess **325120**. Official SDK only. Enabler still OUT. Product **unchanged** by this docs sync.
 - OUT unchanged: frame-gen, OS window, DLSS/Enabler/Swapper/OptiScaler, lower render-res, lower spp as the speed strategy.
 - Fixtures: `spec/tests/M14/`. Linux `# requires_xess` soft-skip; OFF twins + trap 122 + size glue ≤700 KiB remain.
 
