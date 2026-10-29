@@ -242,7 +242,7 @@ M14 — Performance / more speed (post-M13) [added 2026-10-29 by PM/user GO draf
 - Status: **FINAL** (PM/user 2026-10-29: OQ-M14-01..08 all **accepted A**; poteto **HOLD** until PM assigns coding).
 - Baseline: master tip `47949c82` (PR #22 M13 squash; eggtooth AUDIT PASS); product `945c13ae` inproc Pass1 **1.455** / Pass2 **1.607**.
 - Floors (MUST NOT regress / weaken): M12 process-per-frame ≥ **1.05×**; XeSS < native; ROI [80,200] + |ΔL|≤5 pinned `x=940:980,y=520:560`; OFF; trap 122; ≤700 KiB; frame-gen OUT; M13 inproc `FARMOS_PATH_FRAME_MS` ≥ **1.20×** both Pass1+Pass2.
-- Soft backlog (AC-M13-04 text omits FARMOS_PATH_FRAME_MS; OQ-01 old p-p-f rationale): notes only — do not block M14; do not reopen M13 OQs.
+- Soft backlog (post #23 squash `218f6ef1`; product `4d7523ec` unchanged): H2 meter-integrity note (inproc GPU-pipeline vs `945c13ae` equal-work); Pass2 proc 1.139 thin headroom — monitor; dirty chrome+msedge informational. M13 AC-04 / OQ-01 meter naming + M12 pinned-ROI L~187 fixture-README mixup addressed as doc clarity only — do not reopen OQs / weaken ≥1.50×.
 - Binding (OQ-M14-01..08 A — PM/user 2026-10-29):
   - OQ-M14-01 **A**: SHOULD ≥ **1.50×** both Pass1+Pass2 inproc `FARMOS_PATH_FRAME_MS`; document `945c13ae` 1.455/1.607; M13 ≥1.20× + M12 ≥1.05× floors stand.
   - OQ-M14-02 **A**: both Pass1+Pass2 ≥ **1.50×**; report ms; no hard ms cap yet.

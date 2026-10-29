@@ -125,7 +125,7 @@ All ACs below are **binding** under OQ-M13-01..08 **accepted A**:
 | AC-M13-01 | M12 OFF CPU twin(s) still **PASS** (M4 SHA / existing OFF goldens). |
 | AC-M13-02 | M12 AC-M12-04 quality **PASS** on pinned ROI under M13 tip: both lanes L in **[80, 200]**; **\|ΔL\| ≤ 5.0**; mean_abs_dL / png_tol / max_abs report-only. |
 | AC-M13-03 | M12 XeSS wall **strictly <** native **MUST PASS** after warm-up (unchanged binding). |
-| AC-M13-04 | Timing (script): SHOULD display-equivalent ≥ **1.20×** (native_median / xess_median) on TommyLaptop Arc after warm-up on M12 bench scene (**960×540→1080p**, glossy ON as M12 CLAIM) for **both** Pass1 and Pass2. Document baseline tip `d23acfb3` Pass1 **1.264** / Pass2 **1.348**. M12 OQ-12 A ≥ **1.05×** remains floor. Report absolute ms (no hard ms cap until measured). |
+| AC-M13-04 | Timing (script): SHOULD display-equivalent ≥ **1.20×** (native_median / xess_median) on TommyLaptop Arc after warm-up on M12 bench scene (**960×540→1080p**, glossy ON as M12 CLAIM) for **both** Pass1 and Pass2, measured with **in-process** `FARMOS_PATH_FRAME_MS` (warmup then median of timed samples). Document baseline tip `d23acfb3` Pass1 **1.264** / Pass2 **1.348** — that pair is **process-per-frame** (M12 floor meter); do **not** cross-compare to inproc ms. M12 OQ-12 A ≥ **1.05×** remains floor. Report absolute ms (no hard ms cap until measured). |
 | AC-M13-05 | Size / DCE: hello ≤ **20 KiB**; upscale unused DCE; upscale-glue-linked ≤ **700 KiB** PE; prior ≤300/400/500/600 unchanged (OQ-M13-06 A). |
 | AC-M13-06 | No new public API break; M12 setters / traps / STRICT families unchanged (OQ-M13-04 A). |
 | AC-M13-07 | No frame-gen; no OS window; no DLSS/Enabler/Swapper/OptiScaler; artwork composition locked (OQ-M13-07 A). |
@@ -170,7 +170,7 @@ Harness CWD for any M13-local programs: `spec/tests/M13`. poteto **HOLD** until 
 
 Folded from eggtooth AUDIT PASS r2 / clear-m12-backlog — **informational**; MUST NOT block M13 FINAL:
 
-1. Stale tip text may still cite L~**187** / **3.932** beside pinned ROI — CLAIM/harness MUST use pinned box + correct \|ΔL\| vs mean_abs_dL labels (already clarified in M12 FINAL 2026-10-25).
+1. Stale tip text may still cite L~**187** / **3.932** beside pinned ROI — CLAIM/harness MUST use pinned box + correct \|ΔL\| vs mean_abs_dL labels (already clarified in M12 FINAL 2026-10-25). Fixture README Quality row (clear-m14-backlog): current pinned CLAIM is L **105.810 / 105.801**, \|ΔL\| **0.009**, mean_abs_dL **0.440**; `7f0a080` L~187 remains historical lock input only.
 2. LF drift on Windows vs Linux — harness concern; not an M13 scope gate.
 3. Pass1 headroom / harness soft-skip improvements — poteto track separately; not OQ blockers.
 
@@ -203,6 +203,8 @@ Status: **FINAL**. Open questions: **none**. OQ-M13-01 .. OQ-M13-08 all **accept
 | D | Keep M12 ≥1.05× only; M13 gains report-only | Rejected |
 
 **Rationale for A:** Tip already clears **1.20×** on both passes with ~5% Pass1 headroom; reclaims the historical product intent without pretending **1.25×** is audit-safe yet.
+
+**Clarification (2026-10-29; clear-m14-backlog):** Option A lock (≥ **1.20×**) is **unchanged**. The M13 SHOULD meter is in-process `FARMOS_PATH_FRAME_MS`. Documented tip `d23acfb3` Pass1 **1.264** / Pass2 **1.348** is the M12 **process-per-frame** baseline, not the SHOULD meter. Do not cross-compare meters. CLAIM product `945c13ae` inproc Pass1 **1.455** / Pass2 **1.607**.
 
 ### OQ-M13-02 — Absolute wall / repeatability secondary — **ACCEPTED A**
 
@@ -292,13 +294,14 @@ Status: **FINAL**. Open questions: **none**. OQ-M13-01 .. OQ-M13-08 all **accept
 |------|-------|
 | 2026-10-26 | **DRAFT** created. User locked direction: perf / more speed after clear-m12-backlog. Master tip `affc63ea`; baseline CLAIM product `d23acfb3` Pass1 **1.264** / Pass2 **1.348**. Open OQ-M13-01..08; recommend **A** everywhere. Status **DRAFT** — not FINAL. poteto **HOLD**. No implementation code. M1–M12 bodies untouched. |
 | 2026-10-26 | **FINAL**. PM/user locked OQ-M13-01..08 all **A**. Binding: SHOULD ≥ **1.20×** both Pass1+Pass2; host+engine+aux/PSO; keep 960×540→1080p; no new public API; MUST NOT regress M12; ≤700 KiB glue; frame-gen/window/DLSS OUT; Arc primary + Linux soft-skip. poteto **HOLD** until PM assigns. No implementation code. M1–M12 bodies untouched. |
+| 2026-10-29 | **Clarification** (clear-m14-backlog). AC-M13-04 names in-process `FARMOS_PATH_FRAME_MS`; OQ-M13-01 note: `d23acfb3` 1.264/1.348 is process-per-frame, SHOULD is inproc. Option A / ≥1.20× **unchanged**. No OQ reopen. |
 
 ---
 
 ## Appendix A — Gate summary (binding under OQ-M13-01..08 A)
 
 - **Floor (M12, unchanged):** SHOULD ≥ **1.05×**; XeSS < native MUST; ROI **[80, 200]** + \|ΔL\| ≤ 5.0 on pinned `x=940:980,y=520:560`; OFF twins; trap 122; ≤700 KiB glue.
-- **M13 SHOULD (OQ-01 A / OQ-02 A):** ≥ **1.20×** on **both** Pass1 and Pass2 after warm-up; document `d23acfb3` **1.264 / 1.348**; report ms; no hard ms cap yet.
+- **M13 SHOULD (OQ-01 A / OQ-02 A):** ≥ **1.20×** on **both** Pass1 and Pass2 after warm-up under inproc `FARMOS_PATH_FRAME_MS`; document `d23acfb3` **1.264 / 1.348** (process-per-frame; do not cross-compare); report ms; no hard ms cap yet.
 - **Scope (OQ-03 A):** host + engine + aux/PSO; keep 960×540→1080p default.
 - **API (OQ-04 A):** no new public API required.
 - **OUT (OQ-07 A):** frame-gen, window, DLSS/Enabler/Swapper.

@@ -10,8 +10,12 @@ python3 spec/tests/M14/bench/run_arc_ac.py path/to/farmc --out out/m14_arc
 ```
 
 Primary timing is in-process `renderPath` samples from
-`FARMOS_PATH_FRAME_MS=1` after dropping warmup frames. Process-per-frame
-AC-M12-05 still runs as the M12 ≥1.05× floor check.
+`FARMOS_PATH_FRAME_MS=1` after dropping warmup frames. After H2, those
+samples are GPU-pipeline: XeSS 1080p host download is flushed on
+`savePNG`, not inside timed `renderPath`. GPU XeSS execute is still
+timed. Process-per-frame AC-M12-05 still runs as the M12 ≥1.05× floor
+(and already includes `savePNG` / flush). Do not claim equal-work vs
+`945c13ae`. No flush-every-frame secondary inproc meter.
 
 Pass1: delete `%TEMP%/farmos_vk_rt_pso_*.bin` and
 `%TEMP%/farmos_xess_pso_*.bin` then run the script.

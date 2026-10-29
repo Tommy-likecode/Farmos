@@ -6,7 +6,7 @@ Do **not** compare in-process ms to `d23acfb3` process-per-frame **1.264 / 1.348
 
 | Item | Status |
 |------|--------|
-| Spec | FINAL OQ-M13-01..08 A. SHOULD ≥ **1.20×** both Pass1 and Pass2 (in-process). |
+| Spec | FINAL OQ-M13-01..08 A. SHOULD ≥ **1.20×** both Pass1 and Pass2 (in-process `FARMOS_PATH_FRAME_MS`; `d23acfb3` 1.264/1.348 is process-per-frame — do not cross-compare). |
 | Baseline | Master `affc63ea`. Arc product `d23acfb3` Pass1 **1.264** / Pass2 **1.348** (process-per-frame). |
 | Product SHA | `945c13ae` (`FARMOS_PATH_FRAME_MS`). Unchanged for this docs sync. |
 | M13 SHOULD (inproc) | **PASS**. Pass1 **1.455×** (2570.275 / 1766.219 ms). Pass2 **1.607×** (2575.415 / 1602.777 ms). |

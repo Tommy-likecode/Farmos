@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+M14 backlog clear (post squash-merge `218f6ef1` / PR #23; product `4d7523ec` **unchanged**):
+
+- CLAIM/NOTES: H2 inproc `FRAME_MS` is GPU-pipeline (XeSS 1080p host readback deferred to `savePNG`; GPU XeSS still timed; PNG/ROI OK). Do not claim equal-work vs M13 `945c13ae`. No flush-every-frame secondary inproc meter (proc AC-05 already includes `savePNG`).
+- CMake: register `m14_*` like `m13_*`.
+- NOTE only: Pass2 process-per-frame **1.139** (~8.5% over 1.05) — monitor; dirty chrome+msedge informational.
+- Soft doc nits: name `FARMOS_PATH_FRAME_MS` on AC-M13-04; OQ-M13-01 inproc vs `d23acfb3` process-per-frame; M12 fixture README Quality row uses pinned CLAIM L **105.810 / 105.801** (not L~187 beside the pin). FINAL OQ locks / SHOULD ≥1.50× / floors **unchanged**. No Arc remeasure.
+
 M14 — performance / more speed (`spec/M14-performance.md` FINAL):
 
 - SHOULD display-equivalent ≥ **1.50×** on TommyLaptop Arc after warm-up for **both** Pass1 and Pass2 (OQ-M14-01 A / OQ-M14-02 A), in-process `FARMOS_PATH_FRAME_MS`. M13 ≥ **1.20×** inproc and M12 ≥ **1.05×** process-per-frame remain floors. Baseline product `945c13ae` Pass1 **1.455** / Pass2 **1.607** (inproc). Do **not** compare in-process ms to `d23acfb3` process-per-frame.

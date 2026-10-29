@@ -122,7 +122,7 @@ Tip `7f0a080` / product `fd31e46`: L **187.228** / **187.877**; binding \|ΔL\| 
 | Backends | vk + vk_rt MUST; CPU soft; STRICT 122-family (OQ-06 A) |
 | Size | Upscale-glue PE ≤ **700 KiB**; vendor DLLs external (OQ-07 A) |
 | Smoke | Arc 960×540→1920×1080; Linux `# requires_xess` / `# requires_fsr` soft-skip (OQ-08 A) |
-| Quality (AC-04) | **Binding OQ-M12-13 A:** pinned ROI `x=940:980,y=520:560` @1080p (40×40); L **[80, 200]** + **|ΔL| = |L_xess−L_native|** ≤ 5.0; tip L ~**187** / |ΔL| ≈ **0.650** PASS; mean_abs_dL (**3.932**) / png_tol / max_abs report-only; historical [80,140] (OQ-11 A) superseded for absolute band only |
+| Quality (AC-04) | **Binding OQ-M12-13 A:** pinned ROI `x=940:980,y=520:560` @1080p (40×40); L **[80, 200]** + **|ΔL| = |L_xess−L_native|** ≤ 5.0. **Current pinned CLAIM** (`d23acfb3`+): L **105.810 / 105.801**, \|ΔL\| of means **0.009**, mean_abs_dL **0.440** report-only. Lock-time `7f0a080` / `fd31e46` L ~**187** / \|ΔL\| ≈ **0.650** / mean_abs_dL **3.932** are **historical** (see metric table above) — do **not** cite them as the current pinned CLAIM. png_tol / max_abs report-only; historical [80,140] (OQ-11 A) superseded for absolute band only |
 | Speedup (AC-05) | **Binding OQ-M12-12 A:** SHOULD ≥ **1.05×**; XeSS wall **strictly <** native; tip `7f0a080` / product `fd31e46` Pass1 **1.052** / Pass2 **1.162**; historical tip `edeb845` **1.237**; historical SHOULD ≥1.2× (OQ-10 A) superseded for SHOULD floor only |
 
 ## PLACEHOLDER goldens

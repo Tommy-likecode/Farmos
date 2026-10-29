@@ -14,12 +14,15 @@ M12 regression floors (cite; do not rewrite M12 fixtures here):
 - OQ-M12-13 A: ROI L **[80, 200]** + **|ΔL| of means ≤ 5.0**
 - Pinned ROI: **`x=940:980,y=520:560`** @1920×1080 (**40×40**)
 - mean_abs_dL / png_tol / max_abs: report-only
-- Baseline Arc CLAIM product `d23acfb3`: Pass1 **1.264** / Pass2 **1.348**
+- Baseline Arc CLAIM product `d23acfb3`: Pass1 **1.264** / Pass2 **1.348** (**process-per-frame**; M12 floor meter — not the M13 SHOULD meter)
+- M13 SHOULD meter: in-process `FARMOS_PATH_FRAME_MS` (CLAIM product `945c13ae` Pass1 **1.455** / Pass2 **1.607**)
 - Master tip (clear-m12-backlog): `affc63ea`
+- Pinned ROI CLAIM (current): L **105.810 / 105.801**, \|ΔL\| of means **0.009**, mean_abs_dL **0.440** report-only — not L~187 / 3.932
 
 Binding M13 SHOULD (OQ-M13-01 A / OQ-M13-02 A): ≥ **1.20×** Pass1 **and** Pass2
-after warm-up (reclaims historical M12 OQ-10 A ≥1.2× as an M13 gate; does
-not weaken the M12 ≥1.05× floor).
+after warm-up under in-process `FARMOS_PATH_FRAME_MS` (reclaims historical
+M12 OQ-10 A ≥1.2× as an M13 gate; does not weaken the M12 ≥1.05× floor).
+Do **not** cross-compare inproc ms to `d23acfb3` process-per-frame.
 
 Do not edit M1–M12 milestone bodies to absorb these rules; amendments live
 in `M13-performance.md`.
@@ -65,10 +68,14 @@ soft-skip XeSS Arc benches.
 
 - Primary machine: TommyLaptop Intel Arc (Vulkan RT + official XeSS).
 - Scene: M12 bench continuity — **960×540 → 1920×1080**, glossy ON as M12 CLAIM.
+- Binding primary meter: **in-process** `FARMOS_PATH_FRAME_MS` (warmup then
+  median of timed samples).
 - Report: native median, XeSS median, ratio Pass1 / Pass2, ROI L both lanes,
-  binding |ΔL|, mean_abs_dL (report-only).
-- Baseline tip to beat / document: product **`d23acfb3`** Pass1 **1.264** /
-  Pass2 **1.348**.
+  binding |ΔL|, mean_abs_dL (report-only); process-per-frame M12 floor
+  separately — **do not cross-compare meters**.
+- Documented M12 process-per-frame baseline: product **`d23acfb3`** Pass1
+  **1.264** / Pass2 **1.348**. M13 SHOULD CLAIM: `945c13ae` **1.455 / 1.607**
+  inproc.
 - Do not invent absolute ms caps until measured on a comparable harness.
 
 ## poteto HOLD
