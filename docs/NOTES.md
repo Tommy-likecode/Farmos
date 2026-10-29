@@ -254,8 +254,10 @@ Implementation-owned glue in `runtime/farm_upscale.c`, called after denoise from
 ## M13 performance / more speed
 
 Spec: `spec/M13-performance.md` FINAL (OQ-M13-01..08 A). Arc SHOULD ≥ **1.20×**
-both Pass1 and Pass2 after warm-up. M12 ≥ **1.05×** floor unchanged. Baseline
-product `d23acfb3` Pass1 **1.264** / Pass2 **1.348**. Master tip `affc63ea`.
+both Pass1 and Pass2 after warm-up under in-process `FARMOS_PATH_FRAME_MS`.
+M12 ≥ **1.05×** floor unchanged. Baseline product `d23acfb3` Pass1 **1.264** /
+Pass2 **1.348** is **process-per-frame** (do not cross-compare to inproc).
+Master tip `affc63ea`.
 
 - **API:** no new `.fm` public API. Internal `FARMOS_PATH_FRAME_MS=1` prints
   `frame_ms=<ms>` per `renderPath` for in-process benches.
@@ -277,31 +279,40 @@ product `d23acfb3` Pass1 **1.264** / Pass2 **1.348**. Master tip `affc63ea`.
 
 Spec: `spec/M14-performance.md` FINAL (OQ-M14-01..08 A). Arc SHOULD ≥ **1.50×**
 both Pass1 and Pass2 after warm-up under in-process `FARMOS_PATH_FRAME_MS`.
-M13 ≥ **1.20×** inproc and M12 ≥ **1.05×** process-per-frame remain floors.
-Baseline product `945c13ae` Pass1 **1.455** / Pass2 **1.607**. Master tip
-`47949c82`. Do not compare in-process ms to `d23acfb3`.
+M13 ≥ **1.20×** inproc and M12 ≥ **1.05×** process-per-frame remain floors
+(MUST NOT weaken). Baseline product `945c13ae` Pass1 **1.455** / Pass2
+**1.607** (equal-work M13 inproc). Master tip `218f6ef1` (M14 squash #23;
+product `4d7523ec`). Do not compare in-process ms to `d23acfb3`. Do not
+claim equal-work vs `945c13ae` (H2).
 
 - **API:** no new `.fm` public API. Keep `FARMOS_PATH_FRAME_MS=1`.
 - **H1 (kept):** persisted static BLAS/TLAS built with
   `VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR` (was FAST_BUILD).
   First-frame AS build stays warmup.
-- **H2 (kept):** XeSS display `vkCmdCopyImageToBuffer` + RGB unpack deferred to
-  `savePNG` via `Renderer.path_upscale_flush` (NULL when upscale is DCE'd).
-  Timed inproc `frame_ms` no longer includes the 1080p host download. Preview
-  still unpacks immediately. Process-per-frame AC-05 still includes `savePNG`.
+- **H2 (kept; meter integrity):** XeSS display `vkCmdCopyImageToBuffer` + RGB
+  unpack deferred to `savePNG` via `Renderer.path_upscale_flush` (NULL when
+  upscale is DCE'd). Timed inproc `frame_ms` is GPU-pipeline (1080p host
+  download not inside `renderPath`). GPU XeSS execute still timed. PNG/ROI
+  still correct after flush. Native still pays host-visible work each sample.
+  **Do not claim equal-work vs `945c13ae`.** Preview still unpacks immediately.
+  Process-per-frame AC-05 still includes `savePNG` (the existing host-visible
+  meter). **No** flush-every-frame secondary inproc meter: that would change
+  product `4d7523ec` and needs Arc; proc already flushes.
 - **H3 (kept):** dummy XeSS execute during `farm_upscale_prepare_xess` on the
   dedicated XeSS device while the path queue is in flight (Pass1 PSO overlap).
 - **Not applied:** fill_aux one-pass (M13 ~0.06 ms); XeSS quality-mode; GPU
   export/import skip of color/depth host round-trip.
 - **Harness:** `spec/tests/M14/bench/run_arc_ac.py` reuses M12 `ac04_*` /
   `ac05_*`. Linux: `run_linux_host_amort.py`.
-- Arc CLAIM **PASS** 2026-10-29 (TommyLaptop, dirty chrome/msedge informational)
-  at measured tip `d409152e` / product `4d7523ec`. In-process SHOULD Pass1
-  **3.184×** (2552.985 / 801.892 ms) / Pass2 **3.913×** (2743.773 / 701.114 ms).
-  Process-per-frame M12 floor Pass1 **1.235×** (4.794 / 3.883 s) / Pass2
-  **1.139×** (4.251 / 3.732 s). XeSS < native both protocols. ROI L
-  **105.810 / 105.801**, \|ΔL\| of means **0.009**, mean_abs_dL **0.440**
-  report-only. PE ac05_xess **325120**. Do not compare in-process ms to
-  `d23acfb3` process-per-frame **1.264 / 1.348**. Product **unchanged**.
-  Enabler / Swapper / OptiScaler OUT. **No merge.**
+- Arc CLAIM **PASS** 2026-10-29 (TommyLaptop, dirty chrome/msedge
+  **informational**) at measured tip `d409152e` / product `4d7523ec`.
+  In-process SHOULD Pass1 **3.184×** (2552.985 / 801.892 ms) / Pass2
+  **3.913×** (2743.773 / 701.114 ms). Process-per-frame M12 floor Pass1
+  **1.235×** (4.794 / 3.883 s) / Pass2 **1.139×** (4.251 / 3.732 s).
+  **NOTE:** Pass2 proc 1.139 is ~8.5% over 1.05 — monitor only. XeSS <
+  native both protocols. ROI L **105.810 / 105.801**, \|ΔL\| of means
+  **0.009**, mean_abs_dL **0.440** report-only. PE ac05_xess **325120**.
+  Do not compare in-process ms to `d23acfb3` process-per-frame **1.264 /
+  1.348**. Product **unchanged**. `m14_*` ctest registered. Enabler /
+  Swapper / OptiScaler OUT. **No merge.** No new Arc CLAIM.
 

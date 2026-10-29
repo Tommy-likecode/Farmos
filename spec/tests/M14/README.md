@@ -17,7 +17,8 @@ M12 / M13 regression floors (cite; do not rewrite those fixtures here):
 - mean_abs_dL / png_tol / max_abs: report-only
 - M13 SHOULD floor: in-process `FARMOS_PATH_FRAME_MS` ≥ **1.20×** Pass1 **and** Pass2
 - Product baseline to beat: `945c13ae` Pass1 **1.455** / Pass2 **1.607** (inproc)
-- Master tip (M13 squash PR #22): `47949c82`
+- Master tip (M14 squash PR #23): `218f6ef1` (product `4d7523ec`; docs lineage `6d1d9c81`)
+- Inproc `FRAME_MS` is GPU-pipeline (H2: XeSS 1080p host readback deferred to `savePNG`). Do not claim equal-work vs `945c13ae`.
 
 Binding M14 SHOULD (OQ-M14-01 A / OQ-M14-02 A): ≥ **1.50×**
 Pass1 **and** Pass2 after warm-up under the same inproc meter (does not
@@ -68,17 +69,25 @@ soft-skip XeSS Arc benches.
 - Primary machine: TommyLaptop Intel Arc (Vulkan RT + official XeSS).
 - Scene: M12/M13 bench continuity — **960×540 → 1920×1080**, glossy ON.
 - Binding primary meter: **in-process** `FARMOS_PATH_FRAME_MS` (warmup then
-  median of timed samples; same family as M13 CLAIM).
+  median of timed samples; GPU-pipeline after H2 — XeSS host RGB flush is
+  on `savePNG`, not inside timed `renderPath`).
 - Report: native median, XeSS median, ratio Pass1 / Pass2, ROI L both lanes,
   binding |ΔL|, mean_abs_dL (report-only); also report process-per-frame
-  M12 floor separately — **do not cross-compare meters**.
-- Baseline tip to beat / document: product **`945c13ae`** Pass1 **1.455** /
-  Pass2 **1.607**.
-- Binding SHOULD (OQ-01/02 A): ≥ **1.50×** both passes.
+  M12 floor separately — **do not cross-compare meters**. Do **not** claim
+  equal-work vs `945c13ae` (that CLAIM included XeSS host readback in
+  `FRAME_MS`). No flush-every-frame secondary inproc meter (proc AC-05
+  already includes `savePNG`).
+- Baseline tip to document: product **`945c13ae`** Pass1 **1.455** /
+  Pass2 **1.607** (equal-work M13 inproc). Measured M14 inproc **3.184 /
+  3.913** includes H2 meter-scope change.
+- Binding SHOULD (OQ-01/02 A): ≥ **1.50×** both passes. MUST NOT weaken.
+- Process-per-frame Pass2 **1.139** (~8.5% over 1.05): monitor only.
+- Dirty chrome+msedge during CLAIM: informational.
 - Do not invent absolute ms caps until measured on a comparable harness.
 
 ## poteto HOLD
 
-FINAL docs copied as-is from PM lock. Coding for this draft PR is assigned
-(M14 IMPLEMENT). Arc CLAIM **PASS** at measured tip `d409152e` / product
-`4d7523ec` (this docs sync). Do not merge from this CloudAgent run.
+Arc CLAIM **PASS** at measured tip `d409152e` / product `4d7523ec`.
+This file tracks post-squash backlog (H2 meter note, `m14_` ctest, Pass2
+proc headroom, dirty-host). Docs+CMake only; product **unchanged**. Do not
+merge from this CloudAgent run. No new Arc CLAIM.

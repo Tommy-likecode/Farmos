@@ -2,10 +2,11 @@
 
 ## M14 — performance / more speed (post-M13)
 
-Spec: `spec/M14-performance.md` (FINAL). Fixtures: `spec/tests/M14/`.
+Spec: `spec/M14-performance.md` (FINAL). Fixtures: `spec/tests/M14/` (ctest `m14_*`).
 
 - In-process `FARMOS_PATH_FRAME_MS` SHOULD ≥ **1.50×** both Pass1 and Pass2 on TommyLaptop Arc (960×540→1080p). M13 ≥ **1.20×** inproc and M12 ≥ **1.05×** process-per-frame remain floors.
 - Levers: persist AS `PREFER_FAST_TRACE`; defer XeSS display host readback to `savePNG`; dummy XeSS PSO execute during path wait. No new public `.fm` API.
+- Inproc `FRAME_MS` is GPU-pipeline after H2 (XeSS 1080p host RGB flushed on `savePNG`). Do not claim equal-work vs `945c13ae`.
 - **OUT:** frame-gen, OS window, DLSS/Enabler/Swapper/OptiScaler. Official XeSS only. Arc CLAIM **PASS** at measured tip `d409152e` / product `4d7523ec`: inproc Pass1 **3.184×** / Pass2 **3.913×**.
 
 Linux: `bash scripts/run_suite_linux.sh build/farmc spec/tests/M14`

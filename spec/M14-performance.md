@@ -16,7 +16,8 @@ Related: `/workspace/farmos/PLAN.md` (M14 stub), `spec/M8-path-speed.md`, `spec/
 
 | Item | Value |
 |------|-------|
-| Master tip (M13 squash-merge PR #22; eggtooth AUDIT PASS) | `47949c82` |
+| Master tip (M13 squash-merge PR #22; eggtooth AUDIT PASS) | `47949c82` (M14 FINAL baseline) |
+| Master tip (M14 squash-merge PR #23; eggtooth AUDIT PASS) | `218f6ef1` (product `4d7523ec`; docs lineage `6d1d9c81`) |
 | M13 product (in-process meter) | `945c13ae` (`FARMOS_PATH_FRAME_MS`) — Pass1 **1.455** / Pass2 **1.607** (CLAIM / AUDIT; inproc after 3 warmup; median of remaining samples) |
 | M13 docs tip (pre-squash PR HEAD / CLAIM sync lineage) | `e4978668` / docs tip `2607eccb` (historical; master tip is `47949c82`) |
 | M13 SHOULD floor (MUST NOT weaken) | in-process `FARMOS_PATH_FRAME_MS` SHOULD ≥ **1.20×** **both** Pass1+Pass2 |
@@ -175,12 +176,15 @@ Harness CWD for any M14-local programs: `spec/tests/M14`. poteto **HOLD** until 
 
 ## 8. Soft backlog notes (non-blocking)
 
-Folded from eggtooth M13 AUDIT PASS / PR #22 — **informational**; MUST NOT block M14 FINAL; MUST NOT reopen M13 OQ tables:
+Folded from eggtooth M13 AUDIT PASS / PR #22 and eggtooth M14 AUDIT PASS / PR #23 — **informational**; MUST NOT reopen OQ tables; MUST NOT weaken SHOULD ≥ **1.50×** or M13/M12 floors:
 
-1. AC-M13-04 table text does not explicitly name `FARMOS_PATH_FRAME_MS` as the binding meter (OQ-03 A + CLAIM/harness do). M14 AC-M14-04 / AC-M14-10 **name the meter explicitly**.
-2. OQ-M13-01 lock rationale cites `d23acfb3` 1.264/1.348 (process-per-frame) beside ≥1.20× reclaim — M13 SHOULD meter is inproc. Claim correctly forbids cross-meter compare; M14 repeats that rule.
+1. **Addressed (doc clarity, clear-m14-backlog):** AC-M13-04 now names in-process `FARMOS_PATH_FRAME_MS`; OQ-M13-01 has a clarification that `d23acfb3` 1.264/1.348 is process-per-frame while M13 SHOULD is inproc. Option A locks **unchanged**.
+2. **Addressed (doc clarity):** M12 fixture README Quality row no longer cites lock-time L~**187** / mean_abs_dL **3.932** as the current pinned CLAIM; pinned box CLAIM is L **105.810 / 105.801**, \|ΔL\| **0.009**, mean_abs_dL **0.440**. OQ-M12-13 A lock inputs (`7f0a080` L~187) remain historical.
 3. fill_aux one-pass ~0.06 ms @960×540 was not merged in M13 — do not expect that alone to clear ≥1.50×.
-4. Stale tip / LF drift / dirty-browser CLAIM noise remain harness concerns, not M14 scope gates.
+4. **H2 meter integrity (M14; documented, not BLOCKER):** inproc `FARMOS_PATH_FRAME_MS` is GPU-pipeline — XeSS 1080p host download + RGB unpack deferred to `savePNG`; GPU XeSS execute still timed; PNG/ROI OK after flush. Do **not** claim equal-work vs M13 `945c13ae` (that CLAIM included the host readback in `FRAME_MS`). No flush-every-frame secondary inproc meter: proc AC-05 already includes `savePNG`; a second inproc print would change product `4d7523ec`.
+5. **CMake:** `m14_*` ctest registration (parity with `m13_*`) — wired in clear-m14-backlog.
+6. **Monitor:** process-per-frame Pass2 **1.139** (~**8.5%** over 1.05) — cleared; re-bench watch only.
+7. Dirty chrome+msedge during CLAIM — **informational**; LF drift remains a harness concern, not a gate.
 
 ---
 
@@ -301,6 +305,7 @@ Status: **FINAL**. Open questions: **none**. OQ-M14-01 .. OQ-M14-08 all **accept
 |------|-------|
 | 2026-10-29 | **DRAFT** created. User locked direction: more-perf after M13. Master tip `47949c82` (PR #22 squash; eggtooth AUDIT PASS); product `945c13ae` Pass1 **1.455** / Pass2 **1.607** inproc. Open OQ-M14-01..08; recommend **A** everywhere (SHOULD ≥**1.50×** both passes). Status **DRAFT** — not FINAL. poteto **HOLD**. No implementation code. M1–M13 bodies untouched. Soft backlog folded as notes only. |
 | 2026-10-29 | **FINAL**. PM/user locked OQ-M14-01..08 all **A**. Binding: SHOULD ≥ **1.50×** both Pass1+Pass2 inproc `FARMOS_PATH_FRAME_MS`; path/RT + aux/PSO; keep 960×540→1080p; no new public API; MUST NOT regress M12 or weaken M13 ≥1.20×; ≤700 KiB; frame-gen/window/DLSS OUT; Arc primary + Linux soft-skip. poteto **HOLD** until PM assigns. No implementation code. M1–M13 bodies untouched. |
+| 2026-10-29 | **Clarification** (clear-m14-backlog; post squash-merge `218f6ef1`; product `4d7523ec` unchanged). §8: H2 GPU-pipeline meter note; no equal-work vs `945c13ae`; no flush-every-frame secondary inproc meter; Pass2 proc 1.139 monitor; dirty-host informational; M13 AC-04 / OQ-01 meter naming + M12 pinned-ROI L~187 fixture-README mixup addressed as doc clarity. OQ-M14-01..08 A / SHOULD ≥1.50× / floors **unchanged**. |
 
 ---
 
