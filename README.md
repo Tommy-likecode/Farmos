@@ -119,7 +119,7 @@ farmc build examples/08_liquid_5s.fm -o liquid_5s
 ./liquid_5s
 ```
 
-Writes `liquid_5s.mp4` in CWD (640×360, 30 fps, ~5.0 s). Linux CI soft-skips `# requires_ffmpeg` when ffmpeg is absent. CPU liquid fixtures stay green.
+Writes `liquid_5s.mp4` in CWD (640×360, 30 fps, ~5.0 s). Linux CI soft-skips `# requires_ffmpeg` when ffmpeg is absent. CPU liquid fixtures stay green. CLAIM **PASS** TommyLaptop 2026-10-31 @ `93b50c45` (see `spec/tests/M15/bench/CLAIM.md`).
 
 ---
 

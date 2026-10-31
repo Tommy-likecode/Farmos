@@ -6,7 +6,8 @@ and the M15 liquid module (`import { … } from "farmos:liquid"`) plus
 `spec/M15-liquid-mp4.md` (**FINAL** — OQ-M15-01..10 all **accepted A**).
 
 **Status:** **FINAL** (PM/user 2026-10-31: OQ-M15-01..10 A). Binding ACs in
-`M15-liquid-mp4.md` §7. poteto implementing after PM assign.
+`M15-liquid-mp4.md` §7. CLAIM **PASS** (TommyLaptop Windows 2026-10-31 @
+`93b50c45`; `spec/tests/M15/bench/CLAIM.md`). HOLD merge until eggtooth AUDIT.
 
 Cite (do not rewrite) prior floors:
 

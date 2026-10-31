@@ -8,6 +8,7 @@ M15 — liquid / MP4 (`spec/M15-liquid-mp4.md` FINAL):
 - Additive `Renderer.saveMP4(path)` via external `ffmpeg` on PATH (raw rgb24 → H.264, mpeg4 fallback). Capture on `render` when the video unit is linked. STRICT `FARMOS_VIDEO_STRICT=1` → trap **123** `MP4 encode failed`.
 - Size: unused liquid / video DCE; `S_liq − S_scene ≤ 96 KiB`; video glue ≤ 32 KiB. M12–M14 floors and M5 body untouched.
 - Fixtures: `spec/tests/M15/`. `# requires_ffmpeg` soft-skip. Demo: `examples/08_liquid_5s.fm`.
+- CLAIM **PASS** 2026-10-31 TommyLaptop Windows @ `93b50c45` / product `4d7523ec` unchanged: hello PE **13824**; S_liq−S_scene **4096** (33792 − 29696); saveMP4 glue **512**; `liquid_5s.mp4` 5.000 s / 30 fps / 150 / 640×360 h264. Linux 15/15. HOLD until eggtooth AUDIT.
 
 M14 backlog clear (post squash-merge `218f6ef1` / PR #23; product `4d7523ec` **unchanged**):
 
