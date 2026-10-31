@@ -11,6 +11,7 @@
 | `WebGLRenderer.render` | `Renderer.render` (CPU raster) |
 | Path / ray / glass / mirror demos | `Renderer.renderPath` (M4); optional `setPathBackend(PATH_BACKEND_VULKAN)` (M7) or `PATH_BACKEND_VULKAN_RT` (M9); M8 RR/MIS/adaptive opt-in; M11 `setPathGlossyContinuation(PATH_GLOSSY_VNDF)` for rough metals; M12 `setPathUpscale(PATH_UPSCALE_XESS)` (headless, default OFF) |
 | `cannon` / `ammo` rigid bodies | `farmos:physics` `World` / `RigidBody` (M5) |
+| height-field / shallow water | `farmos:liquid` `LiquidWorld` / `HeightField` (M15) |
 
 Math types (`Vector3`, `Matrix4`, `Quaternion`, `Euler`, `Color`) come from `"farmos:math"`, not from `"farmos:scene"`.
 

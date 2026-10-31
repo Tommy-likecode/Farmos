@@ -1,0 +1,20 @@
+import { World, RigidBody, BODY_DYNAMIC, SphereCollider } from "farmos:physics";
+import { LiquidWorld, HeightField } from "farmos:liquid";
+
+function main(): int {
+  const pw: World = new World();
+  const body: RigidBody = new RigidBody(BODY_DYNAMIC);
+  body.setMass(1.0);
+  body.setCollider(new SphereCollider(0.5));
+  body.position.set(0.0, 2.0, 0.0);
+  pw.add(body);
+  const lw: LiquidWorld = new LiquidWorld();
+  const field: HeightField = new HeightField(2, 2, 0.2, 0.2);
+  field.setHeight(0, 0, 0.5);
+  lw.addHeightField(field);
+  pw.step();
+  lw.step();
+  println(field.getHeight(0, 0));
+  println(pw.bodyCount());
+  return 0;
+}

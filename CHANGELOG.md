@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+M15 — liquid / MP4 (`spec/M15-liquid-mp4.md` FINAL):
+
+- New builtin `farmos:liquid`: `LiquidWorld`, `HeightField`, `LIQUID_BACKEND_CPU`. Collocated shallow-water CPU (XZ +Y, g=9.81, reflective walls). Oracle `spec/tests/M15/_ref/liquid_ref.py`.
+- Additive `Renderer.saveMP4(path)` via external `ffmpeg` on PATH (raw rgb24 → H.264, mpeg4 fallback). Capture on `render` when the video unit is linked. STRICT `FARMOS_VIDEO_STRICT=1` → trap **123** `MP4 encode failed`.
+- Size: unused liquid / video DCE; `S_liq − S_scene ≤ 96 KiB`; video glue ≤ 32 KiB. M12–M14 floors and M5 body untouched.
+- Fixtures: `spec/tests/M15/`. `# requires_ffmpeg` soft-skip. Demo: `examples/08_liquid_5s.fm`.
+
 M14 backlog clear (post squash-merge `218f6ef1` / PR #23; product `4d7523ec` **unchanged**):
 
 - CLAIM/NOTES: H2 inproc `FRAME_MS` is GPU-pipeline (XeSS 1080p host readback deferred to `savePNG`; GPU XeSS still timed; PNG/ROI OK). Do not claim equal-work vs M13 `945c13ae`. No flush-every-frame secondary inproc meter (proc AC-05 already includes `savePNG`).

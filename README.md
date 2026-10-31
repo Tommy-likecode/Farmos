@@ -108,6 +108,21 @@ Linux: `bash scripts/run_suite_linux.sh build/farmc spec/tests/M6`
 
 ---
 
+## M15 — liquid + MP4
+
+`import { LiquidWorld, HeightField } from "farmos:liquid"` plus `Renderer.saveMP4`. Spec: `spec/M15-liquid-mp4.md` (FINAL). Fixtures: `spec/tests/M15/` (ctest `m15_*`).
+
+5 s demo (needs `ffmpeg` on PATH):
+
+```
+farmc build examples/08_liquid_5s.fm -o liquid_5s
+./liquid_5s
+```
+
+Writes `liquid_5s.mp4` in CWD (640×360, 30 fps, ~5.0 s). Linux CI soft-skips `# requires_ffmpeg` when ffmpeg is absent. CPU liquid fixtures stay green.
+
+---
+
 ## M5 — physics
 
 `import { … } from "farmos:physics"`. Spec: `spec/M5-physics.md`. Fixtures: `spec/tests/M5/` (ctest `m5_*`).

@@ -1,0 +1,7 @@
+# kind: runtime_trap
+# exit: 123
+# env: FARMOS_VIDEO_STRICT=1
+# env: FARMOS_VIDEO_FORCE_FAIL=1
+# stderr:
+runtime error: MP4 encode failed
+# end

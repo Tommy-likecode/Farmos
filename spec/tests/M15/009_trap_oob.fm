@@ -1,0 +1,7 @@
+import { HeightField } from "farmos:liquid";
+
+function main(): int {
+  const field: HeightField = new HeightField(4, 4, 0.1, 0.1);
+  field.setHeight(4, 0, 1.0);
+  return 0;
+}

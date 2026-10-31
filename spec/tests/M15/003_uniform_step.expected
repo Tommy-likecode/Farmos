@@ -1,0 +1,7 @@
+# kind: run_approx
+# exit: 0
+# stdout:
+0.5
+0.5
+0.5
+# end

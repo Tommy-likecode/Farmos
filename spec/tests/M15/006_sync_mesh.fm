@@ -1,0 +1,26 @@
+import { LiquidWorld, HeightField } from "farmos:liquid";
+import { Scene, Mesh, PlaneGeometry, MeshBasicMaterial } from "farmos:scene";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  const mesh: Mesh = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial(0x2266cc));
+  mesh.scale.set(1.0, 1.0, 1.0);
+  scene.add(mesh);
+  const world: LiquidWorld = new LiquidWorld();
+  const field: HeightField = new HeightField(2, 2, 0.25, 0.25);
+  field.setHeight(0, 0, 0.8);
+  field.setHeight(1, 0, 0.4);
+  field.setHeight(0, 1, 0.4);
+  field.setHeight(1, 1, 0.2);
+  field.linkMesh(mesh);
+  world.addHeightField(field);
+  world.step();
+  println(field.getHeight(0, 0));
+  println(field.getHeight(1, 0));
+  println(field.getHeight(0, 1));
+  println(field.getHeight(1, 1));
+  println(mesh.scale.x);
+  println(mesh.scale.y);
+  println(mesh.scale.z);
+  return 0;
+}

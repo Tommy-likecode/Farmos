@@ -1,0 +1,48 @@
+import { Scene, Mesh, PlaneGeometry, MeshBasicMaterial,
+         PerspectiveCamera, Renderer, DirectionalLight } from "farmos:scene";
+import { LiquidWorld, HeightField } from "farmos:liquid";
+import { Color } from "farmos:math";
+
+function main(): int {
+  const scene: Scene = new Scene();
+  scene.setBackground(new Color(0x87ceeb));
+  const camera: PerspectiveCamera = new PerspectiveCamera(35, 16.0 / 9.0, 0.1, 100);
+  camera.position.set(0.0, 2.4, 3.2);
+  camera.lookAt(0.0, 0.2, 0.0);
+  const light: DirectionalLight = new DirectionalLight(0xffffff, 1.0);
+  light.position.set(2.0, 4.0, 1.0);
+  scene.add(light);
+  const floor: Mesh = new Mesh(new PlaneGeometry(4, 4), new MeshBasicMaterial(0xc4a574));
+  floor.quaternion.x = -0.7071067811865476;
+  floor.quaternion.w = 0.7071067811865476;
+  scene.add(floor);
+  const mesh: Mesh = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial(0x0a4d8c));
+  scene.add(mesh);
+  const world: LiquidWorld = new LiquidWorld();
+  const field: HeightField = new HeightField(16, 16, 0.08, 0.08);
+  let j: int = 0;
+  while (j < 16) {
+    let i: int = 0;
+    while (i < 16) {
+      if (i < 8) {
+        field.setHeight(i, j, 0.35);
+      } else {
+        field.setHeight(i, j, 0.08);
+      }
+      i = i + 1;
+    }
+    j = j + 1;
+  }
+  field.linkMesh(mesh);
+  world.addHeightField(field);
+  const renderer: Renderer = new Renderer(640, 360);
+  let f: int = 0;
+  while (f < 150) {
+    world.step();
+    world.step();
+    renderer.render(scene, camera);
+    f = f + 1;
+  }
+  renderer.saveMP4("liquid_5s.mp4");
+  return 0;
+}

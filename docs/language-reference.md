@@ -32,7 +32,7 @@ Identifiers are ASCII. Statements require semicolons. Comments: `//` and non-nes
 | `struct` | Value type; fieldwise copy. |
 | `class` | Reference type; `new` on the program arena. |
 
-Modules: each `.fm` file is a module. `export` / `import { … } from "./x.fm"` for user modules. Built-in virtual modules: `"farmos:math"`, `"farmos:scene"`, `"farmos:physics"`.
+Modules: each `.fm` file is a module. `export` / `import { … } from "./x.fm"` for user modules. Built-in virtual modules: `"farmos:math"`, `"farmos:scene"`, `"farmos:physics"`, `"farmos:liquid"`.
 
 ## 3. Control flow
 
@@ -117,7 +117,11 @@ A program that **never executes** `parallel` and **never calls** `renderPath` mu
 
 `World`, `RigidBody`, `SphereCollider` / `BoxCollider` / `PlaneCollider`, `BODY_DYNAMIC` / `BODY_STATIC` / `BODY_KINEMATIC`. `world.step()` integrates a fixed timestep. `body.setObject(mesh)` writes pose back to the scene mesh after each step (scale is not written).
 
-## 10. Size and DCE
+## 10. `farmos:liquid`
+
+`LiquidWorld`, `HeightField`, `LIQUID_BACKEND_CPU` (0). CPU collocated shallow-water on XZ (`h`, `u`, `w`), height +Y, `g = 9.81`, default dt `1/60`. `field.linkMesh(mesh)` writes vertex Y from cell heights after `world.step()`. No two-way coupling with `farmos:physics`. `Renderer.saveMP4(path)` muxes captured `render` frames through external `ffmpeg`.
+
+## 11. Size and DCE
 
 Budgets (stripped Windows x64 PE unless noted) are in `spec/M6-hardening.md` §3:
 
@@ -131,6 +135,8 @@ Budgets (stripped Windows x64 PE unless noted) are in `spec/M6-hardening.md` §3
 | B-10 | denoise-linked path demo | ≤ 600 KiB |
 | B-11 | upscale-glue-linked path demo (path + optional denoise + upscale) | ≤ 700 KiB |
 | B-04 | `S_demo − S_scene` | ≤ 64 KiB |
+| liquid_demo | `S_liq − S_scene` | ≤ 96 KiB |
+| video_encode | `saveMP4` glue | ≤ 32 KiB |
 | B-05 | Cornell 800×600 `renderPath` peak working set | ≤ 64 MiB |
 | B-06 | unused `farmos:math` import | ≤ 20 KiB |
 | B-07 | no `parallel` / no `renderPath` | no thread-start imports |

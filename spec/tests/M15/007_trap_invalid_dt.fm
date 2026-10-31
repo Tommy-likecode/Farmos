@@ -1,0 +1,7 @@
+import { LiquidWorld } from "farmos:liquid";
+
+function main(): int {
+  const world: LiquidWorld = new LiquidWorld();
+  world.setFixedTimeStep(0.0);
+  return 0;
+}
