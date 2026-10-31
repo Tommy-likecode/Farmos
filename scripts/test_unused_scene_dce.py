@@ -273,6 +273,8 @@ def main():
             fail("M4 renderPath program pulled user-parallel runtime")
         if "farm_physics.c" in m4log:
             fail("M4 renderPath program linked farm_physics.c")
+        if "farm_liquid.c" in m4log or "farm_video.c" in m4log:
+            fail("M4 renderPath program linked farm_liquid.c / farm_video.c")
 
         unused_phys_src = os.path.join(td, "unused_phys.fm")
         with open(unused_phys_src, "w", encoding="utf-8") as f:
@@ -305,6 +307,38 @@ def main():
             fail("M5 physics program pulled user-parallel runtime")
         if "-pthread" in physlog:
             fail("M5 physics program linked with -pthread")
+
+        unused_liq_src = os.path.join(td, "unused_liq.fm")
+        with open(unused_liq_src, "w", encoding="utf-8") as f:
+            f.write('import { LiquidWorld } from "farmos:liquid";\n'
+                    "function main(): int {\n  println(\"Hello, Farmos\");\n  return 0;\n}\n")
+        unused_liq = os.path.join(td, "unused_liq")
+        unused_liq_c = os.path.join(td, "unused_liq.c")
+        build(farmc, unused_liq_src, unused_liq, extra=["--emit-c", unused_liq_c])
+        qs = os.path.getsize(unused_liq)
+        if hs != qs:
+            fail(f"hello size {hs} != unused-liquid-import size {qs}")
+        with open(unused_liq, "rb") as f:
+            qb = f.read()
+        if not binaries_equal(hb, qb):
+            fail("hello binary differs from unused-liquid-import binary")
+        with open(unused_liq_c, "rb") as f:
+            qc = f.read()
+        if hc != qc:
+            fail("generated C for unused liquid import differs from hello")
+        qlog = verbose_cmd(farmc, unused_liq_src, os.path.join(td, "unused_liq_v"))
+        assert_non_scene_link("unused liquid import", qlog)
+        if "farm_liquid.c" in qlog or "farm_video.c" in qlog:
+            fail("unused liquid import linked farm_liquid.c / farm_video.c")
+        assert_no_thread_runtime("unused liquid import", qlog, qc, qb, unused_liq)
+
+        used_liq_src = os.path.join(root, "spec/tests/M15/001_import_smoke.fm")
+        liq_out = os.path.join(td, "liq")
+        liqlog = verbose_cmd(farmc, used_liq_src, liq_out)
+        if "farm_liquid.c" not in liqlog:
+            fail("M15 liquid program did not link farm_liquid.c")
+        if "farm_video.c" in liqlog or "FARM_ENABLE_VIDEO" in liqlog:
+            fail("M15 import-smoke linked farm_video.c")
 
         assert_no_thread_runtime("hello", hlog, hc, hb, hello)
         assert_no_thread_runtime("unused scene import", ulog, uc, ub, unused)

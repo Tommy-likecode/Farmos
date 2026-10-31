@@ -1,0 +1,10 @@
+import { LiquidWorld, HeightField, LIQUID_BACKEND_CPU } from "farmos:liquid";
+
+function main(): int {
+  const world: LiquidWorld = new LiquidWorld();
+  const field: HeightField = new HeightField(4, 4, 0.25, 0.25);
+  world.addHeightField(field);
+  println(LIQUID_BACKEND_CPU);
+  println(field.getHeight(0, 0));
+  return 0;
+}

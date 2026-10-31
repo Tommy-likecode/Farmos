@@ -158,7 +158,8 @@ static bool is_physics_sym(const std::string& n) {
 }
 
 static bool is_stdlib_mod(const std::string& p) {
-  return p == "farmos:math" || p == "farmos:scene" || p == "farmos:physics";
+  return p == "farmos:math" || p == "farmos:scene" || p == "farmos:physics" ||
+         p == "farmos:liquid";
 }
 
 static bool is_object3d_sym(const std::string& n) {
@@ -1512,6 +1513,7 @@ void seed_scene_summaries(Analyzer& A) {
   Summary png; png.seeded = true; png.file_io = true;
   add_eff(png, true, false, A.with_field(rth, "#frame"));
   A.sums["farm_Renderer_savePNG"] = png;
+  A.sums["farm_Renderer_saveMP4"] = png;
 
   Summary sz; sz.seeded = true;
   add_eff(sz, false, true, A.with_field(rth, "width"), CVal::unk());

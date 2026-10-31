@@ -1,0 +1,5 @@
+# kind: runtime_trap
+# exit: 105
+# stderr:
+runtime error: use after dispose
+# end

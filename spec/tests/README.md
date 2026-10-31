@@ -41,7 +41,11 @@ Optional headers:
 
 ```
 # stderr_exact: true
+# requires_ffmpeg: true
+# mp4: out.mp4
 ```
+
+`# requires_ffmpeg: true` soft-skips when `ffmpeg` is not on PATH. `# mp4:` (run fixtures) probes duration / fps / frame count / 640×360 when `ffprobe` is present.
 
 When `stderr_exact` is true (default for `runtime_trap`), stderr must match the `# stderr:` block exactly. For `run`, stderr must be empty (no `# stderr:` block).
 

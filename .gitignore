@@ -23,6 +23,9 @@ test_type
 
 /[0-9][0-9][0-9]_*
 
+# M15 encode outputs (no MP4 SHA golden)
+*.mp4
+
 # Accidental farmc -o outputs (ELF/PE, no extension) and scratch sources
 # dropped in the repo root. Root-only (`/…`); `/test*` would ignore tests/.
 /test_*

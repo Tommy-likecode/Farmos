@@ -1,0 +1,5 @@
+# kind: runtime_trap
+# exit: 123
+# stderr:
+runtime error: invalid liquid parameter
+# end

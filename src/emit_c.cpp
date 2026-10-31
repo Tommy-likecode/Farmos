@@ -27,8 +27,13 @@ static bool is_physics_class_sym(const std::string& n) {
          n == "farm_PlaneCollider";
 }
 
+static bool is_liquid_class_sym(const std::string& n) {
+  return n == "farm_LiquidWorld" || n == "farm_HeightField";
+}
+
 static bool is_stdlib_mod(const std::string& p) {
-  return p == "farmos:math" || p == "farmos:scene" || p == "farmos:physics";
+  return p == "farmos:math" || p == "farmos:scene" || p == "farmos:physics" ||
+         p == "farmos:liquid";
 }
 
 static bool type_is_scene(const TypePtr& t) {
@@ -42,6 +47,13 @@ static bool type_is_physics(const TypePtr& t) {
   if (!t) return false;
   if (t->kind == TypeKind::Class) return is_physics_class_sym(t->name);
   if (t->kind == TypeKind::DynArray || t->kind == TypeKind::FixedArray) return type_is_physics(t->elem);
+  return false;
+}
+
+static bool type_is_liquid(const TypePtr& t) {
+  if (!t) return false;
+  if (t->kind == TypeKind::Class) return is_liquid_class_sym(t->name);
+  if (t->kind == TypeKind::DynArray || t->kind == TypeKind::FixedArray) return type_is_liquid(t->elem);
   return false;
 }
 
@@ -404,6 +416,100 @@ bool program_uses_physics(Program& prog) {
   return false;
 }
 
+static bool expr_uses_liquid(ExprPtr e);
+static bool stmt_uses_liquid(StmtPtr s);
+
+static bool expr_uses_liquid(ExprPtr e) {
+  if (!e) return false;
+  if (type_is_liquid(e->type)) return true;
+  if (e->kind == ExprKind::Ident && e->name == "LIQUID_BACKEND_CPU") return true;
+  if (e->kind == ExprKind::New && is_liquid_class_sym(e->mangled)) return true;
+  if (expr_uses_liquid(e->lhs) || expr_uses_liquid(e->rhs)) return true;
+  for (auto& a : e->args) if (expr_uses_liquid(a)) return true;
+  for (auto& fv : e->fields) if (expr_uses_liquid(fv.second)) return true;
+  return false;
+}
+
+static bool stmt_uses_liquid(StmtPtr s) {
+  if (!s) return false;
+  if (type_is_liquid(s->decl_type)) return true;
+  if (expr_uses_liquid(s->init) || expr_uses_liquid(s->cond) || expr_uses_liquid(s->lhs) ||
+      expr_uses_liquid(s->rhs) || expr_uses_liquid(s->for_cond) || expr_uses_liquid(s->ret))
+    return true;
+  if (stmt_uses_liquid(s->then_b) || stmt_uses_liquid(s->else_b) ||
+      stmt_uses_liquid(s->for_init) || stmt_uses_liquid(s->for_update))
+    return true;
+  for (auto& x : s->stmts) if (stmt_uses_liquid(x)) return true;
+  return false;
+}
+
+bool program_uses_liquid(Program& prog) {
+  for (auto& m : prog.modules) {
+    if (is_stdlib_mod(m.path)) continue;
+    for (auto& f : m.functions) {
+      for (auto& p : f.params) if (type_is_liquid(p.type)) return true;
+      if (type_is_liquid(f.ret) || stmt_uses_liquid(f.body)) return true;
+    }
+    for (auto& c : m.classes) {
+      if (is_liquid_class_sym(c.c_sym)) return true;
+      for (auto& f : c.fields) if (type_is_liquid(f.type)) return true;
+      for (auto& md : c.methods) {
+        for (auto& p : md.params) if (type_is_liquid(p.type)) return true;
+        if (type_is_liquid(md.ret) || stmt_uses_liquid(md.body)) return true;
+      }
+    }
+    for (auto& s : m.structs) {
+      for (auto& f : s.fields) if (type_is_liquid(f.type)) return true;
+    }
+    for (auto& k : m.consts) {
+      if (type_is_liquid(k.type) || expr_uses_liquid(k.init)) return true;
+    }
+  }
+  return false;
+}
+
+static bool expr_uses_video(ExprPtr e);
+static bool stmt_uses_video(StmtPtr s);
+
+static bool expr_uses_video(ExprPtr e) {
+  if (!e) return false;
+  if (e->kind == ExprKind::Ident && e->name == "saveMP4") return true;
+  if (e->kind == ExprKind::Field && e->name == "saveMP4") return true;
+  if (e->kind == ExprKind::Call && e->lhs && e->lhs->kind == ExprKind::Field &&
+      e->lhs->name == "saveMP4")
+    return true;
+  if (e->mangled == "farm_Renderer_saveMP4") return true;
+  if (expr_uses_video(e->lhs) || expr_uses_video(e->rhs)) return true;
+  for (auto& a : e->args) if (expr_uses_video(a)) return true;
+  for (auto& fv : e->fields) if (expr_uses_video(fv.second)) return true;
+  return false;
+}
+
+static bool stmt_uses_video(StmtPtr s) {
+  if (!s) return false;
+  if (expr_uses_video(s->init) || expr_uses_video(s->cond) || expr_uses_video(s->lhs) ||
+      expr_uses_video(s->rhs) || expr_uses_video(s->for_cond) || expr_uses_video(s->ret))
+    return true;
+  if (stmt_uses_video(s->then_b) || stmt_uses_video(s->else_b) ||
+      stmt_uses_video(s->for_init) || stmt_uses_video(s->for_update))
+    return true;
+  for (auto& x : s->stmts) if (stmt_uses_video(x)) return true;
+  return false;
+}
+
+bool program_uses_video(Program& prog) {
+  for (auto& m : prog.modules) {
+    if (is_stdlib_mod(m.path)) continue;
+    for (auto& f : m.functions) if (stmt_uses_video(f.body)) return true;
+    for (auto& c : m.classes)
+      for (auto& md : c.methods) if (stmt_uses_video(md.body)) return true;
+    for (auto& s : m.structs)
+      for (auto& md : s.methods) if (stmt_uses_video(md.body)) return true;
+    for (auto& op : m.operators) if (stmt_uses_video(op.body)) return true;
+  }
+  return false;
+}
+
 static bool expr_uses_math(ExprPtr e);
 static bool stmt_uses_math(StmtPtr s);
 
@@ -545,9 +651,10 @@ struct Emitter {
   // M3: Set at the start of emit_all(). Non-scene programs MUST match master codegen.
   bool uses_scene = false;
   bool uses_physics = false;
+  bool uses_liquid = false;
   bool uses_parallel = false;
   bool user_uses_math = false;
-  bool rt_math() const { return uses_scene || uses_physics; }
+  bool rt_math() const { return uses_scene || uses_physics || uses_liquid; }
   std::unordered_map<std::string, std::string> cap_val;
   std::unordered_map<std::string, std::string> cap_ptr;
   std::string this_c = "this";
@@ -629,6 +736,8 @@ struct Emitter {
           return t->name + "*";
         if (uses_physics && is_physics_class_sym(t->name))
           return t->name + "*";
+        if (uses_liquid && is_liquid_class_sym(t->name))
+          return t->name + "*";
         return "struct Farm_" + t->name + "*";
       case TypeKind::DynArray: return "FarmDynArray";
       case TypeKind::FixedArray: return "FarmFixed_" + sanitize(t->str());
@@ -650,7 +759,7 @@ struct Emitter {
       } else if (t->kind == TypeKind::DynArray) walk(t->elem);
     };
     for (auto& m : prog.modules) {
-      if (m.path == "farmos:scene" || m.path == "farmos:physics") continue;
+      if (m.path == "farmos:scene" || m.path == "farmos:physics" || m.path == "farmos:liquid") continue;
       if (m.path == "farmos:math" && (rt_math() || !user_uses_math)) continue;
       for (auto& s : m.structs) for (auto& f : s.fields) walk(f.type);
       for (auto& c : m.classes) {
@@ -842,6 +951,8 @@ struct Emitter {
             return field_access;
           }
           if (uses_physics && is_physics_class_sym(e->lhs->type->name))
+            return "(" + base + ")->f_" + e->name;
+          if (uses_liquid && is_liquid_class_sym(e->lhs->type->name))
             return "(" + base + ")->f_" + e->name;
           return "(" + base + ")->f_" + e->name;
         }
@@ -1051,7 +1162,8 @@ struct Emitter {
         if (e->type->kind == TypeKind::Class) {
           std::string v = fresh("obj");
           if ((uses_scene && is_scene_class_sym(e->type->name)) ||
-              (uses_physics && is_physics_class_sym(e->type->name))) {
+              (uses_physics && is_physics_class_sym(e->type->name)) ||
+              (uses_liquid && is_liquid_class_sym(e->type->name))) {
             std::vector<std::string> arg_values;
             for (auto& arg : e->args) arg_values.push_back(emit_expr(arg));
             out << e->mangled << "* " << v << " = " << e->mangled << "_new";
@@ -1561,6 +1673,7 @@ struct Emitter {
   std::string emit_all() {
     uses_scene = program_uses_scene(prog);
     uses_physics = program_uses_physics(prog);
+    uses_liquid = program_uses_liquid(prog);
     uses_parallel = program_uses_parallel(prog);
     user_uses_math = program_uses_math(prog);
     bool uses_random01 = program_uses_random01(prog);
@@ -1579,13 +1692,16 @@ struct Emitter {
     if (uses_scene) {
       out << "#include \"farm_math.h\"\n";
       out << "#include \"farm_scene.h\"\n";
-    } else if (uses_physics) {
+    } else if (uses_physics || uses_liquid) {
       out << "#include \"farm_math.h\"\n";
     } else if (uses_random01) {
       out << "double farm_random01(void);\n";
     }
     if (uses_physics) {
       out << "#include \"farm_physics.h\"\n";
+    }
+    if (uses_liquid) {
+      out << "#include \"farm_liquid.h\"\n";
     }
     if (uses_parallel) {
       out << "#include \"farm_par.h\"\n";
@@ -1605,7 +1721,8 @@ struct Emitter {
     // Then emit all classes
     for (auto& m : prog.modules) {
       for (auto& c : m.classes) {
-        if (is_scene_class_sym(c.c_sym) || is_physics_class_sym(c.c_sym)) continue;
+        if (is_scene_class_sym(c.c_sym) || is_physics_class_sym(c.c_sym) ||
+            is_liquid_class_sym(c.c_sym)) continue;
         out << "struct Farm_" << c.c_sym << " {\n";
         for (auto& f : c.fields) out << "  " << c_type(f.type) << " f_" << f.name << ";\n";
         out << "};\n";
@@ -1659,7 +1776,8 @@ struct Emitter {
         out << ");\n";
       }
       for (auto& c : m.classes) {
-        if (is_scene_class_sym(c.c_sym) || is_physics_class_sym(c.c_sym)) continue;
+        if (is_scene_class_sym(c.c_sym) || is_physics_class_sym(c.c_sym) ||
+            is_liquid_class_sym(c.c_sym)) continue;
         for (auto& md : c.methods) {
           std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
           out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.c_sym << "* this";
@@ -1691,6 +1809,7 @@ struct Emitter {
     for (auto& m : prog.modules) {
       if (skip_math_code(m) || m.path == "farmos:scene") continue;
       if (m.path == "farmos:physics" && !uses_physics) continue;
+      if (m.path == "farmos:liquid" && !uses_liquid) continue;
       for (auto& c : m.consts)
         out << "static " << c_type(c.type) << " " << c.c_sym << ";\n";
     }
@@ -1701,6 +1820,7 @@ struct Emitter {
     for (auto& m : prog.modules) {
       if (skip_math_code(m) || m.path == "farmos:scene") continue;
       if (m.path == "farmos:physics" && !uses_physics) continue;
+      if (m.path == "farmos:liquid" && !uses_liquid) continue;
       for (auto& c : m.consts) {
         std::string v = emit_expr(c.init);
         out << "  " << c.c_sym << " = " << v << ";\n";
@@ -1734,7 +1854,8 @@ struct Emitter {
         out << "\n";
       }
       for (auto& c : m.classes) {
-        if (is_scene_class_sym(c.c_sym) || is_physics_class_sym(c.c_sym)) continue;
+        if (is_scene_class_sym(c.c_sym) || is_physics_class_sym(c.c_sym) ||
+            is_liquid_class_sym(c.c_sym)) continue;
         for (auto& md : c.methods) {
           std::string name = md.is_ctor ? (c.c_sym + "__constructor") : (c.c_sym + "__" + md.name);
           out << (md.is_ctor ? "void" : c_type(md.ret)) << " " << name << "(struct Farm_" << c.c_sym << "* this";

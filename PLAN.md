@@ -258,6 +258,15 @@ M14 — Performance / more speed (post-M13) [added 2026-10-29 by PM/user GO draf
 - Order: after M13.
 - Open questions: **none**.
 
+M15 — Liquid / fluid simulation + MP4 export (~5 s) [added 2026-10-31 by PM/user GO draft-m15 liquid-mp4]
+- Goal: CPU-first 2D height-field / shallow-water (`farmos:liquid`) plus `Renderer.saveMP4` via external ffmpeg; ~5 s @ 30 fps @ 640×360.
+- Status: **FINAL** spec (`spec/M15-liquid-mp4.md`; OQ-M15-01..10 all **accepted A**). Implemented on `cursor/m15-liquid-mp4-7365`. CLAIM **PASS** 2026-10-31 TommyLaptop Windows @ `93b50c45` (hello PE **13824**; S_liq−S_scene **4096**; glue **512**; mp4 5.000 s / 30 fps / 150 / 640×360). Linux 15/15 + size/DCE green. Product `4d7523ec` unchanged. HOLD merge until eggtooth AUDIT PASS.
+- Binding: XZ +Y; `LiquidWorld` + `HeightField` + `step` / optional `linkMesh`; two `step()` per display frame at dt=1/60; trap **123**-family; `# requires_ffmpeg`; `S_liq − S_scene ≤ 96 KiB`; hello ≤20; ffmpeg external.
+- OUT: cloth; 3D SPH; fluid↔rigid coupling; PE-bundled H.264; window; frame-gen; DLSS/Enabler; weaken M12–M14; edit M5 body (RD-M5-04 stands for M5).
+- Spec: `spec/M15-liquid-mp4.md` (**FINAL**); fixtures: `spec/tests/M15/`.
+- Order: after M14.
+- Open questions: **none**.
+
 ## Team
 - Projects Manager: plan, priorities, handoffs, acceptance.
 - poteto: all coding (via Cursor cloud agents), per milestone, reports status/blockers.

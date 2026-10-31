@@ -1,0 +1,6 @@
+# kind: run
+# exit: 0
+# requires_ffmpeg: true
+# mp4: liquid_5s.mp4
+# stdout:
+# end

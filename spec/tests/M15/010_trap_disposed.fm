@@ -1,0 +1,10 @@
+import { LiquidWorld, HeightField } from "farmos:liquid";
+
+function main(): int {
+  const world: LiquidWorld = new LiquidWorld();
+  const field: HeightField = new HeightField(4, 4, 0.1, 0.1);
+  world.addHeightField(field);
+  world.dispose();
+  world.step();
+  return 0;
+}

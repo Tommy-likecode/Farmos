@@ -322,6 +322,12 @@ try {
   if ($hlog.IndexOf("farm_upscale.c", [StringComparison]::Ordinal) -ge 0) {
     Fail-Size "hello linked farm_upscale.c"
   }
+  if ($hlog.IndexOf("farm_liquid.c", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Size "hello linked farm_liquid.c"
+  }
+  if ($hlog.IndexOf("farm_video.c", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Size "hello linked farm_video.c"
+  }
   if ($glog.IndexOf("farm_upscale.c", [StringComparison]::Ordinal) -ge 0 -or $glog.IndexOf("FARM_ENABLE_UPSCALE", [StringComparison]::Ordinal) -ge 0) {
     Fail-Size "CPU glass+mirror linked farm_upscale.c"
   }
@@ -345,6 +351,91 @@ try {
   Write-Host "DCE  hello / unused-math link only farm_rt.c  OK"
   Write-Host "M10  glass+mirror omits farm_denoise.c; denoise-linked includes it  OK"
   Write-Host "M12  unused upscale DCE; upscale-glue-linked includes farm_upscale.c  OK"
+
+  $unusedLiqSrc = Join-Path $td "unused_liq.fm"
+  Set-Content -Encoding ASCII -LiteralPath $unusedLiqSrc @(
+    'import { LiquidWorld } from "farmos:liquid";',
+    "function main(): int {",
+    '  println("Hello, Farmos");',
+    "  return 0;",
+    "}"
+  )
+  $unusedLiq = Join-Path $td "unused_liq.exe"
+  Invoke-FarmcBuild $unusedLiqSrc $unusedLiq @()
+  $uls = (Get-Item -LiteralPath $unusedLiq).Length
+  if ($uls -ne $hs) { Fail-Size "M15 DCE: unused-liquid size $uls != hello $hs" }
+  $ulogL = Get-VerboseLog $unusedLiqSrc (Join-Path $td "unused_liq_v.exe")
+  if ($ulogL.IndexOf("farm_liquid.c", [StringComparison]::Ordinal) -ge 0 -or $ulogL.IndexOf("farm_video.c", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Size "unused liquid import linked farm_liquid.c / farm_video.c"
+  }
+
+  $liqSrc = Join-Path $td "liquid_demo.fm"
+  Set-Content -Encoding ASCII -LiteralPath $liqSrc @(
+    'import { Scene, Mesh, PlaneGeometry, MeshBasicMaterial, PerspectiveCamera, Renderer } from "farmos:scene";',
+    'import { LiquidWorld, HeightField } from "farmos:liquid";',
+    "function main(): int {",
+    "  const scene: Scene = new Scene();",
+    "  const camera: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);",
+    "  camera.position.z = 4;",
+    "  const mesh: Mesh = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial(0x2266cc));",
+    "  scene.add(mesh);",
+    "  const world: LiquidWorld = new LiquidWorld();",
+    "  const field: HeightField = new HeightField(8, 8, 0.1, 0.1);",
+    "  field.setHeight(2, 2, 0.8);",
+    "  field.linkMesh(mesh);",
+    "  world.addHeightField(field);",
+    "  world.step();",
+    "  world.step();",
+    "  const renderer: Renderer = new Renderer(8, 8);",
+    "  renderer.render(scene, camera);",
+    "  return 0;",
+    "}"
+  )
+  $liq = Join-Path $td "liquid_demo.exe"
+  Invoke-FarmcBuild $liqSrc $liq @()
+  $ls = (Get-Item -LiteralPath $liq).Length
+  $liqDelta = $ls - $ss
+  Write-Report "liquid_demo" "S_liq - S_scene" $liqDelta 98304 $true
+  Write-Host ("      S_liq={0} B  S_scene={1} B" -f $ls, $ss)
+  $llog = Get-VerboseLog $liqSrc (Join-Path $td "liquid_v.exe")
+  if ($llog.IndexOf("farm_liquid.c", [StringComparison]::Ordinal) -lt 0) {
+    Fail-Size "liquid_demo did not link farm_liquid.c"
+  }
+  if ($llog.IndexOf("farm_video.c", [StringComparison]::Ordinal) -ge 0 -or $llog.IndexOf("FARM_ENABLE_VIDEO", [StringComparison]::Ordinal) -ge 0) {
+    Fail-Size "liquid_demo (no saveMP4) linked farm_video.c"
+  }
+
+  $vidSrc = Join-Path $td "video_encode.fm"
+  Set-Content -Encoding ASCII -LiteralPath $vidSrc @(
+    'import { Scene, Mesh, PlaneGeometry, MeshBasicMaterial, PerspectiveCamera, Renderer } from "farmos:scene";',
+    'import { LiquidWorld, HeightField } from "farmos:liquid";',
+    "function main(): int {",
+    "  const scene: Scene = new Scene();",
+    "  const camera: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);",
+    "  camera.position.z = 4;",
+    "  const mesh: Mesh = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial(0x2266cc));",
+    "  scene.add(mesh);",
+    "  const world: LiquidWorld = new LiquidWorld();",
+    "  const field: HeightField = new HeightField(8, 8, 0.1, 0.1);",
+    "  field.linkMesh(mesh);",
+    "  world.addHeightField(field);",
+    "  const renderer: Renderer = new Renderer(8, 8);",
+    "  renderer.render(scene, camera);",
+    '  renderer.saveMP4("t.mp4");',
+    "  return 0;",
+    "}"
+  )
+  $vid = Join-Path $td "video_encode.exe"
+  Invoke-FarmcBuild $vidSrc $vid @()
+  $vs = (Get-Item -LiteralPath $vid).Length
+  $glue = $vs - $ls
+  Write-Report "video_encode" "saveMP4 glue (S_vid - S_liq)" $glue 32768 $true
+  Write-Host ("      S_vid={0} B  S_liq={1} B" -f $vs, $ls)
+  $vlog = Get-VerboseLog $vidSrc (Join-Path $td "video_v.exe")
+  if ($vlog.IndexOf("farm_video.c", [StringComparison]::Ordinal) -lt 0 -or $vlog.IndexOf("FARM_ENABLE_VIDEO", [StringComparison]::Ordinal) -lt 0) {
+    Fail-Size "video_encode did not link farm_video.c"
+  }
+  Write-Host "M15  unused liquid DCE; S_liq-S_scene; video glue reported  OK"
 
   if ($CheckPeakRam) {
     if (-not (Test-Path -LiteralPath $cornellSrc)) { Fail-Size "missing $cornellSrc" }
