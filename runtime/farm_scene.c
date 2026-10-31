@@ -1895,6 +1895,9 @@ void farm_Renderer_render(farm_Renderer* self, farm_Scene* scene, farm_Perspecti
   
   // Traverse and render
   traverse_render((farm_Object3D*)scene, self, camera, &lights);
+#ifdef FARM_ENABLE_VIDEO
+  farm_video_on_render(self);
+#endif
 }
 
 // PNG writer (canonical format per spec)

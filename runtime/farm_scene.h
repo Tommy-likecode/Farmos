@@ -504,6 +504,10 @@ int64_t farm_Renderer_getPathPreviewSpp(farm_Renderer* self);
 int farm_renderer_roulette_on(const farm_Renderer* self);
 int32_t farm_renderer_sampling_mode(const farm_Renderer* self);
 void farm_Renderer_savePNG(farm_Renderer* self, FarmString path);
+void farm_Renderer_saveMP4(farm_Renderer* self, FarmString path);
+#ifdef FARM_ENABLE_VIDEO
+void farm_video_on_render(farm_Renderer* self);
+#endif
 void farm_Renderer_dispose(farm_Renderer* self);
 
 static inline farm_GeometryData* farm_mesh_geometry_data(farm_Mesh* mesh) {
