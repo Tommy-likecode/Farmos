@@ -256,6 +256,9 @@ try {
   if ($m4log -like "*farm_physics.c*") {
     Fail-Dce "M4 renderPath program linked farm_physics.c"
   }
+  if ($m4log -like "*farm_liquid.c*" -or $m4log -like "*farm_video.c*") {
+    Fail-Dce "M4 renderPath program linked farm_liquid.c / farm_video.c"
+  }
 
   $unusedPhysSrc = Join-Path $td "unused_phys.fm"
   Set-Content -LiteralPath $unusedPhysSrc -Value "import { World } from `"farmos:physics`";`nfunction main(): int {`n  println(`"Hello, Farmos`");`n  return 0;`n}`n" -Encoding Ascii -NoNewline
@@ -283,6 +286,34 @@ try {
   }
   if ($physlog -like "*farm_par*" -or $physlog -like "*FARM_ENABLE_THREADS*") {
     Fail-Dce "M5 physics program pulled user-parallel runtime"
+  }
+
+  $unusedLiqSrc = Join-Path $td "unused_liq.fm"
+  Set-Content -LiteralPath $unusedLiqSrc -Value "import { LiquidWorld } from `"farmos:liquid`";`nfunction main(): int {`n  println(`"Hello, Farmos`");`n  return 0;`n}`n" -Encoding Ascii -NoNewline
+  $unusedLiq = Join-Path $td "unused_liq.exe"
+  $unusedLiqC = Join-Path $td "unused_liq.c"
+  Invoke-FarmcBuild -FarmcArgs @("build", $unusedLiqSrc, "-o", $unusedLiq, "--emit-c", $unusedLiqC) -Label "unused_liq" | Out-Null
+  $qs = (Get-Item -LiteralPath $unusedLiq).Length
+  if ($hs -ne $qs) { Fail-Dce "hello size $hs != unused-liquid-import size $qs" }
+  $qb = [System.IO.File]::ReadAllBytes($unusedLiq)
+  if (-not (Test-PeBytesEqual $hb $qb)) { Fail-Dce "hello binary differs from unused-liquid-import binary" }
+  $qc = [System.IO.File]::ReadAllBytes($unusedLiqC)
+  if ($hc.Length -ne $qc.Length) { Fail-Dce "generated C for unused liquid import differs from hello" }
+  for ($i = 0; $i -lt $hc.Length; $i++) {
+    if ($hc[$i] -ne $qc[$i]) { Fail-Dce "generated C for unused liquid import differs from hello" }
+  }
+  $qlog = Get-VerboseLog -FarmcArgs @("build", $unusedLiqSrc, "-o", (Join-Path $td "unused_liq_v.exe"), "-v") -Label "unused_liq_v"
+  Assert-NonSceneLink "unused liquid import" $qlog
+  Assert-NoThreadRuntime "unused liquid import" $qlog $qc $qb
+
+  $usedLiqSrc = Join-Path $RepoRoot "spec/tests/M15/001_import_smoke.fm"
+  $liqOut = Join-Path $td "liq.exe"
+  $liqlog = Get-VerboseLog -FarmcArgs @("build", $usedLiqSrc, "-o", $liqOut, "-v") -Label "liq"
+  if ($liqlog -notlike "*farm_liquid.c*") {
+    Fail-Dce "M15 liquid program did not link farm_liquid.c"
+  }
+  if ($liqlog -like "*farm_video.c*" -or $liqlog -like "*FARM_ENABLE_VIDEO*") {
+    Fail-Dce "M15 import-smoke linked farm_video.c"
   }
 
   Assert-NoThreadRuntime "hello" $hlog $hc $hb

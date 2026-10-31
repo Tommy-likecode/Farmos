@@ -18,6 +18,10 @@ bool program_uses_vulkan(Program& prog);
 bool program_uses_vulkan_rt(Program& prog);
 // True when a user module actually uses a farmos:physics type or BODY_* const.
 bool program_uses_physics(Program& prog);
+// True when a user module actually uses a farmos:liquid type or LIQUID_BACKEND_CPU.
+bool program_uses_liquid(Program& prog);
+// True when a user module calls Renderer.saveMP4 (gates farm_video.c).
+bool program_uses_video(Program& prog);
 // True when a user module actually uses a farmos:math type (not merely imports a name).
 bool program_uses_math(Program& prog);
 // True when a user module calls farmos:math random01() (gates farm_math.c without scene).

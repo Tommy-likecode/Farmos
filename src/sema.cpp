@@ -100,8 +100,13 @@ struct Sema {
            c_sym == "farm_PlaneCollider";
   }
 
+  static bool is_liquid_class_sym(const std::string& c_sym) {
+    return c_sym == "farm_LiquidWorld" || c_sym == "farm_HeightField";
+  }
+
   static bool is_runtime_class_sym(const std::string& c_sym) {
-    return is_scene_class_sym(c_sym) || is_physics_class_sym(c_sym);
+    return is_scene_class_sym(c_sym) || is_physics_class_sym(c_sym) ||
+           is_liquid_class_sym(c_sym);
   }
 
   bool types_assignable(TypePtr actual, TypePtr expected) {
@@ -611,7 +616,7 @@ struct Sema {
                     error_at(path, e->args[i]->loc, "E0408", "type mismatch");
                 }
               }
-              if (is_physics_class_sym(cd->c_sym)) {
+              if (is_physics_class_sym(cd->c_sym) || is_liquid_class_sym(cd->c_sym)) {
                 e->mangled = cd->c_sym + "_" + md->name;
               } else if (is_scene_class_sym(cd->c_sym)) {
                 // Runtime scene methods use a single underscore: farm_Object3D_add.
@@ -860,6 +865,20 @@ struct Sema {
                 error_at(path, e->loc, "E0411", "wrong number of arguments: expected 1, found " + std::to_string(nargs));
               else if (e->args[0]->type->kind != TypeKind::Int)
                 error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int");
+            } else if (cd->c_sym == "farm_LiquidWorld") {
+              if (nargs != 0)
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 0, found " + std::to_string(nargs));
+            } else if (cd->c_sym == "farm_HeightField") {
+              if (nargs != 4)
+                error_at(path, e->loc, "E0411", "wrong number of arguments: expected 4, found " + std::to_string(nargs));
+              else {
+                if (e->args[0]->type->kind != TypeKind::Int)
+                  error_at(path, e->args[0]->loc, "E0408", "type mismatch: expected int");
+                if (e->args[1]->type->kind != TypeKind::Int)
+                  error_at(path, e->args[1]->loc, "E0408", "type mismatch: expected int");
+                coerce_float(e->args[2]);
+                coerce_float(e->args[3]);
+              }
             } else if (nargs != 0 && cd->ctor_index >= 0) {
               auto& ctor = cd->methods[cd->ctor_index];
               if (e->args.size()!=ctor.params.size())
@@ -1376,7 +1395,8 @@ static bool stmt_has_parallel(StmtPtr s) {
 
 bool program_uses_parallel(Program& prog) {
   for (auto& m : prog.modules) {
-    if (m.path == "farmos:math" || m.path == "farmos:scene" || m.path == "farmos:physics") continue;
+    if (m.path == "farmos:math" || m.path == "farmos:scene" || m.path == "farmos:physics" ||
+        m.path == "farmos:liquid") continue;
     for (auto& f : m.functions) if (stmt_has_parallel(f.body)) return true;
     for (auto& c : m.classes) for (auto& md : c.methods) if (stmt_has_parallel(md.body)) return true;
     for (auto& s : m.structs) for (auto& md : s.methods) if (stmt_has_parallel(md.body)) return true;

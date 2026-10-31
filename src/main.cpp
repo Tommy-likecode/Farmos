@@ -1045,6 +1045,17 @@ static Module create_farmos_scene_module(const std::vector<Module>& existing_mod
     }
     {
       MethodDecl md;
+      md.name = "saveMP4";
+      md.params.push_back(Param{"path", Type::ty_string(), SourceLoc{1,1}});
+      md.ret = Type::ty_void();
+      md.loc = SourceLoc{1, 1};
+      auto block = std::make_unique<Stmt>();
+      block->kind = StmtKind::Block;
+      md.body = std::move(block);
+      cd.methods.push_back(std::move(md));
+    }
+    {
+      MethodDecl md;
       md.name = "setSamples";
       md.params.push_back(Param{"n", Type::ty_int(), SourceLoc{1,1}});
       md.ret = Type::ty_void();
@@ -2542,6 +2553,73 @@ static Module create_farmos_physics_module() {
   return m;
 }
 
+static Module create_farmos_liquid_module() {
+  Module m;
+  m.path = "farmos:liquid";
+  m.diag_path = "farmos:liquid";
+  m.is_main = false;
+
+  auto add_const = [&](const char* name, int64_t v) {
+    ConstDecl c;
+    c.name = name;
+    c.exported = true;
+    c.has_type_ann = true;
+    c.type = Type::ty_int();
+    c.loc = SourceLoc{1, 1};
+    auto e = std::make_shared<Expr>();
+    e->kind = ExprKind::IntLit;
+    e->int_val = v;
+    e->type = Type::ty_int();
+    e->loc = SourceLoc{1, 1};
+    c.init = e;
+    m.consts.push_back(std::move(c));
+  };
+  add_const("LIQUID_BACKEND_CPU", 0);
+
+  {
+    ClassDecl cd;
+    cd.name = "LiquidWorld";
+    cd.c_sym = "farm_LiquidWorld";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    cd.methods.push_back(farm_stub_ctor("LiquidWorld"));
+    cd.methods.push_back(farm_stub_method("setFixedTimeStep", Type::ty_void(),
+      {Param{"dt", Type::ty_float(), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("addHeightField", Type::ty_void(),
+      {Param{"field", Type::ty_class("HeightField"), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("removeHeightField", Type::ty_void(),
+      {Param{"field", Type::ty_class("HeightField"), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("step", Type::ty_void()));
+    cd.methods.push_back(farm_stub_method("dispose", Type::ty_void()));
+    m.classes.push_back(std::move(cd));
+  }
+
+  {
+    ClassDecl cd;
+    cd.name = "HeightField";
+    cd.c_sym = "farm_HeightField";
+    cd.exported = true;
+    cd.loc = SourceLoc{1, 1};
+    cd.methods.push_back(farm_stub_ctor("HeightField",
+      {Param{"nx", Type::ty_int(), SourceLoc{1,1}},
+       Param{"nz", Type::ty_int(), SourceLoc{1,1}},
+       Param{"hx", Type::ty_float(), SourceLoc{1,1}},
+       Param{"hz", Type::ty_float(), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("setHeight", Type::ty_void(),
+      {Param{"i", Type::ty_int(), SourceLoc{1,1}},
+       Param{"j", Type::ty_int(), SourceLoc{1,1}},
+       Param{"h", Type::ty_float(), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("getHeight", Type::ty_float(),
+      {Param{"i", Type::ty_int(), SourceLoc{1,1}},
+       Param{"j", Type::ty_int(), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("linkMesh", Type::ty_void(),
+      {Param{"mesh", Type::ty_class("Mesh"), SourceLoc{1,1}}}));
+    cd.methods.push_back(farm_stub_method("clearMeshLink", Type::ty_void()));
+    m.classes.push_back(std::move(cd));
+  }
+  return m;
+}
+
 struct Loader {
   Program prog;
   std::unordered_map<std::string, int> loaded; // canonical path -> index
@@ -2637,6 +2715,26 @@ struct Loader {
               loaded["farmos:physics"] = mid;
             }
             continue;
+          } else if (im.path == "farmos:liquid") {
+            if (!loaded.count("farmos:math")) {
+              Module math_mod = create_farmos_math_module();
+              int math_mid = (int)prog.modules.size();
+              prog.modules.push_back(std::move(math_mod));
+              loaded["farmos:math"] = math_mid;
+            }
+            if (!loaded.count("farmos:scene")) {
+              Module scene_mod = create_farmos_scene_module(prog.modules);
+              int mid = (int)prog.modules.size();
+              prog.modules.push_back(std::move(scene_mod));
+              loaded["farmos:scene"] = mid;
+            }
+            if (!loaded.count("farmos:liquid")) {
+              Module liq_mod = create_farmos_liquid_module();
+              int mid = (int)prog.modules.size();
+              prog.modules.push_back(std::move(liq_mod));
+              loaded["farmos:liquid"] = mid;
+            }
+            continue;
           } else {
             error_at(prog.modules[idx].diag_path, im.loc, "E0304",
                      "unknown builtin module `" + im.path + "`");
@@ -2704,10 +2802,12 @@ struct Loader {
     Module* scene_mod = nullptr;
     Module* math_mod = nullptr;
     Module* phys_mod = nullptr;
+    Module* liq_mod = nullptr;
     for (auto& m : prog.modules) {
       if (m.path == "farmos:scene") scene_mod = &m;
       else if (m.path == "farmos:math") math_mod = &m;
       else if (m.path == "farmos:physics") phys_mod = &m;
+      else if (m.path == "farmos:liquid") liq_mod = &m;
     }
     if (scene_mod && math_mod) {
       // Make all math structs visible to scene module
@@ -2745,6 +2845,11 @@ struct Loader {
       if (it != scene_mod->vis_classes.end())
         phys_mod->vis_classes["Object3D"] = it->second;
       // Physics methods name RigidBody / colliders defined in this module; already in vis_classes.
+    }
+    if (liq_mod && scene_mod) {
+      auto it = scene_mod->vis_classes.find("Mesh");
+      if (it != scene_mod->vis_classes.end())
+        liq_mod->vis_classes["Mesh"] = it->second;
     }
 
     for (auto& mod : prog.modules) {
@@ -3053,7 +3158,8 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
                             const fs::path& out_exe, bool verbose, bool link_scene,
                             bool link_parallel, bool link_ray, bool link_physics,
                             bool link_vulkan, bool link_vulkan_rt, bool link_math,
-                            bool link_denoise, bool link_upscale) {
+                            bool link_denoise, bool link_upscale,
+                            bool link_liquid, bool link_video) {
   std::string cc = find_c_compiler();
   if (cc.empty()) {
     std::cerr << "farmc: no C compiler found (set FARM_CC)\n";
@@ -3074,11 +3180,13 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   fs::path rt_par_c = rt_h_dir / "farm_par.c";
   fs::path rt_ray_c = rt_h_dir / "farm_ray.c";
   fs::path rt_phys_c = rt_h_dir / "farm_physics.c";
+  fs::path rt_liq_c = rt_h_dir / "farm_liquid.c";
+  fs::path rt_video_c = rt_h_dir / "farm_video.c";
   fs::path rt_vk_c = rt_h_dir / "farm_vk.c";
   fs::path rt_vk_rt_c = rt_h_dir / "farm_vk_rt.c";
   fs::path rt_denoise_c = rt_h_dir / "farm_denoise.c";
   fs::path rt_upscale_c = rt_h_dir / "farm_upscale.c";
-  const char* fp_contract = (link_scene || link_physics) ? "-ffp-contract=off " : "";
+  const char* fp_contract = (link_scene || link_physics || link_liquid) ? "-ffp-contract=off " : "";
   /* Ray-only: keep BVH walks out of strict-aliasing / Windows LTO surprises.
      Non-ray programs keep master's flags (hello C/link line unchanged). */
   const char* ray_fp = (link_ray || link_vulkan || link_vulkan_rt || link_denoise || link_upscale) ? "-fno-strict-aliasing " : "";
@@ -3093,6 +3201,7 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
   if (link_vulkan_rt) vk_def += "-DFARM_ENABLE_VULKAN_RT ";
   if (link_denoise) vk_def += "-DFARM_ENABLE_DENOISE ";
   if (link_upscale) vk_def += "-DFARM_ENABLE_UPSCALE ";
+  if (link_video) vk_def += "-DFARM_ENABLE_VIDEO ";
 
   auto append_extra_rt = [&](std::ostringstream& o) {
     // Link farm_math.c / farm_scene.c only when a scene type is actually used.
@@ -3106,6 +3215,10 @@ static int compile_c_to_exe(const fs::path& c_file, const fs::path& rt_c, const 
     }
     if (link_physics && fs::exists(rt_phys_c))
       o << "\"" << path_to_utf8(rt_phys_c) << "\" ";
+    if (link_liquid && fs::exists(rt_liq_c))
+      o << "\"" << path_to_utf8(rt_liq_c) << "\" ";
+    if (link_video && fs::exists(rt_video_c))
+      o << "\"" << path_to_utf8(rt_video_c) << "\" ";
     if (link_ray && fs::exists(rt_ray_c))
       o << "\"" << path_to_utf8(rt_ray_c) << "\" ";
     if (link_vulkan && fs::exists(rt_vk_c))
@@ -3289,7 +3402,9 @@ static int cmd_build(std::vector<std::string> args) {
   bool link_math = program_uses_random01(loader.prog);
   bool link_denoise = program_uses_denoise(loader.prog);
   bool link_upscale = program_uses_upscale(loader.prog);
-  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray, link_physics, link_vulkan, link_vulkan_rt, link_math, link_denoise, link_upscale);
+  bool link_liquid = program_uses_liquid(loader.prog);
+  bool link_video = program_uses_video(loader.prog);
+  int rc = compile_c_to_exe(tmp_c, rt / "farm_rt.c", rt, link_out, verbose, link_scene, link_parallel, link_ray, link_physics, link_vulkan, link_vulkan_rt, link_math, link_denoise, link_upscale, link_liquid, link_video);
   if (rc == 0) {
     std::error_code ec;
     fs::rename(link_out, out_req, ec);

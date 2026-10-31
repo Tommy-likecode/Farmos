@@ -53,6 +53,8 @@ def parse_expected(path):
     requires_vulkan_rt = False
     requires_xess = False
     requires_fsr = False
+    requires_ffmpeg = False
+    mp4_path = None
     png_tol = None
     envs = []
     stdout_alts = []
@@ -127,6 +129,12 @@ def parse_expected(path):
             m = re.match(r"^# requires_fsr:[ \t]*true[ \t]*$", line)
             if m:
                 requires_fsr = True; continue
+            m = re.match(r"^# requires_ffmpeg:[ \t]*true[ \t]*$", line)
+            if m:
+                requires_ffmpeg = True; continue
+            m = re.match(r"^# mp4:[ \t]*(.+)[ \t]*$", line)
+            if m:
+                mp4_path = m.group(1).strip(); continue
             m = re.match(r"^# env:[ \t]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
             if m:
                 envs.append((m.group(1), m.group(2))); continue
@@ -165,7 +173,8 @@ def parse_expected(path):
                 flags=flags, repeat=repeat, threads=threads, diag_exact=diag_exact,
                 epsilon=epsilon, requires_vulkan=requires_vulkan,
                 requires_vulkan_rt=requires_vulkan_rt, requires_xess=requires_xess,
-                requires_fsr=requires_fsr, png_tol=png_tol,
+                requires_fsr=requires_fsr, requires_ffmpeg=requires_ffmpeg,
+                mp4=mp4_path, png_tol=png_tol,
                 envs=envs, stdout_alts=stdout_alts)
 
 png_scratch = None
@@ -508,6 +517,10 @@ if exp.get("requires_fsr") and (not host_has_fsr_lib() or not host_has_vulkan_de
     print(f"SKIP {name}: requires_fsr (no FSR2 SDK or Vulkan device)")
     sys.exit(0)
 
+if exp.get("requires_ffmpeg") and shutil.which("ffmpeg") is None:
+    print(f"SKIP {name}: requires_ffmpeg (ffmpeg not on PATH)")
+    sys.exit(0)
+
 p = run_build()
 if p.returncode != 0:
     fail(f"compile failed ({p.returncode})\n{decode(p.stderr)}")
@@ -612,6 +625,60 @@ for W in thread_cfgs:
     for _ in range(exp["repeat"]):
         r = subprocess.run([tmp], cwd=run_cwd, capture_output=True, env=env)
         check_program(decode(r.stdout), decode(r.stderr), r.returncode)
+
+if exp.get("mp4"):
+    mp4 = os.path.join(run_cwd, exp["mp4"])
+    if not os.path.isfile(mp4):
+        fail(f"MP4 file not found: {mp4}")
+    if os.path.getsize(mp4) < 256:
+        fail(f"MP4 file too small: {os.path.getsize(mp4)} bytes")
+    probe = shutil.which("ffprobe")
+    if probe:
+        p = subprocess.run(
+            [probe, "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height,nb_frames,r_frame_rate",
+             "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1", mp4],
+            capture_output=True, text=True)
+        if p.returncode != 0:
+            fail(f"ffprobe failed\n{p.stderr}")
+        meta = {}
+        for line in (p.stdout or "").splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                meta[k.strip()] = v.strip()
+        try:
+            w = int(float(meta.get("width", "0")))
+            h = int(float(meta.get("height", "0")))
+        except ValueError:
+            w = h = 0
+        if w != 640 or h != 360:
+            fail(f"MP4 size {w}x{h}, expected 640x360")
+        dur = meta.get("duration")
+        try:
+            d = float(dur)
+        except (TypeError, ValueError):
+            d = -1.0
+        if abs(d - 5.0) > 0.25:
+            fail(f"MP4 duration {d}, expected ~5.0s")
+        rate = meta.get("r_frame_rate", "")
+        fps_ok = rate in ("30/1", "30", "30000/1000")
+        if not fps_ok and "/" in rate:
+            try:
+                a, b = rate.split("/", 1)
+                fps_ok = abs(float(a) / float(b) - 30.0) < 0.05
+            except ValueError:
+                fps_ok = False
+        if not fps_ok:
+            fail(f"MP4 fps {rate}, expected 30")
+        nf = meta.get("nb_frames", "N/A")
+        if nf not in ("N/A", "", "unknown"):
+            try:
+                nfi = int(nf)
+                if nfi < 149 or nfi > 151:
+                    fail(f"MP4 frames {nfi}, expected 150")
+            except ValueError:
+                pass
 
 cleanup_png_scratch()
 print(f"PASS {name}")

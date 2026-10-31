@@ -56,6 +56,8 @@ function Parse-Expected([string]$path) {
   $requiresVulkanRt = $false
   $requiresXess = $false
   $requiresFsr = $false
+  $requiresFfmpeg = $false
+  $mp4Path = $null
   $pngTol = $null
   $envs = New-Object System.Collections.Generic.List[object]
   $stdoutAlts = New-Object System.Collections.Generic.List[string]
@@ -135,6 +137,8 @@ function Parse-Expected([string]$path) {
     if ($line -cmatch '^# requires_vulkan_rt:[ \t]*true[ \t]*$') { $requiresVulkanRt = $true; continue }
     if ($line -cmatch '^# requires_xess:[ \t]*true[ \t]*$') { $requiresXess = $true; continue }
     if ($line -cmatch '^# requires_fsr:[ \t]*true[ \t]*$') { $requiresFsr = $true; continue }
+    if ($line -cmatch '^# requires_ffmpeg:[ \t]*true[ \t]*$') { $requiresFfmpeg = $true; continue }
+    if ($line -cmatch '^# mp4:[ \t]*(.+)[ \t]*$') { $mp4Path = $Matches[1].Trim(); continue }
     if ($line -cmatch '^# env:[ \t]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
       [void]$envs.Add(@{ key=$Matches[1]; val=$Matches[2] })
       continue
@@ -184,6 +188,7 @@ function Parse-Expected([string]$path) {
     epsilon=$epsilon
     requiresVulkan=$requiresVulkan; requiresVulkanRt=$requiresVulkanRt
     requiresXess=$requiresXess; requiresFsr=$requiresFsr
+    requiresFfmpeg=$requiresFfmpeg; mp4Path=$mp4Path
     pngTol=$pngTol; envs=$envs; stdoutAlts=$stdoutAlts
   }
 }
@@ -661,6 +666,16 @@ if ($exp.requiresFsr -and (-not (Test-HostNamedLib "FARMOS_FSR_LIB" @("ffx_fsr2_
   Exit-Farmc 0
 }
 
+function Test-HostFfmpeg {
+  $cmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
+  return ($null -ne $cmd)
+}
+
+if ($exp.requiresFfmpeg -and -not (Test-HostFfmpeg)) {
+  Write-Host "SKIP ${Name}: requires_ffmpeg (ffmpeg not on PATH)"
+  Exit-Farmc 0
+}
+
 if (Same $exp.kind 'compile_error') {
   if ($exp.diags.Count -eq 0) { Write-Host "FAIL ${Name}: compile_error fixture lists no # error: lines"; Exit-Farmc 1 }
   $prevRaw = $null
@@ -961,6 +976,41 @@ else { $env:FARMOS_THREADS = $oldThr }
 foreach ($k in $savedEnv.Keys) {
   if ($null -eq $savedEnv[$k]) { Remove-Item -Path ("Env:" + $k) -ErrorAction SilentlyContinue }
   else { Set-Item -Path ("Env:" + $k) -Value $savedEnv[$k] }
+}
+
+if (-not [string]::IsNullOrEmpty($exp.mp4Path)) {
+  $mp4File = Join-Path $runCwd $exp.mp4Path
+  if (-not (Test-Path -LiteralPath $mp4File)) {
+    Write-Host "FAIL ${Name}: MP4 file not found: $mp4File"
+    Exit-Farmc 1
+  }
+  $mp4Len = (Get-Item -LiteralPath $mp4File).Length
+  if ($mp4Len -lt 256) {
+    Write-Host "FAIL ${Name}: MP4 file too small: $mp4Len bytes"
+    Exit-Farmc 1
+  }
+  $probe = Get-Command ffprobe -ErrorAction SilentlyContinue
+  if ($null -ne $probe) {
+    $pinfo = & $probe.Source -v error -select_streams v:0 `
+      -show_entries stream=width,height,nb_frames,r_frame_rate `
+      -show_entries format=duration -of default=noprint_wrappers=1 -- $mp4File
+    $meta = @{}
+    foreach ($line in $pinfo) {
+      if ($line -match '^([^=]+)=(.*)$') { $meta[$Matches[1]] = $Matches[2] }
+    }
+    $w = 0; $h = 0
+    try { $w = [int]$meta['width']; $h = [int]$meta['height'] } catch {}
+    if ($w -ne 640 -or $h -ne 360) {
+      Write-Host "FAIL ${Name}: MP4 size ${w}x${h}, expected 640x360"
+      Exit-Farmc 1
+    }
+    $d = -1.0
+    try { $d = [double]::Parse($meta['duration'], [System.Globalization.CultureInfo]::InvariantCulture) } catch {}
+    if ([Math]::Abs($d - 5.0) -gt 0.25) {
+      Write-Host "FAIL ${Name}: MP4 duration $d, expected ~5.0s"
+      Exit-Farmc 1
+    }
+  }
 }
 
 Write-Host "PASS ${Name}"

@@ -30,6 +30,8 @@ B08 = 409600  # M7 GPU-linked demo (OQ-M7-04 A)
 B09 = 512000  # M9 RT-linked demo (OQ-M9-06 A)
 B10 = 614400  # M10 denoise-linked demo (OQ-M10-07 A)
 B11 = 716800  # M12 upscale-glue-linked demo (OQ-M12-07 A, 700 KiB)
+B_LIQ = 98304  # M15 S_liq - S_scene (OQ-M15-08 A)
+B_VID = 32768  # M15 saveMP4 glue soft ceiling
 
 VULKAN_MARKERS = (b"vulkan-1.dll", b"libvulkan.so.1", b"vkGetInstanceProcAddr")
 
@@ -410,7 +412,7 @@ def main() -> int:
 
         if "farm_par" in hlog or "FARM_ENABLE_THREADS" in hlog:
             fail("hello pulled parallel runtime")
-        if "farm_math.c" in hlog or "farm_scene.c" in hlog or "farm_ray.c" in hlog or "farm_physics.c" in hlog or "farm_vk.c" in hlog or "farm_vk_rt.c" in hlog or "farm_denoise.c" in hlog or "farm_upscale.c" in hlog:
+        if "farm_math.c" in hlog or "farm_scene.c" in hlog or "farm_ray.c" in hlog or "farm_physics.c" in hlog or "farm_vk.c" in hlog or "farm_vk_rt.c" in hlog or "farm_denoise.c" in hlog or "farm_upscale.c" in hlog or "farm_liquid.c" in hlog or "farm_video.c" in hlog:
             fail("hello linked a stdlib unit beyond farm_rt.c")
         if "farm_math.c" in ulog:
             fail("unused math import linked farm_math.c")
@@ -433,6 +435,93 @@ def main() -> int:
         print("DCE  hello / unused-math link only farm_rt.c  OK")
         print("M10  glass+mirror omits farm_denoise.c; denoise-linked includes it  OK")
         print("M12  unused upscale DCE; upscale-glue-linked includes farm_upscale.c  OK")
+
+        unused_liq_src = os.path.join(td, "unused_liq.fm")
+        write_src(unused_liq_src, (
+            'import { LiquidWorld } from "farmos:liquid";\n'
+            "function main(): int {\n"
+            '  println("Hello, Farmos");\n'
+            "  return 0;\n"
+            "}\n"
+        ))
+        unused_liq = os.path.join(td, "unused_liq")
+        build(farmc, unused_liq_src, unused_liq)
+        maybe_strip(unused_liq)
+        uls = os.path.getsize(unused_liq)
+        if uls != hs:
+            fail(f"M15 DCE: unused-liquid size {uls} != hello {hs}")
+        ulog_l = verbose(farmc, unused_liq_src, os.path.join(td, "unused_liq_v"))
+        if "farm_liquid.c" in ulog_l or "farm_video.c" in ulog_l:
+            fail("unused liquid import linked farm_liquid.c / farm_video.c")
+
+        liq_src = os.path.join(td, "liquid_demo.fm")
+        write_src(liq_src, (
+            'import { Scene, Mesh, PlaneGeometry, MeshBasicMaterial,\n'
+            '         PerspectiveCamera, Renderer } from "farmos:scene";\n'
+            'import { LiquidWorld, HeightField } from "farmos:liquid";\n'
+            "function main(): int {\n"
+            "  const scene: Scene = new Scene();\n"
+            "  const camera: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);\n"
+            "  camera.position.z = 4;\n"
+            "  const mesh: Mesh = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial(0x2266cc));\n"
+            "  scene.add(mesh);\n"
+            "  const world: LiquidWorld = new LiquidWorld();\n"
+            "  const field: HeightField = new HeightField(8, 8, 0.1, 0.1);\n"
+            "  field.setHeight(2, 2, 0.8);\n"
+            "  field.linkMesh(mesh);\n"
+            "  world.addHeightField(field);\n"
+            "  world.step();\n"
+            "  world.step();\n"
+            "  const renderer: Renderer = new Renderer(8, 8);\n"
+            "  renderer.render(scene, camera);\n"
+            "  return 0;\n"
+            "}\n"
+        ))
+        liq = os.path.join(td, "liquid_demo")
+        build(farmc, liq_src, liq)
+        maybe_strip(liq)
+        ls = os.path.getsize(liq)
+        liq_delta = ls - ss
+        report("liquid_demo", "S_liq - S_scene", liq_delta, B_LIQ, "B", enforce_pe)
+        print(f"      S_liq={ls} B  S_scene={ss} B")
+        llog = verbose(farmc, liq_src, os.path.join(td, "liquid_v"))
+        if "farm_liquid.c" not in llog:
+            fail("liquid_demo did not link farm_liquid.c")
+        if "farm_video.c" in llog or "FARM_ENABLE_VIDEO" in llog:
+            fail("liquid_demo (no saveMP4) linked farm_video.c")
+
+        vid_src = os.path.join(td, "video_encode.fm")
+        write_src(vid_src, (
+            'import { Scene, Mesh, PlaneGeometry, MeshBasicMaterial,\n'
+            '         PerspectiveCamera, Renderer } from "farmos:scene";\n'
+            'import { LiquidWorld, HeightField } from "farmos:liquid";\n'
+            "function main(): int {\n"
+            "  const scene: Scene = new Scene();\n"
+            "  const camera: PerspectiveCamera = new PerspectiveCamera(50, 1, 0.1, 100);\n"
+            "  camera.position.z = 4;\n"
+            "  const mesh: Mesh = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial(0x2266cc));\n"
+            "  scene.add(mesh);\n"
+            "  const world: LiquidWorld = new LiquidWorld();\n"
+            "  const field: HeightField = new HeightField(8, 8, 0.1, 0.1);\n"
+            "  field.linkMesh(mesh);\n"
+            "  world.addHeightField(field);\n"
+            "  const renderer: Renderer = new Renderer(8, 8);\n"
+            "  renderer.render(scene, camera);\n"
+            '  renderer.saveMP4("t.mp4");\n'
+            "  return 0;\n"
+            "}\n"
+        ))
+        vid = os.path.join(td, "video_encode")
+        build(farmc, vid_src, vid)
+        maybe_strip(vid)
+        vs = os.path.getsize(vid)
+        glue = vs - ls
+        report("video_encode", "saveMP4 glue (S_vid - S_liq)", glue, B_VID, "B", enforce_pe)
+        print(f"      S_vid={vs} B  S_liq={ls} B")
+        vlog = verbose(farmc, vid_src, os.path.join(td, "video_v"))
+        if "farm_video.c" not in vlog or "FARM_ENABLE_VIDEO" not in vlog:
+            fail("video_encode did not link farm_video.c")
+        print("M15  unused liquid DCE; S_liq-S_scene; video glue reported  OK")
 
         if args.peak_ram:
             if not os.path.isfile(cornell_src):
